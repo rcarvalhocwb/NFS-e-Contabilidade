@@ -17,6 +17,7 @@ services:
     environment:
       DATABASE_URL: postgres://nfse:nfse@db:5432/nfse_gateway
       PORT: 3000
+      TZ: America/Sao_Paulo
     env_file:
       - .env
     ports:
