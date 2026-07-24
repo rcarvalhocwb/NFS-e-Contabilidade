@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const config = require('./config');
 const auth = require('./middleware/auth');
@@ -8,6 +9,12 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 
 app.get('/health', (_req, res) => res.json({ ok: true, servico: 'nfse-gateway' }));
+
+/* Painel de administração (empresas e certificados).
+   A página em si não exige autenticação — é só o shell, sem dados nem segredos.
+   Ela pede a chave de API no navegador e a envia em cada chamada às rotas abaixo,
+   que continuam protegidas pelo middleware. */
+app.get('/admin', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
 app.use(auth); // todas as rotas abaixo exigem X-API-Key
 app.use('/empresas', empresasRouter);

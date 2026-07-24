@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nfse-gateway · Painel</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --fg: #1a1d21; --muted: #6b7280;
+    --line: #e3e6ea; --accent: #1f6feb; --accent-fg: #fff;
+    --ok: #157347; --ok-bg: #e8f5ec; --warn: #9a6700; --warn-bg: #fff8e1;
+    --err: #b42318; --err-bg: #fdeceb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a; --card: #1c2024; --fg: #e6e8ea; --muted: #9aa4b2;
+      --line: #2c3238; --accent: #4b8ef7; --accent-fg: #fff;
+      --ok: #6cd08f; --ok-bg: #143024; --warn: #e3b341; --warn-bg: #33280c;
+      --err: #ff7b72; --err-bg: #3a1a18;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    background: var(--card); border-bottom: 1px solid var(--line);
+    padding: 14px 20px; display: flex; align-items: center; gap: 14px;
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .spacer { flex: 1; }
+  main { max-width: 1040px; margin: 0 auto; padding: 22px 20px 60px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 20px; margin-bottom: 18px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 16px; font-weight: 650; }
+  button {
+    font: inherit; border: 1px solid var(--line); background: var(--card);
+    color: var(--fg); padding: 7px 13px; border-radius: 7px; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.sm { padding: 4px 9px; font-size: 13px; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  tbody tr:last-child td { border-bottom: 0; }
+  .table-wrap { overflow-x: auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
+  input, select {
+    font: inherit; width: 100%; padding: 8px 10px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .tag.ok { background: var(--ok-bg); color: var(--ok); }
+  .tag.warn { background: var(--warn-bg); color: var(--warn); }
+  .tag.err { background: var(--err-bg); color: var(--err); }
+  .tag.muted { background: var(--line); color: var(--muted); }
+  .msg { padding: 11px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; display: none; }
+  .msg.ok { background: var(--ok-bg); color: var(--ok); display: block; }
+  .msg.err { background: var(--err-bg); color: var(--err); display: block; }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+  dialog {
+    border: 1px solid var(--line); border-radius: 12px; padding: 0;
+    background: var(--card); color: var(--fg); max-width: 620px; width: calc(100% - 32px);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  dialog .inner { padding: 22px; }
+  dialog h3 { margin: 0 0 4px; font-size: 16px; }
+  dialog .dsub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .empty { color: var(--muted); text-align: center; padding: 34px 10px; font-size: 14px; }
+  .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; }
+  .warnbar {
+    background: var(--warn-bg); color: var(--warn); padding: 9px 14px;
+    font-size: 13px; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div id="httpWarn" class="warnbar" hidden>
+  Conexão sem HTTPS fora de localhost — a senha do certificado trafegaria em texto claro. Use HTTPS em produção.
+</div>
+
+<header>
+  <h1>nfse-gateway</h1>
+  <span class="sub">Painel de empresas e certificados</span>
+  <span class="spacer"></span>
+  <button class="sm" id="btnKey">Trocar chave de API</button>
+</header>
+
+<main>
+  <div id="msg" class="msg"></div>
+
+  <div class="card">
+    <h2 style="display:flex;align-items:center;gap:12px">
+      Empresas
+      <span class="spacer"></span>
+      <button class="sm" id="btnReload">Atualizar</button>
+      <button class="sm primary" id="btnNew">Nova empresa</button>
+    </h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>CNPJ</th><th>Razão social</th><th>Município</th>
+            <th>Ambiente</th><th>Certificado</th><th>Próx. DPS</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="empty" class="empty" hidden>Nenhuma empresa cadastrada ainda.</div>
+  </div>
+</main>
+
+<!-- Empresa -->
+<dialog id="dlgEmpresa"><div class="inner">
+  <h3 id="empTitle">Nova empresa</h3>
+  <div class="dsub">Dados usados na montagem da DPS.</div>
+  <form id="formEmpresa">
+    <div class="grid">
+      <div>
+        <label for="f_cnpj">CNPJ *</label>
+        <input id="f_cnpj" inputmode="numeric" placeholder="00000000000000" required>
+        <div class="hint">14 dígitos, só números</div>
+      </div>
+      <div>
+        <label for="f_im">Inscrição municipal</label>
+        <input id="f_im" placeholder="123456">
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <label for="f_razao">Razão social *</label>
+      <input id="f_razao" required maxlength="300">
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div>
+        <label for="f_mun">Código do município (IBGE) *</label>
+        <input id="f_mun" inputmode="numeric" placeholder="4106902" required>
+        <div class="hint">7 dígitos, município emissor</div>
+      </div>
+      <div>
+        <label for="f_serie">Série da DPS</label>
+        <input id="f_serie" value="1" maxlength="5">
+      </div>
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div>
+        <label for="f_simp">Regime do Simples Nacional</label>
+        <select id="f_simp">
+          <option value="1">1 — Não optante</option>
+          <option value="2">2 — MEI</option>
+          <option value="3">3 — ME/EPP do Simples Nacional</option>
+        </select>
+      </div>
+      <div>
+        <label for="f_regesp">Regime especial de tributação</label>
+        <input id="f_regesp" type="number" min="0" value="0">
+        <div class="hint">0 = nenhum. Demais códigos conforme o leiaute nacional.</div>
+      </div>
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div>
+        <label for="f_amb">Ambiente</label>
+        <select id="f_amb">
+          <option value="homologacao">Homologação (produção restrita)</option>
+          <option value="producao">Produção</option>
+        </select>
+      </div>
+      <div id="wrapAtivo" hidden>
+        <label for="f_ativo">Situação</label>
+        <select id="f_ativo">
+          <option value="true">Ativa</option>
+          <option value="false">Inativa</option>
+        </select>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" id="empCancel">Cancelar</button>
+      <button type="submit" class="primary" id="empSave">Salvar</button>
+    </div>
+  </form>
+</div></dialog>
+
+<!-- Certificado -->
+<dialog id="dlgCert"><div class="inner">
+  <h3>Certificado digital A1</h3>
+  <div class="dsub" id="certSub"></div>
+  <form id="formCert">
+    <div>
+      <label for="f_pfx">Arquivo .pfx / .p12 *</label>
+      <input id="f_pfx" type="file" accept=".pfx,.p12" required>
+      <div class="hint">Somente A1 (arquivo). Certificados A3 em token/cartão não são suportados. Máx. 1 MB.</div>
+    </div>
+    <div style="margin-top:14px">
+      <label for="f_senha">Senha do certificado *</label>
+      <input id="f_senha" type="password" required autocomplete="off">
+      <div class="hint">Armazenada cifrada (AES-256-GCM). Enviar um novo certificado desativa o anterior.</div>
+    </div>
+    <div class="actions">
+      <button type="button" id="certCancel">Cancelar</button>
+      <button type="submit" class="primary" id="certSave">Enviar</button>
+    </div>
+  </form>
+</div></dialog>
+
+<!-- Chave de API -->
+<dialog id="dlgKey"><div class="inner">
+  <h3>Chave de API do gateway</h3>
+  <div class="dsub">É o valor de <span class="mono">GATEWAY_API_KEY</span> do arquivo <span class="mono">.env</span>. Fica guardada apenas nesta aba do navegador.</div>
+  <form id="formKey">
+    <label for="f_key">Chave</label>
+    <input id="f_key" type="password" required autocomplete="off">
+    <div class="actions">
+      <button type="submit" class="primary">Salvar</button>
+    </div>
+  </form>
+</div></dialog>
+
+<script>
+(function () {
+  'use strict';
+
+  var KEY_STORE = 'nfse_gateway_api_key';
+  var el = function (id) { return document.getElementById(id); };
+  var empresas = [];
+  var editandoCnpj = null;
+  var certCnpj = null;
+
+  if (location.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) {
+    el('httpWarn').hidden = false;
+  }
+
+  function getKey() { return sessionStorage.getItem(KEY_STORE) || ''; }
+  function setKey(k) { sessionStorage.setItem(KEY_STORE, k); }
+
+  function msg(text, kind) {
+    var m = el('msg');
+    m.textContent = text;
+    m.className = 'msg ' + (kind || 'ok');
+    if (kind !== 'err') setTimeout(function () { m.className = 'msg'; }, 4000);
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = opts.headers || {};
+    headers['X-API-Key'] = getKey();
+    return fetch(path, {
+      method: opts.method || 'GET',
+      headers: headers,
+      body: opts.body
+    }).then(function (res) {
+      return res.text().then(function (t) {
+        var data = null;
+        try { data = t ? JSON.parse(t) : null; } catch (e) { data = { erro: t }; }
+        if (res.status === 401) {
+          askKey();
+          throw new Error('Chave de API inválida ou ausente.');
+        }
+        if (!res.ok) throw new Error((data && (data.erro || data.detalhe)) || ('Erro HTTP ' + res.status));
+        return data;
+      });
+    });
+  }
+
+  function fmtCnpj(v) {
+    if (!v || v.length !== 14) return v || '';
+    return v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  }
+
+  function certStatus(emp) {
+    if (!emp.certificado_valido_ate) return '<span class="tag muted">sem certificado</span>';
+    var ate = new Date(emp.certificado_valido_ate);
+    var dias = Math.floor((ate - new Date()) / 86400000);
+    var quando = ate.toLocaleDateString('pt-BR');
+    if (dias < 0) return '<span class="tag err">vencido em ' + quando + '</span>';
+    if (dias <= 30) return '<span class="tag warn">vence em ' + dias + 'd (' + quando + ')</span>';
+    return '<span class="tag ok">válido até ' + quando + '</span>';
+  }
+
+  function render() {
+    var tb = el('tbody');
+    tb.innerHTML = '';
+    el('empty').hidden = empresas.length > 0;
+    empresas.forEach(function (e) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="mono">' + fmtCnpj(e.cnpj) + '</td>' +
+        '<td>' + escapeHtml(e.razao_social) + (e.ativo ? '' : ' <span class="tag muted">inativa</span>') + '</td>' +
+        '<td class="mono">' + escapeHtml(e.codigo_municipio) + '</td>' +
+        '<td>' + (e.ambiente === 'producao'
+            ? '<span class="tag err">produção</span>'
+            : '<span class="tag ok">homologação</span>') + '</td>' +
+        '<td>' + certStatus(e) + '</td>' +
+        '<td class="mono">' + escapeHtml(String(e.serie_dps)) + '/' + escapeHtml(String(e.prox_num_dps)) + '</td>' +
+        '<td style="text-align:right;white-space:nowrap"></td>';
+      var td = tr.lastChild;
+      td.appendChild(mkBtn('Editar', function () { abrirEmpresa(e); }));
+      td.appendChild(document.createTextNode(' '));
+      td.appendChild(mkBtn('Certificado', function () { abrirCert(e); }));
+      tb.appendChild(tr);
+    });
+  }
+
+  function mkBtn(label, fn) {
+    var b = document.createElement('button');
+    b.className = 'sm';
+    b.textContent = label;
+    b.onclick = fn;
+    return b;
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function carregar() {
+    if (!getKey()) { askKey(); return; }
+    api('/empresas').then(function (rows) {
+      empresas = rows || [];
+      render();
+    }).catch(function (e) { msg(e.message, 'err'); });
+  }
+
+  // ---- empresa ----
+  function abrirEmpresa(emp) {
+    editandoCnpj = emp ? emp.cnpj : null;
+    el('empTitle').textContent = emp ? 'Editar empresa' : 'Nova empresa';
+    el('f_cnpj').value = emp ? emp.cnpj : '';
+    el('f_cnpj').disabled = !!emp;
+    el('f_razao').value = emp ? emp.razao_social : '';
+    el('f_im').value = emp ? (emp.inscricao_municipal || '') : '';
+    el('f_mun').value = emp ? emp.codigo_municipio : '';
+    el('f_serie').value = emp ? emp.serie_dps : '1';
+    el('f_simp').value = emp ? String(emp.op_simp_nac) : '1';
+    el('f_regesp').value = emp ? String(emp.reg_esp_trib) : '0';
+    el('f_amb').value = emp ? emp.ambiente : 'homologacao';
+    el('wrapAtivo').hidden = !emp;
+    el('f_ativo').value = emp ? String(emp.ativo) : 'true';
+    el('dlgEmpresa').showModal();
+  }
+
+  el('formEmpresa').onsubmit = function (ev) {
+    ev.preventDefault();
+    var cnpj = el('f_cnpj').value.replace(/\D/g, '');
+    if (cnpj.length !== 14) { msg('CNPJ deve ter 14 dígitos.', 'err'); return; }
+    if (!/^\d{7}$/.test(el('f_mun').value.trim())) { msg('Código do município deve ter 7 dígitos.', 'err'); return; }
+
+    var body = {
+      razaoSocial: el('f_razao').value.trim(),
+      inscricaoMunicipal: el('f_im').value.trim() || null,
+      codigoMunicipio: el('f_mun').value.trim(),
+      opSimpNac: Number(el('f_simp').value),
+      regEspTrib: Number(el('f_regesp').value),
+      serieDps: el('f_serie').value.trim() || '1',
+      ambiente: el('f_amb').value
+    };
+    var novo = !editandoCnpj;
+    if (novo) body.cnpj = cnpj;
+    else body.ativo = el('f_ativo').value === 'true';
+
+    el('empSave').disabled = true;
+    api(novo ? '/empresas' : '/empresas/' + editandoCnpj, {
+      method: novo ? 'POST' : 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function () {
+      el('dlgEmpresa').close();
+      msg(novo ? 'Empresa cadastrada.' : 'Empresa atualizada.');
+      carregar();
+    }).catch(function (e) {
+      msg(e.message, 'err');
+    }).then(function () { el('empSave').disabled = false; });
+  };
+
+  // ---- certificado ----
+  function abrirCert(emp) {
+    certCnpj = emp.cnpj;
+    el('certSub').textContent = emp.razao_social + ' · ' + fmtCnpj(emp.cnpj);
+    el('formCert').reset();
+    el('dlgCert').showModal();
+  }
+
+  el('formCert').onsubmit = function (ev) {
+    ev.preventDefault();
+    var file = el('f_pfx').files[0];
+    if (!file) { msg('Selecione o arquivo .pfx.', 'err'); return; }
+    var fd = new FormData();
+    fd.append('certificado', file);
+    fd.append('senha', el('f_senha').value);
+
+    el('certSave').disabled = true;
+    api('/empresas/' + certCnpj + '/certificado', { method: 'POST', body: fd })
+      .then(function (r) {
+        el('dlgCert').close();
+        var ate = r.validoAte ? new Date(r.validoAte).toLocaleDateString('pt-BR') : '?';
+        msg('Certificado cadastrado. Titular: ' + (r.cnpjCertificado || '—') + ' · válido até ' + ate);
+        carregar();
+      })
+      .catch(function (e) { msg(e.message, 'err'); })
+      .then(function () { el('certSave').disabled = false; });
+  };
+
+  // ---- chave ----
+  function askKey() { el('f_key').value = ''; el('dlgKey').showModal(); }
+  el('formKey').onsubmit = function (ev) {
+    ev.preventDefault();
+    setKey(el('f_key').value.trim());
+    el('dlgKey').close();
+    carregar();
+  };
+
+  el('btnKey').onclick = askKey;
+  el('btnNew').onclick = function () { abrirEmpresa(null); };
+  el('btnReload').onclick = carregar;
+  el('empCancel').onclick = function () { el('dlgEmpresa').close(); };
+  el('certCancel').onclick = function () { el('dlgCert').close(); };
+
+  carregar();
+})();
+</script>
+</body>
+</html>
