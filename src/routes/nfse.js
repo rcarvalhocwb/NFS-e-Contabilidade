@@ -16,8 +16,15 @@ router.post('/', async (req, res, next) => {
     if (!b.valores || b.valores.valorServico === undefined) {
       return res.status(400).json({ erro: 'valores.valorServico é obrigatório' });
     }
+    if (b.referencia !== undefined && !/^[\w.:-]{1,100}$/.test(String(b.referencia))) {
+      return res.status(400).json({ erro: 'referencia deve ter até 100 caracteres (letras, números, . : _ -)' });
+    }
     const resultado = await emitir(b.cnpjEmpresa, b);
-    res.status(resultado.status === 'autorizada' ? 201 : 422).json(resultado);
+    // 200 (e não 201) quando a referência já existia: nada foi criado agora.
+    const codigo = resultado.idempotente
+      ? 200
+      : (resultado.status === 'autorizada' ? 201 : 422);
+    res.status(codigo).json(resultado);
   } catch (e) { next(e); }
 });
 
@@ -34,9 +41,18 @@ router.get('/', async (req, res, next) => {
       params.push(req.query.status);
       where += ` AND n.status = $${params.length}`;
     }
+    if (req.query.ambiente) {
+      params.push(req.query.ambiente);
+      where += ` AND n.ambiente = $${params.length}`;
+    }
+    if (req.query.referencia) {
+      params.push(req.query.referencia);
+      where += ` AND n.referencia = $${params.length}`;
+    }
     params.push(Math.min(parseInt(req.query.limite || '50', 10), 500));
     const r = await db.query(
       `SELECT n.id, e.cnpj AS cnpj_empresa, n.id_dps, n.chave_acesso, n.serie, n.numero,
+              n.referencia, n.ambiente,
               n.status, n.mensagens, n.criado_em, n.atualizado_em
        FROM notas n JOIN empresas e ON e.id = n.empresa_id
        WHERE ${where} ORDER BY n.id DESC LIMIT $${params.length}`,

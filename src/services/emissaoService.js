@@ -12,13 +12,31 @@ async function buscarEmpresa(cnpj) {
   return r.rows[0];
 }
 
-/* Reserva o próximo número de DPS da empresa (atômico). */
-async function proximoNumero(empresaId) {
+/* Reserva o próximo número de DPS da empresa NO AMBIENTE informado (atômico).
+   A numeração é independente por ambiente: o contador de homologação não pode
+   consumir números da sequência de produção. */
+async function reservarNumeracao(empresaId, ambiente) {
   const r = await db.query(
-    'UPDATE empresas SET prox_num_dps = prox_num_dps + 1, atualizado_em = now() WHERE id = $1 RETURNING prox_num_dps - 1 AS numero',
-    [empresaId]
+    `INSERT INTO numeracao_dps (empresa_id, ambiente, prox_numero)
+     VALUES ($1, $2, 2)
+     ON CONFLICT (empresa_id, ambiente) DO UPDATE
+       SET prox_numero = numeracao_dps.prox_numero + 1, atualizado_em = now()
+     RETURNING serie, prox_numero - 1 AS numero`,
+    [empresaId, ambiente]
   );
-  return Number(r.rows[0].numero);
+  return { serie: r.rows[0].serie, numero: Number(r.rows[0].numero) };
+}
+
+/* Idempotência: se a empresa já emitiu com esta referência, devolve a nota
+   existente em vez de gerar outra. Protege contra retry após timeout. */
+async function buscarPorReferencia(empresaId, referencia) {
+  if (!referencia) return null;
+  const r = await db.query(
+    `SELECT id, id_dps, serie, numero, status, chave_acesso, nfse_xml, ambiente, mensagens
+     FROM notas WHERE empresa_id = $1 AND referencia = $2`,
+    [empresaId, referencia]
+  );
+  return r.rows[0] || null;
 }
 
 /**
@@ -30,11 +48,35 @@ async function proximoNumero(empresaId) {
  */
 async function emitir(cnpjEmpresa, dados) {
   const empresa = await buscarEmpresa(cnpjEmpresa);
+
+  // Idempotência antes de qualquer efeito colateral: se já existe nota com
+  // esta referência, devolve a que existe sem reservar número nem transmitir.
+  const jaExiste = await buscarPorReferencia(empresa.id, dados.referencia);
+  if (jaExiste) {
+    return {
+      notaId: jaExiste.id,
+      idDps: jaExiste.id_dps,
+      serie: jaExiste.serie,
+      numero: Number(jaExiste.numero),
+      status: jaExiste.status,
+      ambiente: jaExiste.ambiente,
+      chaveAcesso: jaExiste.chave_acesso || undefined,
+      nfseXml: jaExiste.nfse_xml || undefined,
+      urlDanfse: jaExiste.chave_acesso
+        ? sefin.urlDanfse(jaExiste.ambiente, jaExiste.chave_acesso) : undefined,
+      idempotente: true,
+      retornoSefin: jaExiste.mensagens
+    };
+  }
+
   const cert = await carregarCertificadoAtivo(empresa.id);
   const amb = config.ambientes[empresa.ambiente];
 
-  const serie = dados.serie || empresa.serie_dps;
-  const numero = dados.numero || await proximoNumero(empresa.id);
+  const reserva = dados.numero
+    ? { serie: dados.serie, numero: dados.numero }
+    : await reservarNumeracao(empresa.id, empresa.ambiente);
+  const serie = dados.serie || reserva.serie;
+  const numero = reserva.numero;
   const idDps = gerarIdDps({
     codigoMunicipio: empresa.codigo_municipio,
     cnpj: empresa.cnpj,
@@ -49,11 +91,30 @@ async function emitir(cnpjEmpresa, dados) {
   });
   const dpsAssinada = assinarXml(dpsXml, 'infDPS', cert);
 
-  const nota = await db.query(
-    `INSERT INTO notas (empresa_id, id_dps, serie, numero, status, dps_xml)
-     VALUES ($1,$2,$3,$4,'pendente',$5) RETURNING id`,
-    [empresa.id, idDps, serie, numero, dpsAssinada]
-  );
+  let nota;
+  try {
+    nota = await db.query(
+      `INSERT INTO notas (empresa_id, id_dps, serie, numero, status, dps_xml, referencia, ambiente)
+       VALUES ($1,$2,$3,$4,'processando',$5,$6,$7) RETURNING id`,
+      [empresa.id, idDps, serie, numero, dpsAssinada, dados.referencia || null, empresa.ambiente]
+    );
+  } catch (e) {
+    // 23505 = unique_violation: corrida entre duas requisições com a mesma
+    // referência. Devolve a nota que venceu a corrida, em vez de duplicar.
+    if (e.code === '23505') {
+      const existente = await buscarPorReferencia(empresa.id, dados.referencia);
+      if (existente) {
+        return {
+          notaId: existente.id, idDps: existente.id_dps, serie: existente.serie,
+          numero: Number(existente.numero), status: existente.status,
+          ambiente: existente.ambiente,
+          chaveAcesso: existente.chave_acesso || undefined,
+          idempotente: true, retornoSefin: existente.mensagens
+        };
+      }
+    }
+    throw e;
+  }
   const notaId = nota.rows[0].id;
 
   let resp;
@@ -84,6 +145,8 @@ async function emitir(cnpjEmpresa, dados) {
     idDps,
     serie,
     numero,
+    referencia: dados.referencia || undefined,
+    ambiente: empresa.ambiente,
     status: autorizada ? 'autorizada' : 'rejeitada',
     httpStatus: resp.status,
     chaveAcesso: autorizada ? resp.json.chaveAcesso : undefined,

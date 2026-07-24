@@ -78,6 +78,21 @@ function montarDps(empresa, dados, opts) {
   `<prest>` +
     tag('CNPJ', empresa.cnpj) +
     tag('IM', empresa.inscricao_municipal) +
+    // Endereço do prestador: emitido apenas quando cadastrado. Alguns
+    // municípios/casos exigem; sem os dados, omitir é melhor que enviar vazio.
+    (empresa.logradouro ?
+    `<end>` +
+      `<endNac>` +
+        tag('cMun', empresa.codigo_municipio) +
+        tag('CEP', (empresa.cep || '').replace(/\D/g, '')) +
+      `</endNac>` +
+      tag('xLgr', empresa.logradouro) +
+      tag('nro', empresa.numero) +
+      tag('xCpl', empresa.complemento) +
+      tag('xBairro', empresa.bairro) +
+    `</end>` : '') +
+    tag('fone', (empresa.telefone || '').replace(/\D/g, '') || undefined) +
+    tag('email', empresa.email) +
     `<regTrib>` +
       tag('opSimpNac', empresa.op_simp_nac) +
       (Number(empresa.op_simp_nac) === 3 ? tag('regApTribSN', dados.regApTribSN || '1') : '') +
