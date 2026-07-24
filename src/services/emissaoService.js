@@ -117,29 +117,9 @@ async function emitir(cnpjEmpresa, dados) {
   }
   const notaId = nota.rows[0].id;
 
-  let resp;
-  try {
-    resp = await sefin.enviarDps(empresa.ambiente, dpsAssinada, cert);
-  } catch (e) {
-    await db.query(
-      `UPDATE notas SET status='erro', mensagens=$2, atualizado_em=now() WHERE id=$1`,
-      [notaId, JSON.stringify({ erro: e.message })]
-    );
-    throw Object.assign(new Error('Falha de comunicação com a Sefin Nacional: ' + e.message), { status: 502 });
-  }
-
-  const autorizada = resp.status >= 200 && resp.status < 300 && resp.json && resp.json.chaveAcesso;
-  await db.query(
-    `UPDATE notas SET status=$2, chave_acesso=$3, nfse_xml=$4, mensagens=$5, atualizado_em=now() WHERE id=$1`,
-    [
-      notaId,
-      autorizada ? 'autorizada' : 'rejeitada',
-      autorizada ? resp.json.chaveAcesso : null,
-      autorizada ? resp.json.nfseXml : null,
-      JSON.stringify(resp.json ?? { httpStatus: resp.status, corpo: resp.raw })
-    ]
-  );
-
+  // A transmissão à Sefin fica por conta do worker (services/filaEmissao.js).
+  // Até aqui só houve trabalho local (montar e assinar), então a resposta é
+  // rápida e previsível mesmo com a Sefin lenta ou fora do ar.
   return {
     notaId,
     idDps,
@@ -147,12 +127,8 @@ async function emitir(cnpjEmpresa, dados) {
     numero,
     referencia: dados.referencia || undefined,
     ambiente: empresa.ambiente,
-    status: autorizada ? 'autorizada' : 'rejeitada',
-    httpStatus: resp.status,
-    chaveAcesso: autorizada ? resp.json.chaveAcesso : undefined,
-    nfseXml: autorizada ? resp.json.nfseXml : undefined,
-    urlDanfse: autorizada ? sefin.urlDanfse(empresa.ambiente, resp.json.chaveAcesso) : undefined,
-    retornoSefin: resp.json ?? resp.raw
+    status: 'processando',
+    acompanhe: `/nfse/local/${notaId}`
   };
 }
 

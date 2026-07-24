@@ -24,17 +24,28 @@ CREATE TABLE IF NOT EXISTS numeracao_dps (
 );
 
 -- Migra a numeração existente para o ambiente em que a empresa está hoje,
--- e cria o outro ambiente zerado. Idempotente (ON CONFLICT DO NOTHING).
-INSERT INTO numeracao_dps (empresa_id, ambiente, serie, prox_numero)
-SELECT e.id, e.ambiente, e.serie_dps, e.prox_num_dps FROM empresas e
-ON CONFLICT (empresa_id, ambiente) DO NOTHING;
+-- e cria o outro ambiente zerado.
+--
+-- O bloco só roda se as colunas antigas ainda existirem: sem essa guarda, uma
+-- segunda execução desta migração falharia com "column e.serie_dps does not
+-- exist", já que ela mesma remove as colunas mais abaixo.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'empresas' AND column_name = 'serie_dps') THEN
 
-INSERT INTO numeracao_dps (empresa_id, ambiente, serie, prox_numero)
-SELECT e.id,
-       CASE WHEN e.ambiente = 'producao' THEN 'homologacao' ELSE 'producao' END,
-       e.serie_dps, 1
-FROM empresas e
-ON CONFLICT (empresa_id, ambiente) DO NOTHING;
+    INSERT INTO numeracao_dps (empresa_id, ambiente, serie, prox_numero)
+    SELECT e.id, e.ambiente, e.serie_dps, e.prox_num_dps FROM empresas e
+    ON CONFLICT (empresa_id, ambiente) DO NOTHING;
+
+    INSERT INTO numeracao_dps (empresa_id, ambiente, serie, prox_numero)
+    SELECT e.id,
+           CASE WHEN e.ambiente = 'producao' THEN 'homologacao' ELSE 'producao' END,
+           e.serie_dps, 1
+    FROM empresas e
+    ON CONFLICT (empresa_id, ambiente) DO NOTHING;
+  END IF;
+END $$;
 
 -- Remove as colunas antigas: manter duas fontes de verdade para a numeração
 -- é fonte garantida de divergência.

@@ -20,11 +20,9 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ erro: 'referencia deve ter até 100 caracteres (letras, números, . : _ -)' });
     }
     const resultado = await emitir(b.cnpjEmpresa, b);
-    // 200 (e não 201) quando a referência já existia: nada foi criado agora.
-    const codigo = resultado.idempotente
-      ? 200
-      : (resultado.status === 'autorizada' ? 201 : 422);
-    res.status(codigo).json(resultado);
+    // 200 quando a referência já existia (nada foi criado agora);
+    // 202 quando a nota entrou na fila e será transmitida pelo worker.
+    res.status(resultado.idempotente ? 200 : 202).json(resultado);
   } catch (e) { next(e); }
 });
 
@@ -52,7 +50,7 @@ router.get('/', async (req, res, next) => {
     params.push(Math.min(parseInt(req.query.limite || '50', 10), 500));
     const r = await db.query(
       `SELECT n.id, e.cnpj AS cnpj_empresa, n.id_dps, n.chave_acesso, n.serie, n.numero,
-              n.referencia, n.ambiente,
+              n.referencia, n.ambiente, n.tentativas, n.ultimo_erro, n.processar_apos,
               n.status, n.mensagens, n.criado_em, n.atualizado_em
        FROM notas n JOIN empresas e ON e.id = n.empresa_id
        WHERE ${where} ORDER BY n.id DESC LIMIT $${params.length}`,
