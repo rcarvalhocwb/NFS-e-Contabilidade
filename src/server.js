@@ -4,6 +4,7 @@ const config = require('./config');
 const auth = require('./middleware/auth');
 const empresasRouter = require('./routes/empresas');
 const nfseRouter = require('./routes/nfse');
+const fila = require('./services/filaEmissao');
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -29,4 +30,8 @@ app.use((err, _req, res, _next) => {
 
 app.listen(config.port, () => {
   console.log(`nfse-gateway ouvindo na porta ${config.port}`);
+  // O worker roda no mesmo processo. Como o estado da fila vive no banco e a
+  // reivindicação usa FOR UPDATE SKIP LOCKED, subir várias instâncias do
+  // gateway é seguro: cada worker pega notas diferentes.
+  if (process.env.FILA_ATIVA !== 'false') fila.iniciar();
 });
