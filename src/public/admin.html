@@ -80,6 +80,17 @@
   .ident { color:var(--muted); font-size:13px; margin-bottom:18px; }
   .amb-box { border:1px solid var(--line); border-radius:9px; padding:16px; margin-bottom:14px; }
   .amb-box h4 { margin:0 0 12px; font-size:14px; display:flex; align-items:center; gap:10px; }
+  .topnav { display:flex; gap:4px; }
+  .topnav button { border:0; background:none; color:var(--muted); padding:6px 12px; border-radius:7px; font-size:14px; }
+  .topnav button:hover { color:var(--fg); background:var(--bg); }
+  .topnav button.active { color:var(--accent); font-weight:600; }
+  .filtros { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; align-items:end; margin-bottom:4px; }
+  pre.xml { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:12px;
+            overflow-x:auto; font-family:ui-monospace,Consolas,monospace; font-size:12px;
+            line-height:1.45; max-height:340px; white-space:pre; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:5px 16px; font-size:14px; margin-bottom:8px; }
+  .kv dt { color:var(--muted); } .kv dd { margin:0; word-break:break-all; }
+  .rowlink { color:var(--accent); cursor:pointer; }
 </style>
 </head>
 <body>
@@ -90,7 +101,10 @@
 
 <header>
   <h1>nfse-gateway</h1>
-  <span class="sub">Empresas e certificados</span>
+  <nav class="topnav">
+    <button id="navEmpresas" class="active">Empresas</button>
+    <button id="navNotas">Notas</button>
+  </nav>
   <span class="spacer"></span>
   <button class="sm" id="btnKey">Trocar chave de API</button>
 </header>
@@ -276,7 +290,77 @@
       </div>
     </div>
   </section>
+
+  <!-- ============ NOTAS ============ -->
+  <section id="viewNotas" hidden>
+    <div class="card">
+      <h2>Notas emitidas <span class="spacer"></span>
+        <button class="sm" id="btnNotasReload">Atualizar</button>
+      </h2>
+      <div class="filtros">
+        <div>
+          <label for="nf_empresa">Empresa</label>
+          <select id="nf_empresa"><option value="">Todas</option></select>
+        </div>
+        <div>
+          <label for="nf_status">Status</label>
+          <select id="nf_status">
+            <option value="">Todos</option>
+            <option value="processando">Processando</option>
+            <option value="autorizada">Autorizada</option>
+            <option value="rejeitada">Rejeitada</option>
+            <option value="cancelada">Cancelada</option>
+            <option value="erro">Erro</option>
+            <option value="substituida">Substituída</option>
+            <option value="encerrada">Encerrada</option>
+          </select>
+        </div>
+        <div>
+          <label for="nf_ambiente">Ambiente</label>
+          <select id="nf_ambiente">
+            <option value="">Todos</option>
+            <option value="homologacao">Homologação</option>
+            <option value="producao">Produção</option>
+          </select>
+        </div>
+        <div>
+          <label for="nf_ref">Referência</label>
+          <input id="nf_ref" placeholder="ex.: PEDIDO-123">
+        </div>
+        <div><button class="primary" id="btnNotasFiltrar" style="width:100%">Filtrar</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Nº</th><th>Empresa</th><th>Série/Nº</th><th>Ambiente</th>
+            <th>Status</th><th>Referência</th><th>Criada em</th><th></th>
+          </tr></thead>
+          <tbody id="notasBody"></tbody>
+        </table>
+      </div>
+      <div id="notasEmpty" class="empty" hidden>Nenhuma nota encontrada com esses filtros.</div>
+    </div>
+  </section>
 </main>
+
+<!-- Detalhe da nota -->
+<dialog id="dlgNota"><div class="inner">
+  <h3 id="notaTitulo">Nota</h3>
+  <div class="dsub" id="notaSub"></div>
+  <dl class="kv" id="notaKv"></dl>
+  <div id="notaErroBox"></div>
+  <div class="tabs" id="notaTabs" style="margin-top:8px">
+    <button data-xml="dps" class="active">DPS assinada</button>
+    <button data-xml="nfse">NFS-e</button>
+    <button data-xml="retorno">Retorno Sefin</button>
+  </div>
+  <pre class="xml" id="notaXml">—</pre>
+  <div class="actions">
+    <button id="notaFechar">Fechar</button>
+  </div>
+</div></dialog>
 
 <dialog id="dlgKey"><div class="inner">
   <h3>Chave de API do gateway</h3>
@@ -376,11 +460,18 @@
       .catch(function (e) { msg(e.message, 'err'); });
   }
 
-  function mostrarLista() {
-    el('viewList').hidden = false; el('viewEdit').hidden = true;
-    editando = null; carregar();
+  // Alterna entre as três telas de topo. 'edit' é sub-tela de empresas.
+  function mostrarView(qual) {
+    el('viewList').hidden  = qual !== 'empresas';
+    el('viewEdit').hidden  = qual !== 'edit';
+    el('viewNotas').hidden = qual !== 'notas';
+    el('navEmpresas').classList.toggle('active', qual === 'empresas' || qual === 'edit');
+    el('navNotas').classList.toggle('active', qual === 'notas');
   }
-  function mostrarEdicao() { el('viewList').hidden = true; el('viewEdit').hidden = false; }
+  function mostrarLista() {
+    mostrarView('empresas'); editando = null; carregar();
+  }
+  function mostrarEdicao() { mostrarView('edit'); }
 
   function setTab(nome) {
     Array.prototype.forEach.call(el('tabs').children, function (b) {
@@ -563,6 +654,110 @@
     var b = ev.target.closest('button');
     if (b && !b.disabled) setTab(b.dataset.pane);
   };
+  // ---------- notas ----------
+  var STATUS_TAG = {
+    processando: 'warn', autorizada: 'ok', rejeitada: 'err', cancelada: 'muted',
+    erro: 'err', substituida: 'muted', encerrada: 'muted'
+  };
+  var notaAtual = null;
+
+  function preencherFiltroEmpresas() {
+    var sel = el('nf_empresa');
+    if (sel.options.length > 1) return; // já preenchido
+    empresas.forEach(function (e) {
+      var o = document.createElement('option');
+      o.value = e.cnpj;
+      o.textContent = e.razao_social + ' (' + fmtCnpj(e.cnpj) + ')';
+      sel.appendChild(o);
+    });
+  }
+
+  function carregarNotas() {
+    if (!getKey()) { askKey(); return; }
+    var q = [];
+    if (el('nf_empresa').value) q.push('cnpjEmpresa=' + encodeURIComponent(el('nf_empresa').value));
+    if (el('nf_status').value) q.push('status=' + encodeURIComponent(el('nf_status').value));
+    if (el('nf_ambiente').value) q.push('ambiente=' + encodeURIComponent(el('nf_ambiente').value));
+    if (el('nf_ref').value.trim()) q.push('referencia=' + encodeURIComponent(el('nf_ref').value.trim()));
+    api('/nfse' + (q.length ? '?' + q.join('&') : '')).then(function (rows) {
+      renderNotas(rows || []);
+    }).catch(function (e) { msg(e.message, 'err'); });
+  }
+
+  function renderNotas(rows) {
+    var tb = el('notasBody'); tb.innerHTML = '';
+    el('notasEmpty').hidden = rows.length > 0;
+    rows.forEach(function (n) {
+      var kind = STATUS_TAG[n.status] || 'muted';
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="mono">' + n.id + '</td>' +
+        '<td class="mono">' + fmtCnpj(n.cnpj_empresa) + '</td>' +
+        '<td class="mono">' + esc(n.serie) + '/' + esc(n.numero) + '</td>' +
+        '<td>' + (n.ambiente === 'producao'
+          ? '<span class="tag err">produção</span>' : '<span class="tag ok">homologação</span>') + '</td>' +
+        '<td><span class="tag ' + kind + '">' + esc(n.status) + '</span>' +
+          (n.tentativas > 1 ? ' <span class="hint">' + n.tentativas + 'x</span>' : '') + '</td>' +
+        '<td>' + esc(n.referencia || '—') + '</td>' +
+        '<td class="hint">' + new Date(n.criado_em).toLocaleString('pt-BR') + '</td>' +
+        '<td style="text-align:right"></td>';
+      var b = document.createElement('button');
+      b.className = 'sm'; b.textContent = 'Ver';
+      b.onclick = function () { abrirNota(n.id); };
+      tr.lastChild.appendChild(b);
+      tb.appendChild(tr);
+    });
+  }
+
+  function linhaKv(dt, dd) {
+    return '<dt>' + dt + '</dt><dd>' + dd + '</dd>';
+  }
+
+  function abrirNota(id) {
+    api('/nfse/local/' + id).then(function (n) {
+      notaAtual = n;
+      el('notaTitulo').textContent = 'Nota ' + n.id + ' — DPS ' + esc(n.serie) + '/' + esc(n.numero);
+      el('notaSub').textContent = 'ID DPS: ' + n.id_dps;
+      var kind = STATUS_TAG[n.status] || 'muted';
+      el('notaKv').innerHTML =
+        linhaKv('Status', '<span class="tag ' + kind + '">' + esc(n.status) + '</span>') +
+        linhaKv('Ambiente', esc(n.ambiente || '—')) +
+        linhaKv('Referência', esc(n.referencia || '—')) +
+        linhaKv('Chave de acesso', n.chave_acesso ? '<span class="mono">' + esc(n.chave_acesso) + '</span>' : '—') +
+        linhaKv('Tentativas', esc(String(n.tentativas != null ? n.tentativas : 0))) +
+        linhaKv('Criada em', new Date(n.criado_em).toLocaleString('pt-BR')) +
+        linhaKv('Atualizada em', new Date(n.atualizado_em).toLocaleString('pt-BR'));
+      el('notaErroBox').innerHTML = n.ultimo_erro
+        ? '<div class="msg err" style="display:block">' + esc(n.ultimo_erro) + '</div>' : '';
+      setNotaXml('dps');
+      el('dlgNota').showModal();
+    }).catch(function (e) { msg(e.message, 'err'); });
+  }
+
+  function setNotaXml(qual) {
+    Array.prototype.forEach.call(el('notaTabs').children, function (b) {
+      b.classList.toggle('active', b.dataset.xml === qual);
+    });
+    var n = notaAtual || {};
+    var conteudo = '—';
+    if (qual === 'dps') conteudo = n.dps_xml || '(DPS não disponível)';
+    else if (qual === 'nfse') conteudo = n.nfse_xml || '(NFS-e ainda não autorizada)';
+    else if (qual === 'retorno') conteudo = n.mensagens ? JSON.stringify(n.mensagens, null, 2) : '(sem retorno registrado)';
+    el('notaXml').textContent = conteudo;
+  }
+
+  el('notaTabs').onclick = function (ev) {
+    var b = ev.target.closest('button'); if (b) setNotaXml(b.dataset.xml);
+  };
+  el('notaFechar').onclick = function () { el('dlgNota').close(); };
+  el('btnNotasFiltrar').onclick = carregarNotas;
+  el('btnNotasReload').onclick = carregarNotas;
+
+  el('navEmpresas').onclick = function () { mostrarLista(); };
+  el('navNotas').onclick = function () {
+    mostrarView('notas'); preencherFiltroEmpresas(); carregarNotas();
+  };
+
   el('btnKey').onclick = askKey;
   el('btnNew').onclick = novaEmpresa;
   el('btnReload').onclick = carregar;
