@@ -4,7 +4,9 @@ const config = require('./config');
 const auth = require('./middleware/auth');
 const empresasRouter = require('./routes/empresas');
 const nfseRouter = require('./routes/nfse');
+const webhooksRouter = require('./routes/webhooks');
 const fila = require('./services/filaEmissao');
+const webhooks = require('./services/webhooks');
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -20,6 +22,7 @@ app.get('/admin', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'ad
 app.use(auth); // todas as rotas abaixo exigem X-API-Key
 app.use('/empresas', empresasRouter);
 app.use('/nfse', nfseRouter);
+app.use('/webhooks', webhooksRouter);
 
 // tratamento central de erros
 app.use((err, _req, res, _next) => {
@@ -34,4 +37,5 @@ app.listen(config.port, () => {
   // reivindicação usa FOR UPDATE SKIP LOCKED, subir várias instâncias do
   // gateway é seguro: cada worker pega notas diferentes.
   if (process.env.FILA_ATIVA !== 'false') fila.iniciar();
+  if (process.env.WEBHOOK_ATIVO !== 'false') webhooks.iniciar();
 });

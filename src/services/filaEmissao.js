@@ -5,6 +5,18 @@
 const db = require('../db');
 const sefin = require('../nfse/sefinClient');
 const { carregarCertificadoAtivo } = require('./certificadoService');
+const webhooks = require('./webhooks');
+
+/* Estado final alcançado: notifica os webhooks configurados.
+   Uma falha aqui não pode desfazer o desfecho da nota, que já está gravado —
+   por isso o erro é registrado e engolido. */
+async function notificar(notaId) {
+  try {
+    await webhooks.enfileirarParaNota(notaId);
+  } catch (e) {
+    console.error(`[fila] falha ao enfileirar webhook da nota ${notaId}: ${e.message}`);
+  }
+}
 
 const INTERVALO_MS = Number(process.env.FILA_INTERVALO_MS || 3000);
 const MAX_TENTATIVAS = Number(process.env.FILA_MAX_TENTATIVAS || 5);
@@ -57,6 +69,7 @@ async function marcarFalha(nota, mensagem) {
       `UPDATE notas SET status='erro', ultimo_erro=$2, bloqueado_ate=NULL, atualizado_em=now()
        WHERE id=$1`, [nota.id, mensagem]);
     console.error(`[fila] nota ${nota.id} desistiu após ${nota.tentativas} tentativas: ${mensagem}`);
+    await notificar(nota.id);
   } else {
     const espera = proximaTentativaSegundos(nota.tentativas);
     await db.query(
@@ -110,6 +123,7 @@ async function transmitir(nota) {
        JSON.stringify({ httpStatus: resp.status, corpo: String(resp.raw).slice(0, 2000) })]
     );
     console.error(`[fila] nota ${nota.id}: credencial recusada pela Sefin (HTTP ${resp.status})`);
+    await notificar(nota.id);
     return;
   }
 
@@ -126,6 +140,7 @@ async function transmitir(nota) {
     ]
   );
   console.log(`[fila] nota ${nota.id} ${autorizada ? 'autorizada' : 'rejeitada'} (HTTP ${resp.status})`);
+  await notificar(nota.id);
 }
 
 /* Processa até `limite` notas por rodada. Exportada para permitir

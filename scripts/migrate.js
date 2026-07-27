@@ -32,7 +32,10 @@ async function main() {
 
   for (const f of arquivos) {
     const sql = fs.readFileSync(path.join(DIR, f), 'utf8');
-    const hash = crypto.createHash('sha256').update(sql).digest('hex').slice(0, 16);
+    // Normaliza a quebra de linha antes do hash: no Windows o git troca LF por
+    // CRLF ao clonar, o que mudaria o hash sem mudar uma linha de SQL.
+    const hash = crypto.createHash('sha256')
+      .update(sql.replace(/\r\n/g, '\n')).digest('hex').slice(0, 16);
 
     if (aplicadas.has(f)) {
       // Alerta útil: um arquivo já aplicado que muda de conteúdo indica que a
