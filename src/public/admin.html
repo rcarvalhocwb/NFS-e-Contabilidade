@@ -295,6 +295,8 @@
   <section id="viewNotas" hidden>
     <div class="card">
       <h2>Notas emitidas <span class="spacer"></span>
+        <button class="sm" id="btnExportNfse">Exportar NFS-e (.zip)</button>
+        <button class="sm" id="btnExportDps">Exportar DPS (.zip)</button>
         <button class="sm" id="btnNotasReload">Atualizar</button>
       </h2>
       <div class="filtros">
@@ -752,6 +754,34 @@
   el('notaFechar').onclick = function () { el('dlgNota').close(); };
   el('btnNotasFiltrar').onclick = carregarNotas;
   el('btnNotasReload').onclick = carregarNotas;
+
+  // Export: usa fetch para poder enviar o X-API-Key, e aplica os filtros ativos.
+  function exportar(tipo, btn) {
+    var q = ['tipo=' + tipo];
+    if (el('nf_empresa').value) q.push('cnpjEmpresa=' + encodeURIComponent(el('nf_empresa').value));
+    if (el('nf_status').value) q.push('status=' + encodeURIComponent(el('nf_status').value));
+    if (el('nf_ambiente').value) q.push('ambiente=' + encodeURIComponent(el('nf_ambiente').value));
+    btn.disabled = true;
+    fetch('/nfse/export?' + q.join('&'), { headers: { 'X-API-Key': getKey() } })
+      .then(function (res) {
+        if (res.status === 404) throw new Error('Nenhuma nota com XML para os filtros ativos.');
+        if (!res.ok) throw new Error('Falha ao exportar (HTTP ' + res.status + ').');
+        var nome = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+        var total = res.headers.get('X-Total-Xmls');
+        return res.blob().then(function (blob) {
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = nome ? nome[1] : (tipo + '.zip');
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(a.href);
+          msg('Exportadas ' + total + ' nota(s) em ' + a.download + '.');
+        });
+      })
+      .catch(function (e) { msg(e.message, 'err'); })
+      .then(function () { btn.disabled = false; });
+  }
+  el('btnExportNfse').onclick = function () { exportar('nfse', el('btnExportNfse')); };
+  el('btnExportDps').onclick = function () { exportar('dps', el('btnExportDps')); };
 
   el('navEmpresas').onclick = function () { mostrarLista(); };
   el('navNotas').onclick = function () {

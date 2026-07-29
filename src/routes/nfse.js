@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { emitir, consultar, cancelar } = require('../services/emissaoService');
+const { criarZip } = require('../util/zip');
 
 const router = express.Router();
 
@@ -57,6 +58,56 @@ router.get('/', async (req, res, next) => {
       params
     );
     res.json(r.rows);
+  } catch (e) { next(e); }
+});
+
+/* Exportar XMLs em .zip por período.
+   Query: cnpjEmpresa? status? ambiente? tipo=nfse|dps (padrão nfse)
+          inicio=YYYY-MM-DD  fim=YYYY-MM-DD (por data de criação)
+   Sem período, exporta tudo que casar com os filtros (até o limite). */
+router.get('/export', async (req, res, next) => {
+  try {
+    const tipo = req.query.tipo === 'dps' ? 'dps' : 'nfse';
+    const coluna = tipo === 'dps' ? 'dps_xml' : 'nfse_xml';
+
+    const params = [];
+    let where = `n.${coluna} IS NOT NULL`;
+    if (req.query.cnpjEmpresa) {
+      params.push(String(req.query.cnpjEmpresa).replace(/\D/g, ''));
+      where += ` AND e.cnpj = $${params.length}`;
+    }
+    if (req.query.status) { params.push(req.query.status); where += ` AND n.status = $${params.length}`; }
+    if (req.query.ambiente) { params.push(req.query.ambiente); where += ` AND n.ambiente = $${params.length}`; }
+    if (req.query.inicio) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query.inicio)) return res.status(400).json({ erro: 'inicio deve ser YYYY-MM-DD' });
+      params.push(req.query.inicio); where += ` AND n.criado_em >= $${params.length}::date`;
+    }
+    if (req.query.fim) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query.fim)) return res.status(400).json({ erro: 'fim deve ser YYYY-MM-DD' });
+      // < fim+1 dia para incluir o dia inteiro do "fim"
+      params.push(req.query.fim); where += ` AND n.criado_em < ($${params.length}::date + interval '1 day')`;
+    }
+    params.push(Math.min(parseInt(req.query.limite || '1000', 10), 5000));
+
+    const r = await db.query(
+      `SELECT n.id, n.chave_acesso, n.id_dps, n.${coluna} AS xml
+       FROM notas n JOIN empresas e ON e.id = n.empresa_id
+       WHERE ${where} ORDER BY n.id LIMIT $${params.length}`, params);
+
+    if (!r.rows.length) return res.status(404).json({ erro: 'Nenhuma nota com XML para os filtros informados' });
+
+    const arquivos = r.rows.map(row => ({
+      // chave de acesso é o nome natural; sem ela (DPS/rejeitada) usa id_dps
+      nome: `${tipo}-${row.chave_acesso || row.id_dps || row.id}.xml`,
+      conteudo: row.xml
+    }));
+    const zip = criarZip(arquivos);
+
+    const nomeZip = `${tipo}-${new Date().toISOString().slice(0, 10)}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${nomeZip}"`);
+    res.setHeader('X-Total-Xmls', String(arquivos.length));
+    res.send(zip);
   } catch (e) { next(e); }
 });
 
