@@ -152,8 +152,11 @@
         <div class="grid">
           <div>
             <label for="f_cnpj">CNPJ *</label>
-            <input id="f_cnpj" inputmode="numeric" placeholder="00000000000000">
-            <div class="hint">14 dígitos. Não pode ser alterado depois.</div>
+            <div style="display:flex;gap:8px">
+              <input id="f_cnpj" inputmode="numeric" placeholder="00000000000000">
+              <button type="button" class="sm" id="btnBuscaCnpj" style="white-space:nowrap">Buscar</button>
+            </div>
+            <div class="hint">14 dígitos. "Buscar" preenche os dados pela Receita. Não pode ser alterado depois.</div>
           </div>
           <div>
             <label for="f_razao">Razão social *</label>
@@ -945,6 +948,53 @@
   el('btnMunNovo').onclick = function () { abrirMunicipio(null); };
   el('btnMunReload').onclick = carregarMunicipios;
   el('munCancel').onclick = function () { el('dlgMun').close(); };
+
+  // ---------- autopreenchimento (CNPJ e CEP) ----------
+  // Preenche um campo só se estiver vazio, para não sobrescrever o que o
+  // usuário digitou. Exceção: o CNPJ preenche tudo (empresa nova, campos vazios).
+  function preencheSeVazio(id, valor) {
+    if (valor != null && valor !== '' && !el(id).value) el(id).value = valor;
+  }
+
+  el('btnBuscaCnpj').onclick = function () {
+    var cnpj = digits(el('f_cnpj').value);
+    if (cnpj.length !== 14) return msg('Digite o CNPJ (14 dígitos) antes de buscar.', 'err');
+    el('btnBuscaCnpj').disabled = true;
+    el('btnBuscaCnpj').textContent = 'Buscando…';
+    api('/consulta/cnpj/' + cnpj).then(function (d) {
+      // distribui os dados pelas abas a que pertencem
+      preencheSeVazio('f_razao', d.razaoSocial);
+      preencheSeVazio('f_fantasia', d.nomeFantasia);
+      preencheSeVazio('f_mun', d.codigoMunicipio);
+      preencheSeVazio('f_uf', d.uf);
+      preencheSeVazio('f_cep', d.cep);
+      preencheSeVazio('f_lgr', d.logradouro);
+      preencheSeVazio('f_num', d.numero);
+      preencheSeVazio('f_cpl', d.complemento);
+      preencheSeVazio('f_bairro', d.bairro);
+      preencheSeVazio('f_tel', d.telefone);
+      preencheSeVazio('f_email', d.email);
+      msg('Dados de ' + (d.razaoSocial || 'empresa') + ' preenchidos. Confira antes de salvar.');
+    }).catch(function (e) { msg(e.message, 'err'); })
+      .then(function () {
+        el('btnBuscaCnpj').disabled = false;
+        el('btnBuscaCnpj').textContent = 'Buscar';
+      });
+  };
+
+  // CEP: ao sair do campo com 8 dígitos, preenche o endereço.
+  el('f_cep').onblur = function () {
+    var cep = digits(el('f_cep').value);
+    if (cep.length !== 8) return;
+    api('/consulta/cep/' + cep).then(function (d) {
+      // o CEP é a fonte do endereço: sobrescreve logradouro/bairro/UF/município
+      if (d.logradouro) el('f_lgr').value = d.logradouro;
+      if (d.bairro) el('f_bairro').value = d.bairro;
+      if (d.uf) el('f_uf').value = d.uf;
+      if (d.codigoMunicipio) el('f_mun').value = d.codigoMunicipio;
+      msg('Endereço preenchido pelo CEP (' + (d.municipioNome || '') + '/' + (d.uf || '') + ').');
+    }).catch(function (e) { msg(e.message, 'err'); });
+  };
 
   el('btnKey').onclick = askKey;
   el('btnNew').onclick = novaEmpresa;

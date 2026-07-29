@@ -6,6 +6,7 @@ const empresasRouter = require('./routes/empresas');
 const nfseRouter = require('./routes/nfse');
 const webhooksRouter = require('./routes/webhooks');
 const municipiosRouter = require('./routes/municipios');
+const consultaRouter = require('./routes/consulta');
 const fila = require('./services/filaEmissao');
 const webhooks = require('./services/webhooks');
 const emailTomador = require('./services/emailTomador');
@@ -26,6 +27,7 @@ app.use('/empresas', empresasRouter);
 app.use('/nfse', nfseRouter);
 app.use('/webhooks', webhooksRouter);
 app.use('/municipios', municipiosRouter);
+app.use('/consulta', consultaRouter);
 
 // tratamento central de erros
 app.use((err, _req, res, _next) => {
