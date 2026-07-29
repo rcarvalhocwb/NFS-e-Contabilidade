@@ -7,6 +7,7 @@ const nfseRouter = require('./routes/nfse');
 const webhooksRouter = require('./routes/webhooks');
 const fila = require('./services/filaEmissao');
 const webhooks = require('./services/webhooks');
+const emailTomador = require('./services/emailTomador');
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -38,4 +39,5 @@ app.listen(config.port, () => {
   // gateway é seguro: cada worker pega notas diferentes.
   if (process.env.FILA_ATIVA !== 'false') fila.iniciar();
   if (process.env.WEBHOOK_ATIVO !== 'false') webhooks.iniciar();
+  if (process.env.EMAIL_ATIVO !== 'false') emailTomador.iniciar();
 });

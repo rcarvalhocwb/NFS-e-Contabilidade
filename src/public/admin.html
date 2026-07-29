@@ -223,6 +223,14 @@
           <div><label for="f_email">E-mail</label><input id="f_email" type="email" maxlength="255"></div>
           <div><label for="f_tel">Telefone</label><input id="f_tel" maxlength="20" placeholder="(41) 99999-9999"></div>
         </div>
+        <div style="margin-top:16px">
+          <label for="f_email_tom">Enviar NFS-e por e-mail ao tomador</label>
+          <select id="f_email_tom">
+            <option value="false">Não</option>
+            <option value="true">Sim, ao autorizar</option>
+          </select>
+          <div class="hint">Requer SMTP configurado no servidor (.env). O e-mail vai ao endereço informado no tomador de cada nota.</div>
+        </div>
       </div>
 
       <div class="pane" id="pane-responsavel">
@@ -501,6 +509,7 @@
     el('f_pfx').value = '';
     el('f_simp').value = '1'; el('f_regesp').value = '0';
     el('f_amb').value = 'homologacao'; el('f_ativo').value = 'true';
+    el('f_email_tom').value = 'false';
     el('certAtual').innerHTML = '';
   }
 
@@ -543,6 +552,7 @@
       el('f_respnome').value = e.responsavel_nome || '';
       el('f_respcpf').value = e.responsavel_cpf || '';
       el('f_contador').value = e.contador_doc || '';
+      el('f_email_tom').value = e.email_tomador_ativo ? 'true' : 'false';
       var atual = empresas.filter(function (x) { return x.cnpj === cnpj; })[0];
       el('certAtual').innerHTML = 'Certificado atual: ' +
         certStatus(atual && atual.certificado_valido_ate) +
@@ -582,7 +592,8 @@
       telefone: el('f_tel').value.trim() || null,
       responsavelNome: el('f_respnome').value.trim() || null,
       responsavelCpf: digits(el('f_respcpf').value) || null,
-      contadorDoc: digits(el('f_contador').value) || null
+      contadorDoc: digits(el('f_contador').value) || null,
+      emailTomadorAtivo: el('f_email_tom').value === 'true'
     };
   }
 

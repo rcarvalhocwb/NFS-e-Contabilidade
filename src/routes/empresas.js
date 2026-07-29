@@ -23,8 +23,8 @@ router.post('/', async (req, res, next) => {
                              op_simp_nac, reg_esp_trib, ambiente,
                              nome_fantasia, inscricao_estadual, cep, logradouro, numero,
                              complemento, bairro, uf, email, telefone,
-                             responsavel_nome, responsavel_cpf, contador_doc)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+                             responsavel_nome, responsavel_cpf, contador_doc, email_tomador_ativo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        RETURNING *`,
       [
         cnpj, b.razaoSocial, b.inscricaoMunicipal || null, String(b.codigoMunicipio),
@@ -35,7 +35,8 @@ router.post('/', async (req, res, next) => {
         b.complemento || null, b.bairro || null, (b.uf || '').toUpperCase() || null,
         b.email || null, b.telefone || null,
         b.responsavelNome || null, (b.responsavelCpf || '').replace(/\D/g, '') || null,
-        (b.contadorDoc || '').replace(/\D/g, '') || null
+        (b.contadorDoc || '').replace(/\D/g, '') || null,
+        b.emailTomadorAtivo === true
       ]
     );
     const empresa = r.rows[0];
@@ -112,6 +113,7 @@ router.put('/:cnpj', async (req, res, next) => {
          responsavel_nome    = COALESCE($19, responsavel_nome),
          responsavel_cpf     = COALESCE($20, responsavel_cpf),
          contador_doc        = COALESCE($21, contador_doc),
+         email_tomador_ativo = COALESCE($22, email_tomador_ativo),
          atualizado_em       = now()
        WHERE cnpj = $1 RETURNING *`,
       [
@@ -127,7 +129,8 @@ router.put('/:cnpj', async (req, res, next) => {
         b.email ?? null, b.telefone ?? null,
         b.responsavelNome ?? null,
         b.responsavelCpf ? b.responsavelCpf.replace(/\D/g, '') : null,
-        b.contadorDoc ? b.contadorDoc.replace(/\D/g, '') : null
+        b.contadorDoc ? b.contadorDoc.replace(/\D/g, '') : null,
+        typeof b.emailTomadorAtivo === 'boolean' ? b.emailTomadorAtivo : null
       ]
     );
     if (!r.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });

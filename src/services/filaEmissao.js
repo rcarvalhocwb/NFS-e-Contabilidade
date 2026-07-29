@@ -6,15 +6,22 @@ const db = require('../db');
 const sefin = require('../nfse/sefinClient');
 const { carregarCertificadoAtivo } = require('./certificadoService');
 const webhooks = require('./webhooks');
+const emailTomador = require('./emailTomador');
 
-/* Estado final alcançado: notifica os webhooks configurados.
-   Uma falha aqui não pode desfazer o desfecho da nota, que já está gravado —
-   por isso o erro é registrado e engolido. */
+/* Estado final alcançado: notifica webhooks e, se autorizada, e-mail ao
+   tomador. Uma falha aqui não pode desfazer o desfecho da nota, que já está
+   gravado — por isso cada erro é registrado e engolido. */
 async function notificar(notaId) {
   try {
     await webhooks.enfileirarParaNota(notaId);
   } catch (e) {
     console.error(`[fila] falha ao enfileirar webhook da nota ${notaId}: ${e.message}`);
+  }
+  try {
+    // enfileirarParaNota já filtra: só autorizada, empresa opt-in e com e-mail.
+    await emailTomador.enfileirarParaNota(notaId);
+  } catch (e) {
+    console.error(`[fila] falha ao enfileirar e-mail da nota ${notaId}: ${e.message}`);
   }
 }
 

@@ -93,10 +93,11 @@ async function emitir(cnpjEmpresa, dados) {
 
   let nota;
   try {
+    const emailTomador = (dados.tomador && dados.tomador.email) || null;
     nota = await db.query(
-      `INSERT INTO notas (empresa_id, id_dps, serie, numero, status, dps_xml, referencia, ambiente)
-       VALUES ($1,$2,$3,$4,'processando',$5,$6,$7) RETURNING id`,
-      [empresa.id, idDps, serie, numero, dpsAssinada, dados.referencia || null, empresa.ambiente]
+      `INSERT INTO notas (empresa_id, id_dps, serie, numero, status, dps_xml, referencia, ambiente, tomador_email)
+       VALUES ($1,$2,$3,$4,'processando',$5,$6,$7,$8) RETURNING id`,
+      [empresa.id, idDps, serie, numero, dpsAssinada, dados.referencia || null, empresa.ambiente, emailTomador]
     );
   } catch (e) {
     // 23505 = unique_violation: corrida entre duas requisições com a mesma
