@@ -104,6 +104,7 @@
   <nav class="topnav">
     <button id="navEmpresas" class="active">Empresas</button>
     <button id="navNotas">Notas</button>
+    <button id="navMunicipios">Municípios</button>
   </nav>
   <span class="spacer"></span>
   <button class="sm" id="btnKey">Trocar chave de API</button>
@@ -353,7 +354,73 @@
       <div id="notasEmpty" class="empty" hidden>Nenhuma nota encontrada com esses filtros.</div>
     </div>
   </section>
+
+  <!-- ============ MUNICÍPIOS ============ -->
+  <section id="viewMunicipios" hidden>
+    <div class="card">
+      <h2>Municípios <span class="spacer"></span>
+        <button class="sm" id="btnMunNovo">Classificar município</button>
+        <button class="sm" id="btnMunReload">Atualizar</button>
+      </h2>
+      <div class="hint" style="margin-bottom:4px">
+        <strong>Nacional</strong>: o gateway emite. <strong>Emissor próprio</strong>: o município usa
+        sistema próprio (ABRASF etc.) — a emissão pelo gateway é bloqueada. A classificação pode ser
+        manual ou automática (consulta ao ADN, quando houver certificado).
+      </div>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Código IBGE</th><th>Município</th><th>UF</th>
+            <th>Emissão</th><th>ISS %</th><th>Fonte</th><th></th>
+          </tr></thead>
+          <tbody id="munBody"></tbody>
+        </table>
+      </div>
+      <div id="munEmpty" class="empty" hidden>Nenhum município classificado ainda.</div>
+    </div>
+  </section>
 </main>
+
+<!-- Classificar município -->
+<dialog id="dlgMun"><div class="inner">
+  <h3>Classificar município</h3>
+  <div class="dsub">Marque como Nacional ou Emissor próprio. Para consultar o ADN automaticamente, informe um CNPJ com certificado.</div>
+  <form id="formMun">
+    <div class="grid">
+      <div>
+        <label for="m_cod">Código IBGE *</label>
+        <input id="m_cod" inputmode="numeric" maxlength="7" placeholder="4106902">
+      </div>
+      <div>
+        <label for="m_uf">UF</label>
+        <input id="m_uf" maxlength="2" placeholder="PR" style="text-transform:uppercase">
+      </div>
+    </div>
+    <div style="margin-top:14px"><label for="m_nome">Nome do município</label><input id="m_nome" maxlength="150"></div>
+    <div class="grid" style="margin-top:14px">
+      <div>
+        <label for="m_modo">Modo de emissão</label>
+        <select id="m_modo">
+          <option value="nacional">Nacional (o gateway emite)</option>
+          <option value="proprio">Emissor próprio (bloqueia emissão)</option>
+          <option value="desconhecido">Desconhecido</option>
+        </select>
+      </div>
+      <div><label for="m_iss">Alíquota ISS (%)</label><input id="m_iss" type="number" step="0.01" min="0" placeholder="opcional"></div>
+    </div>
+    <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+      <label for="m_cnpj">Ou classificar pelo ADN — CNPJ com certificado</label>
+      <input id="m_cnpj" inputmode="numeric" placeholder="deixe vazio para salvar manualmente">
+      <div class="hint">Se preenchido, consulta o ADN com o certificado dessa empresa e ignora os campos acima.</div>
+    </div>
+    <div class="actions">
+      <button type="button" id="munCancel">Cancelar</button>
+      <button type="submit" class="primary" id="munSave">Salvar</button>
+    </div>
+  </form>
+</div></dialog>
 
 <!-- Detalhe da nota -->
 <dialog id="dlgNota"><div class="inner">
@@ -472,11 +539,13 @@
 
   // Alterna entre as três telas de topo. 'edit' é sub-tela de empresas.
   function mostrarView(qual) {
-    el('viewList').hidden  = qual !== 'empresas';
-    el('viewEdit').hidden  = qual !== 'edit';
-    el('viewNotas').hidden = qual !== 'notas';
+    el('viewList').hidden       = qual !== 'empresas';
+    el('viewEdit').hidden       = qual !== 'edit';
+    el('viewNotas').hidden      = qual !== 'notas';
+    el('viewMunicipios').hidden = qual !== 'municipios';
     el('navEmpresas').classList.toggle('active', qual === 'empresas' || qual === 'edit');
     el('navNotas').classList.toggle('active', qual === 'notas');
+    el('navMunicipios').classList.toggle('active', qual === 'municipios');
   }
   function mostrarLista() {
     mostrarView('empresas'); editando = null; carregar();
@@ -798,6 +867,84 @@
   el('navNotas').onclick = function () {
     mostrarView('notas'); preencherFiltroEmpresas(); carregarNotas();
   };
+  el('navMunicipios').onclick = function () { mostrarView('municipios'); carregarMunicipios(); };
+
+  // ---------- municípios ----------
+  var MODO_TAG = { nacional: 'ok', proprio: 'err', desconhecido: 'muted' };
+  var MODO_LABEL = { nacional: 'Nacional', proprio: 'Emissor próprio', desconhecido: 'Desconhecido' };
+
+  function carregarMunicipios() {
+    if (!getKey()) { askKey(); return; }
+    api('/municipios').then(function (rows) { renderMunicipios(rows || []); })
+      .catch(function (e) { msg(e.message, 'err'); });
+  }
+
+  function renderMunicipios(rows) {
+    var tb = el('munBody'); tb.innerHTML = '';
+    el('munEmpty').hidden = rows.length > 0;
+    rows.forEach(function (m) {
+      var kind = MODO_TAG[m.modo_emissao] || 'muted';
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="mono">' + esc(m.codigo_municipio) + '</td>' +
+        '<td>' + esc(m.nome || '—') + '</td>' +
+        '<td class="mono">' + esc(m.uf || '—') + '</td>' +
+        '<td><span class="tag ' + kind + '">' + esc(MODO_LABEL[m.modo_emissao] || m.modo_emissao) + '</span></td>' +
+        '<td class="mono">' + (m.aliquota_iss != null ? esc(m.aliquota_iss) : '—') + '</td>' +
+        '<td class="hint">' + esc(m.fonte) + (m.consultado_em ? ' · ' + new Date(m.consultado_em).toLocaleDateString('pt-BR') : '') + '</td>' +
+        '<td style="text-align:right"></td>';
+      var b = document.createElement('button');
+      b.className = 'sm'; b.textContent = 'Editar';
+      b.onclick = function () { abrirMunicipio(m); };
+      tr.lastChild.appendChild(b);
+      tb.appendChild(tr);
+    });
+  }
+
+  function abrirMunicipio(m) {
+    el('m_cod').value = m ? m.codigo_municipio : '';
+    el('m_cod').disabled = !!m;
+    el('m_nome').value = m ? (m.nome || '') : '';
+    el('m_uf').value = m ? (m.uf || '') : '';
+    el('m_modo').value = m ? m.modo_emissao : 'nacional';
+    el('m_iss').value = m && m.aliquota_iss != null ? m.aliquota_iss : '';
+    el('m_cnpj').value = '';
+    el('dlgMun').showModal();
+  }
+
+  el('formMun').onsubmit = function (ev) {
+    ev.preventDefault();
+    var cod = el('m_cod').value.replace(/\D/g, '');
+    if (!/^\d{7}$/.test(cod)) return msg('Código IBGE deve ter 7 dígitos.', 'err');
+    var cnpj = el('m_cnpj').value.replace(/\D/g, '');
+    el('munSave').disabled = true;
+
+    var req = cnpj
+      ? api('/municipios/' + cod + '/classificar', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cnpjEmpresa: cnpj })
+        })
+      : api('/municipios/' + cod, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            modoEmissao: el('m_modo').value,
+            nome: el('m_nome').value.trim() || null,
+            uf: el('m_uf').value.trim().toUpperCase() || null,
+            aliquotaIss: el('m_iss').value !== '' ? Number(el('m_iss').value) : undefined
+          })
+        });
+
+    req.then(function () {
+      el('dlgMun').close();
+      msg(cnpj ? 'Município classificado pelo ADN.' : 'Município salvo.');
+      carregarMunicipios();
+    }).catch(function (e) { msg(e.message, 'err'); })
+      .then(function () { el('munSave').disabled = false; });
+  };
+
+  el('btnMunNovo').onclick = function () { abrirMunicipio(null); };
+  el('btnMunReload').onclick = carregarMunicipios;
+  el('munCancel').onclick = function () { el('dlgMun').close(); };
 
   el('btnKey').onclick = askKey;
   el('btnNew').onclick = novaEmpresa;

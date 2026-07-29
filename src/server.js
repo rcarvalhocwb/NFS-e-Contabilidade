@@ -5,6 +5,7 @@ const auth = require('./middleware/auth');
 const empresasRouter = require('./routes/empresas');
 const nfseRouter = require('./routes/nfse');
 const webhooksRouter = require('./routes/webhooks');
+const municipiosRouter = require('./routes/municipios');
 const fila = require('./services/filaEmissao');
 const webhooks = require('./services/webhooks');
 const emailTomador = require('./services/emailTomador');
@@ -24,6 +25,7 @@ app.use(auth); // todas as rotas abaixo exigem X-API-Key
 app.use('/empresas', empresasRouter);
 app.use('/nfse', nfseRouter);
 app.use('/webhooks', webhooksRouter);
+app.use('/municipios', municipiosRouter);
 
 // tratamento central de erros
 app.use((err, _req, res, _next) => {

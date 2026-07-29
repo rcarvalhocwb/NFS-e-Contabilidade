@@ -5,6 +5,7 @@ const { montarPedidoCancelamento } = require('../nfse/eventoBuilder');
 const { assinarXml } = require('../nfse/assinador');
 const sefin = require('../nfse/sefinClient');
 const { carregarCertificadoAtivo } = require('./certificadoService');
+const municipios = require('./municipiosService');
 
 async function buscarEmpresa(cnpj) {
   const r = await db.query('SELECT * FROM empresas WHERE cnpj = $1 AND ativo', [cnpj.replace(/\D/g, '')]);
@@ -67,6 +68,18 @@ async function emitir(cnpjEmpresa, dados) {
       idempotente: true,
       retornoSefin: jaExiste.mensagens
     };
+  }
+
+  // Guard de roteamento: se o município do emitente usa emissor próprio
+  // (ABRASF etc.), o gateway não emite ali. Bloqueia com mensagem clara antes
+  // de reservar número ou assinar. Município 'nacional' ou não classificado
+  // ('desconhecido') segue o fluxo normal.
+  const modo = await municipios.modoDe(empresa.codigo_municipio);
+  if (modo === 'proprio') {
+    throw Object.assign(new Error(
+      `O município ${empresa.codigo_municipio} usa emissor próprio (não emite pelo Sistema Nacional). ` +
+      `Emita pela prefeitura ou aguarde a migração para o Nacional.`
+    ), { status: 422 });
   }
 
   const cert = await carregarCertificadoAtivo(empresa.id);
