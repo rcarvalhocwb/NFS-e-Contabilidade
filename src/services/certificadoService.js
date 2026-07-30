@@ -50,7 +50,17 @@ async function carregarCertificadoAtivo(empresaId) {
   const senha = secretbox.decrypt(row.senha_cifrada).toString('utf8');
   const info = lerPfx(pfx, senha);
 
-  return { pfx, senha, keyPem: info.keyPem, certDerB64: info.certDerB64 };
+  // keyPem/certPem são o que vai para o TLS: o OpenSSL 3 (Node 20+) recusa
+  // PKCS#12 com criptografia legada (RC2/3DES), padrão dos certificados A1
+  // brasileiros, com "Unsupported PKCS12 PFX data". O node-forge lê o .pfx em
+  // JS puro e extrai chave e certificado, que o OpenSSL aceita normalmente.
+  // pfx/senha seguem expostos para quem precise do arquivo original.
+  return {
+    pfx, senha,
+    keyPem: info.keyPem,
+    certPem: info.certPem,
+    certDerB64: info.certDerB64
+  };
 }
 
 module.exports = { salvarCertificado, carregarCertificadoAtivo };

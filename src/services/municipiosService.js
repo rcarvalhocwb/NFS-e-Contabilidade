@@ -9,18 +9,29 @@ const db = require('../db');
 const parametros = require('../nfse/parametrosClient');
 const { carregarCertificadoAtivo } = require('./certificadoService');
 
-/* Interpreta a resposta do ADN em modo_emissao + conveniado.
-   Heurística (a confirmar com resposta real):
-   - 2xx com corpo  -> conveniado ao Nacional
-   - 404            -> não conveniado -> emissor próprio
-   - outro          -> desconhecido (não classifica por engano) */
+/* Interpreta a resposta da consulta em modo_emissao + conveniado.
+ *
+ * Regra deliberadamente conservadora: SÓ classifica como 'proprio' com
+ * evidência positiva no corpo da resposta. Um 404 ou 501 significa apenas que
+ * o endpoint não respondeu — pode ser rota inexistente naquele ambiente, e não
+ * um município fora do Sistema Nacional.
+ *
+ * Isso importa porque 'proprio' BLOQUEIA a emissão: classificar errado
+ * impediria de emitir num município que na verdade é Nacional. Testando com
+ * certificado real, a produção restrita devolveu 501 (rota não implementada) —
+ * a versão anterior desta função leu isso como "emissor próprio" e marcou
+ * Curitiba como bloqueada. Na dúvida, 'desconhecido' (que não bloqueia). */
 function classificarResposta(resp) {
   if (resp.status >= 200 && resp.status < 300 && resp.json) {
+    // Alguns retornos trazem indicação explícita de não-convênio.
+    const j = resp.json;
+    const conveniadoExplicito = j.conveniado ?? j.municipioConveniado ?? j.aderente;
+    if (conveniadoExplicito === false) {
+      return { modo: 'proprio', conveniado: false };
+    }
     return { modo: 'nacional', conveniado: true };
   }
-  if (resp.status === 404) {
-    return { modo: 'proprio', conveniado: false };
-  }
+  // 404, 501, 5xx, timeout: sem informação suficiente para classificar.
   return { modo: 'desconhecido', conveniado: null };
 }
 

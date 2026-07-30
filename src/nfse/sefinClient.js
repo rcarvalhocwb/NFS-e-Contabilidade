@@ -12,10 +12,24 @@ function gunzipB64(b64) {
   return zlib.gunzipSync(Buffer.from(b64, 'base64')).toString('utf8');
 }
 
-function request({ method, url, body, pfx, passphrase }) {
+/* Credenciais TLS a partir do certificado carregado.
+   Usa key/cert em PEM, e não o .pfx: o OpenSSL 3 (Node 20+) recusa PKCS#12 com
+   criptografia legada (RC2/3DES) — padrão dos certificados A1 brasileiros — com
+   "Unsupported PKCS12 PFX data". O node-forge extrai chave e certificado, que o
+   OpenSSL aceita sem ressalva. Mantém o .pfx como alternativa para certificados
+   em formato moderno. */
+function credenciaisTls(cert) {
+  if (cert && cert.keyPem && cert.certPem) {
+    return { key: cert.keyPem, cert: cert.certPem };
+  }
+  return { pfx: cert.pfx, passphrase: cert.senha };
+}
+
+function request({ method, url, body, cert }) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const payload = body ? JSON.stringify(body) : null;
+    const tls = credenciaisTls(cert);
     const req = https.request({
       method,
       hostname: u.hostname,
@@ -24,10 +38,9 @@ function request({ method, url, body, pfx, passphrase }) {
         'Content-Type': 'application/json',
         ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {})
       },
-      pfx,
-      passphrase,
+      ...tls,
       // agente dedicado para não vazar o certificado entre empresas
-      agent: new https.Agent({ pfx, passphrase, keepAlive: false })
+      agent: new https.Agent({ ...tls, keepAlive: false })
     }, res => {
       let data = '';
       res.on('data', c => (data += c));
@@ -53,7 +66,7 @@ async function enviarDps(ambiente, dpsXmlAssinado, cert) {
     method: 'POST',
     url: `${baseUrl(ambiente)}/nfse`,
     body: { dpsXmlGZipB64: gzipB64(dpsXmlAssinado) },
-    pfx: cert.pfx, passphrase: cert.senha
+    cert
   });
   if (r.json && r.json.nfseXmlGZipB64) r.json.nfseXml = gunzipB64(r.json.nfseXmlGZipB64);
   return r;
@@ -63,7 +76,7 @@ async function consultarNfse(ambiente, chaveAcesso, cert) {
   const r = await request({
     method: 'GET',
     url: `${baseUrl(ambiente)}/nfse/${chaveAcesso}`,
-    pfx: cert.pfx, passphrase: cert.senha
+    cert
   });
   if (r.json && r.json.nfseXmlGZipB64) r.json.nfseXml = gunzipB64(r.json.nfseXmlGZipB64);
   return r;
@@ -74,7 +87,7 @@ async function consultarDps(ambiente, idDps, cert) {
   return request({
     method: 'GET',
     url: `${baseUrl(ambiente)}/dps/${idDps}`,
-    pfx: cert.pfx, passphrase: cert.senha
+    cert
   });
 }
 
@@ -84,7 +97,7 @@ async function enviarEvento(ambiente, chaveAcesso, eventoXmlAssinado, cert) {
     method: 'POST',
     url: `${baseUrl(ambiente)}/nfse/${chaveAcesso}/eventos`,
     body: { pedidoRegistroEventoXmlGZipB64: gzipB64(eventoXmlAssinado) },
-    pfx: cert.pfx, passphrase: cert.senha
+    cert
   });
   if (r.json && r.json.eventoXmlGZipB64) r.json.eventoXml = gunzipB64(r.json.eventoXmlGZipB64);
   return r;

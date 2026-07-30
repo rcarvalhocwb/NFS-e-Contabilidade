@@ -17,6 +17,32 @@ function tag(name, value) {
 }
 function dec(v) { return Number(v).toFixed(2); }
 
+/**
+ * Bloco <totTrib>, que muda conforme o regime.
+ *
+ * Optante do Simples Nacional usa <pTotTribSN>: um único percentual, o da
+ * alíquota efetiva do PGDAS-D (ex.: 10.43). Os demais regimes detalham por
+ * esfera em <pTotTrib>, ou declaram <indTotTrib>0</indTotTrib> quando não há
+ * informação de tributos a declarar.
+ */
+function totalTributos(v, optanteSN) {
+  if (optanteSN) {
+    // Sem o percentual informado, declara ausência de informação em vez de
+    // inventar um número — o valor tem efeito fiscal.
+    return v.percentualTotalTributosSN !== undefined
+      ? tag('pTotTribSN', dec(v.percentualTotalTributosSN))
+      : tag('indTotTrib', '0');
+  }
+  if (v.percentualTotalTributos !== undefined) {
+    return `<pTotTrib>` +
+      tag('pTotTribFed', dec(v.percentualTotalTributos.federal || 0)) +
+      tag('pTotTribEst', dec(v.percentualTotalTributos.estadual || 0)) +
+      tag('pTotTribMun', dec(v.percentualTotalTributos.municipal || 0)) +
+    `</pTotTrib>`;
+  }
+  return tag('indTotTrib', '0');
+}
+
 /* Id da DPS: "DPS" + cMun(7) + tipoInsc(1: 1=CPF 2=CNPJ) + inscrição(14) + série(5) + número(15) = 45 */
 function gerarIdDps({ codigoMunicipio, cnpj, serie, numero }) {
   const insc = cnpj.padStart(14, '0');
@@ -62,6 +88,9 @@ function montarDps(empresa, dados, opts) {
   const tagDocTomador = t.cnpj ? tag('CNPJ', docTomador) : (t.cpf ? tag('CPF', docTomador) : '');
 
   const issRetido = v.issRetido === true;
+  // 2 = MEI, 3 = ME/EPP do Simples Nacional. Muda como os tributos são
+  // declarados (ver totalTributos e o pAliq mais abaixo).
+  const optanteSN = [2, 3].includes(Number(empresa.op_simp_nac));
 
   const xml =
 `<?xml version="1.0" encoding="UTF-8"?>` +
@@ -78,19 +107,13 @@ function montarDps(empresa, dados, opts) {
   `<prest>` +
     tag('CNPJ', empresa.cnpj) +
     tag('IM', empresa.inscricao_municipal) +
-    // Endereço do prestador: emitido apenas quando cadastrado. Alguns
-    // municípios/casos exigem; sem os dados, omitir é melhor que enviar vazio.
-    (empresa.logradouro ?
-    `<end>` +
-      `<endNac>` +
-        tag('cMun', empresa.codigo_municipio) +
-        tag('CEP', (empresa.cep || '').replace(/\D/g, '')) +
-      `</endNac>` +
-      tag('xLgr', empresa.logradouro) +
-      tag('nro', empresa.numero) +
-      tag('xCpl', empresa.complemento) +
-      tag('xBairro', empresa.bairro) +
-    `</end>` : '') +
+    // O endereço do prestador NÃO vai na DPS quando o emitente é o próprio
+    // prestador (tpEmit=1, nosso caso): a Sefin recusa com
+    // "E0128: O endereço nacional do prestador do serviço não deve ser
+    //  informado na DPS quando o próprio prestador for o emitente da DPS."
+    // O endereço vem do cadastro nacional e aparece na NFS-e autorizada.
+    // Os campos de endereço da empresa seguem úteis para o painel e para
+    // eventual emissão por terceiro (tpEmit diferente de 1).
     tag('fone', (empresa.telefone || '').replace(/\D/g, '') || undefined) +
     tag('email', empresa.email) +
     `<regTrib>` +
@@ -139,16 +162,13 @@ function montarDps(empresa, dados, opts) {
       `<tribMun>` +
         tag('tribISSQN', '1') + // 1 = operação tributável
         tag('tpRetISSQN', issRetido ? '2' : '1') + // 1=não retido 2=retido pelo tomador
-        (v.aliquotaIss !== undefined ? tag('pAliq', dec(v.aliquotaIss)) : '') +
+        // Optante do Simples Nacional não informa alíquota de ISS: o imposto é
+        // recolhido no DAS, pela alíquota efetiva do PGDAS, não pela alíquota
+        // municipal. Enviar pAliq aqui é incorreto para MEI/ME/EPP do SN.
+        (!optanteSN && v.aliquotaIss !== undefined ? tag('pAliq', dec(v.aliquotaIss)) : '') +
       `</tribMun>` +
       `<totTrib>` +
-        (v.percentualTotalTributos !== undefined
-          ? `<pTotTrib>` +
-              tag('pTotTribFed', dec(v.percentualTotalTributos.federal || 0)) +
-              tag('pTotTribEst', dec(v.percentualTotalTributos.estadual || 0)) +
-              tag('pTotTribMun', dec(v.percentualTotalTributos.municipal || 0)) +
-            `</pTotTrib>`
-          : tag('indTotTrib', '0')) +
+        totalTributos(v, optanteSN) +
       `</totTrib>` +
     `</trib>` +
   `</valores>` +

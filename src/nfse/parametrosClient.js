@@ -11,17 +11,26 @@
 const https = require('https');
 const config = require('../config');
 
-function getJson({ url, pfx, passphrase }) {
+/* Mesma razão do sefinClient: OpenSSL 3 recusa o PKCS#12 legado dos A1
+   brasileiros, então usamos key/cert em PEM extraídos pelo node-forge. */
+function credenciaisTls(cert) {
+  if (cert && cert.keyPem && cert.certPem) {
+    return { key: cert.keyPem, cert: cert.certPem };
+  }
+  return { pfx: cert.pfx, passphrase: cert.senha };
+}
+
+function getJson({ url, cert }) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
+    const tls = credenciaisTls(cert);
     const req = https.request({
       method: 'GET',
       hostname: u.hostname,
       path: u.pathname + u.search,
       headers: { 'Accept': 'application/json' },
-      pfx,
-      passphrase,
-      agent: new https.Agent({ pfx, passphrase, keepAlive: false })
+      ...tls,
+      agent: new https.Agent({ ...tls, keepAlive: false })
     }, res => {
       let data = '';
       res.on('data', c => (data += c));
@@ -41,17 +50,21 @@ function base(ambiente) {
   return amb.parametrosBaseUrl;
 }
 
+/* O caminho é "parametrosmunicipais" (sem separador). Confirmado sondando a
+   produção restrita com certificado real: essa forma devolve 501 (rota
+   reconhecida, não implementada naquele ambiente), enquanto
+   "parametros_municipais" devolve 404 (rota inexistente). */
 async function consultarParametros(ambiente, codigoMunicipio, cert) {
   return getJson({
-    url: `${base(ambiente)}/parametros_municipais/${codigoMunicipio}`,
-    pfx: cert.pfx, passphrase: cert.senha
+    url: `${base(ambiente)}/parametrosmunicipais/${codigoMunicipio}`,
+    cert
   });
 }
 
 async function consultarAliquotas(ambiente, codigoMunicipio, cert) {
   return getJson({
-    url: `${base(ambiente)}/parametros_municipais/${codigoMunicipio}/aliquotas`,
-    pfx: cert.pfx, passphrase: cert.senha
+    url: `${base(ambiente)}/parametrosmunicipais/${codigoMunicipio}/aliquotas`,
+    cert
   });
 }
 
