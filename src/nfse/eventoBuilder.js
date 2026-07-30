@@ -19,29 +19,48 @@ function fmtDataHoraLocal(d = new Date()) {
     sign + p(tz / 60) + ':' + p(tz % 60);
 }
 
+/* Descrição padrão por motivo, usada quando o chamador não informa uma.
+   xMotivo é obrigatório em qualquer motivo (não só no 9). */
+const MOTIVOS = {
+  1: 'Erro na emissao da NFS-e',
+  2: 'Servico nao prestado',
+  9: 'Outros'
+};
+
 /**
  * Pedido de cancelamento (evento e101101).
- * Id do pedido: "PRE" + chaveAcesso(50) + código do evento(6) + seq(3) = 62
- * @param opts { tpAmb, verAplic, chaveAcesso, cnpjAutor, codigoMotivo, motivo, nSeqEvento }
- *   codigoMotivo: 1=Erro na emissão, 2=Serviço não prestado, 9=Outros (exige motivo)
+ *
+ * Formato descoberto validando contra a Sefin em produção — três detalhes que
+ * a documentação não deixa claros e que causam "E1235 falha no esquema":
+ *
+ *   1. Id = "PRE" + chaveAcesso(50) + "101101" = 59 caracteres.
+ *      NÃO leva número sequencial no fim (com ele vira 62 e o pattern
+ *      TSIdPedRegEvt falha).
+ *   2. nPedRegEvento NÃO é elemento de infPedReg — incluí-lo invalida o schema.
+ *   3. xMotivo é obrigatório para qualquer cMotivo, não apenas para o 9.
+ *
+ * A versão do leiaute do pedido é 1.01.
+ *
+ * @param opts { tpAmb, verAplic, chaveAcesso, cnpjAutor, codigoMotivo, motivo }
+ *   codigoMotivo: 1=Erro na emissão, 2=Serviço não prestado, 9=Outros
  */
 function montarPedidoCancelamento(opts) {
-  const nPedRegEvento = String(opts.nSeqEvento || 1).padStart(3, '0');
-  const id = 'PRE' + opts.chaveAcesso + '101101' + nPedRegEvento;
+  const cMotivo = Number(opts.codigoMotivo) || 1;
+  const id = 'PRE' + opts.chaveAcesso + '101101';
+  const xMotivo = opts.motivo || MOTIVOS[cMotivo] || MOTIVOS[9];
 
   return `<?xml version="1.0" encoding="UTF-8"?>` +
-`<pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">` +
+`<pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">` +
 `<infPedReg Id="${id}">` +
   tag('tpAmb', opts.tpAmb) +
   tag('verAplic', opts.verAplic) +
   tag('dhEvento', fmtDataHoraLocal()) +
   tag('CNPJAutor', opts.cnpjAutor) +
   tag('chNFSe', opts.chaveAcesso) +
-  tag('nPedRegEvento', nPedRegEvento) +
   `<e101101>` +
     tag('xDesc', 'Cancelamento de NFS-e') +
-    tag('cMotivo', opts.codigoMotivo || 1) +
-    (Number(opts.codigoMotivo) === 9 ? tag('xMotivo', opts.motivo) : '') +
+    tag('cMotivo', cMotivo) +
+    tag('xMotivo', xMotivo) +
   `</e101101>` +
 `</infPedReg>` +
 `</pedRegEvento>`;

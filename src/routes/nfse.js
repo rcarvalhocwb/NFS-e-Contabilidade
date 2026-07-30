@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { emitir, consultar, cancelar } = require('../services/emissaoService');
 const { criarZip } = require('../util/zip');
+const { gerarDanfse } = require('../nfse/danfse');
 
 const router = express.Router();
 
@@ -19,6 +20,15 @@ router.post('/', async (req, res, next) => {
     }
     if (b.referencia !== undefined && !/^[\w.:-]{1,100}$/.test(String(b.referencia))) {
       return res.status(400).json({ erro: 'referencia deve ter até 100 caracteres (letras, números, . : _ -)' });
+    }
+    if (b.substituicao) {
+      const ch = String(b.substituicao.chaveSubstituida || '').replace(/\D/g, '');
+      if (ch.length !== 50) {
+        return res.status(400).json({ erro: 'substituicao.chaveSubstituida deve ter 50 dígitos' });
+      }
+      if (String(b.substituicao.codigoMotivo) === '99' && !b.substituicao.motivo) {
+        return res.status(400).json({ erro: 'substituicao.motivo é obrigatório quando codigoMotivo = 99 (Outros)' });
+      }
     }
     const resultado = await emitir(b.cnpjEmpresa, b);
     // 200 quando a referência já existia (nada foi criado agora);
@@ -124,6 +134,68 @@ router.get('/local/:id', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* Busca a nota por id local OU por chave de acesso — os sistemas conectados
+   costumam ter só a chave, enquanto o painel tem o id. */
+async function acharNota(idOuChave) {
+  const campo = /^\d{1,9}$/.test(String(idOuChave)) ? 'n.id = $1' : 'n.chave_acesso = $1';
+  const r = await db.query(
+    `SELECT n.*, e.cnpj AS cnpj_empresa, e.razao_social FROM notas n
+     JOIN empresas e ON e.id = n.empresa_id WHERE ${campo}`, [idOuChave]);
+  return r.rows[0] || null;
+}
+
+/* XML da NFS-e autorizada — é o documento com valor fiscal.
+   É o mesmo XML assinado pela Sefin, para o sistema conectado arquivar. */
+router.get('/:idOuChave/xml', async (req, res, next) => {
+  try {
+    const nota = await acharNota(req.params.idOuChave);
+    if (!nota) return res.status(404).json({ erro: 'Nota não encontrada' });
+    if (!nota.nfse_xml) {
+      return res.status(409).json({
+        erro: `Nota sem XML de NFS-e (status: ${nota.status}). O XML só existe após a autorização.`,
+        status: nota.status
+      });
+    }
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="${nota.chave_acesso || nota.id_dps}.xml"`);
+    res.send(nota.nfse_xml);
+  } catch (e) { next(e); }
+});
+
+/* XML da DPS assinada — útil para auditoria do que foi transmitido. */
+router.get('/:idOuChave/xml-dps', async (req, res, next) => {
+  try {
+    const nota = await acharNota(req.params.idOuChave);
+    if (!nota) return res.status(404).json({ erro: 'Nota não encontrada' });
+    if (!nota.dps_xml) return res.status(409).json({ erro: 'Nota sem DPS gravada' });
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="DPS-${nota.id_dps}.xml"`);
+    res.send(nota.dps_xml);
+  } catch (e) { next(e); }
+});
+
+/* DANFSe em PDF, gerado localmente a partir do XML autorizado.
+   A API oficial (GET /danfse/{chave}) responde 501 — foi descontinuada —
+   então o gateway monta o documento auxiliar por conta própria. */
+router.get('/:idOuChave/danfse', async (req, res, next) => {
+  try {
+    const nota = await acharNota(req.params.idOuChave);
+    if (!nota) return res.status(404).json({ erro: 'Nota não encontrada' });
+    if (!nota.nfse_xml) {
+      return res.status(409).json({
+        erro: `Nota sem NFS-e autorizada (status: ${nota.status}). O DANFSe só existe após a autorização.`,
+        status: nota.status
+      });
+    }
+    const pdf = await gerarDanfse(nota.nfse_xml);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="DANFSe-${nota.chave_acesso}.pdf"`);
+    res.send(pdf);
+  } catch (e) { next(e); }
+});
+
 /* Consultar NFS-e na Sefin Nacional pela chave de acesso */
 router.get('/:chaveAcesso', async (req, res, next) => {
   try {
@@ -139,8 +211,11 @@ router.post('/:chaveAcesso/cancelamento', async (req, res, next) => {
   try {
     const b = req.body || {};
     if (!b.cnpjEmpresa) return res.status(400).json({ erro: 'cnpjEmpresa é obrigatório' });
+    // A Sefin exige xMotivo em qualquer código; o builder preenche um texto
+    // padrão quando não vem informado. Para "Outros" o texto próprio é
+    // obrigatório — o padrão genérico não descreve nada.
     if (Number(b.codigoMotivo) === 9 && !b.motivo) {
-      return res.status(400).json({ erro: 'motivo é obrigatório quando codigoMotivo = 9' });
+      return res.status(400).json({ erro: 'motivo é obrigatório quando codigoMotivo = 9 (Outros)' });
     }
     const resultado = await cancelar(b.cnpjEmpresa, req.params.chaveAcesso, b);
     res.status(resultado.cancelada ? 200 : 422).json(resultado);

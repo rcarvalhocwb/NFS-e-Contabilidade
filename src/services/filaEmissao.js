@@ -146,6 +146,20 @@ async function transmitir(nota) {
       JSON.stringify(resp.json ?? { httpStatus: resp.status, corpo: resp.raw })
     ]
   );
+  // Substituição autorizada: a Sefin cancelou a original (evento de
+  // Cancelamento por Substituição). Refletir isso aqui, senão a original
+  // continuaria aparecendo como 'autorizada' no gateway estando cancelada
+  // na Sefin.
+  if (autorizada && nota.substitui_chave) {
+    const r = await db.query(
+      `UPDATE notas SET status='substituida', substituida_por=$2, atualizado_em=now()
+       WHERE chave_acesso=$1 AND status <> 'substituida' RETURNING id`,
+      [nota.substitui_chave, resp.json.chaveAcesso]);
+    if (r.rows.length) {
+      console.log(`[fila] nota ${r.rows[0].id} marcada como substituida pela ${nota.id}`);
+    }
+  }
+
   console.log(`[fila] nota ${nota.id} ${autorizada ? 'autorizada' : 'rejeitada'} (HTTP ${resp.status})`);
   await notificar(nota.id);
 }

@@ -104,6 +104,15 @@ function montarDps(empresa, dados, opts) {
   tag('dCompet', dados.dataCompetencia || new Date().toISOString().slice(0, 10)) +
   tag('tpEmit', '1') + // 1 = emissão pelo prestador
   tag('cLocEmi', empresa.codigo_municipio) +
+  // Substituição: informar a chave da NFS-e a substituir faz a Sefin cancelar
+  // a original (gerando o evento de cancelamento por substituição) e autorizar
+  // esta no lugar. Não existe "alterar NFS-e" — substituir é o caminho.
+  (dados.substituicao && dados.substituicao.chaveSubstituida ?
+  `<subst>` +
+    tag('chSubstda', dados.substituicao.chaveSubstituida) +
+    tag('cMotivo', dados.substituicao.codigoMotivo || '99') +
+    tag('xMotivo', dados.substituicao.motivo || 'Substituicao de NFS-e') +
+  `</subst>` : '') +
   `<prest>` +
     tag('CNPJ', empresa.cnpj) +
     tag('IM', empresa.inscricao_municipal) +
