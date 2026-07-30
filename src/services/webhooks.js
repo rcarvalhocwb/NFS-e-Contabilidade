@@ -64,8 +64,19 @@ function postar(url, corpo, header, chave) {
   });
 }
 
-/* Monta o corpo enviado ao sistema emissor. */
+/* Monta o corpo enviado ao sistema emissor.
+   Inclui os links dos documentos no próprio gateway: o cliente recebe a
+   notificação e já sabe onde buscar o XML e o PDF, autenticando com o mesmo
+   token que usou para emitir. */
 function montarPayload(nota, cnpjEmpresa) {
+  const base = (process.env.GATEWAY_BASE_URL || '').replace(/\/$/, '');
+  const ref = nota.chave_acesso || nota.id;
+  const links = nota.chave_acesso ? {
+    xmlNfse: `${base}/nfse/${ref}/xml`,
+    xmlDps: `${base}/nfse/${ref}/xml-dps`,
+    danfsePdf: `${base}/nfse/${ref}/danfse`
+  } : null;
+
   return {
     evento: 'nfse',
     notaId: nota.id,
@@ -77,7 +88,12 @@ function montarPayload(nota, cnpjEmpresa) {
     numero: Number(nota.numero),
     idDps: nota.id_dps,
     chaveAcesso: nota.chave_acesso || null,
-    urlDanfse: nota.chave_acesso ? sefin.urlDanfse(nota.ambiente, nota.chave_acesso) : null,
+    // documentos hospedados pelo gateway (exigem o header X-API-Key)
+    documentos: links,
+    // portal nacional, quando disponível
+    urlDanfseNacional: nota.chave_acesso ? sefin.urlDanfse(nota.ambiente, nota.chave_acesso) : null,
+    substituiChave: nota.substitui_chave || null,
+    substituidaPor: nota.substituida_por || null,
     erro: nota.ultimo_erro || null,
     ocorridoEm: new Date().toISOString()
   };

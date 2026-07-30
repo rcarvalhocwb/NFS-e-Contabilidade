@@ -146,6 +146,7 @@
         <button data-pane="contabilidade">Contabilidade</button>
         <button data-pane="fiscais" data-needs-save="1">Documentos Fiscais</button>
         <button data-pane="certificado" data-needs-save="1">Certificado</button>
+        <button data-pane="integracao" data-needs-save="1">Integração / API</button>
       </div>
 
       <div class="pane active" id="pane-identificacao">
@@ -294,6 +295,41 @@
           </div>
         </div>
         <div style="margin-top:14px"><button class="primary" id="btnCert">Enviar certificado</button></div>
+      </div>
+
+      <div class="pane" id="pane-integracao">
+        <div class="hint" style="margin-bottom:14px">
+          Dados que o sistema cliente precisa para conectar. O token identifica
+          <strong>a empresa e o ambiente</strong> — não é preciso enviar CNPJ nem ambiente no corpo das chamadas.
+        </div>
+        <div id="intResumo"></div>
+
+        <div class="amb-box" style="margin-top:14px">
+          <h4>Tokens de acesso</h4>
+          <div id="intTokens"></div>
+          <div class="hint" style="margin-top:10px">
+            Gerar um novo token <strong>invalida o anterior imediatamente</strong>: quem estiver usando para de funcionar até receber o novo.
+          </div>
+        </div>
+
+        <div class="amb-box">
+          <h4>Endpoints</h4>
+          <div id="intEndpoints" class="mono" style="font-size:12px;line-height:1.9"></div>
+        </div>
+
+        <div class="amb-box">
+          <h4>Exemplo de emissão</h4>
+          <pre class="xml" id="intExemplo" style="max-height:260px">—</pre>
+        </div>
+
+        <div class="amb-box">
+          <h4>Retorno ao cliente (webhook)</h4>
+          <div id="intWebhooks"></div>
+          <div class="hint" style="margin-top:10px">
+            Ao autorizar, o gateway envia um POST com status, chave de acesso e os
+            <strong>links do XML e do PDF</strong>. Configure os destinos na aba Webhooks do menu principal.
+          </div>
+        </div>
       </div>
 
       <div class="actions" id="edActions">
@@ -559,10 +595,12 @@
     Array.prototype.forEach.call(el('tabs').children, function (b) {
       b.classList.toggle('active', b.dataset.pane === nome);
     });
-    ['identificacao','endereco','contato','responsavel','contabilidade','fiscais','certificado']
+    ['identificacao','endereco','contato','responsavel','contabilidade','fiscais','certificado','integracao']
       .forEach(function (p) { el('pane-' + p).classList.toggle('active', p === nome); });
-    // Numeração e certificado têm botão próprio de gravação.
-    el('edActions').style.display = (nome === 'fiscais' || nome === 'certificado') ? 'none' : '';
+    // Numeração, certificado e integração têm gravação própria (ou são leitura).
+    el('edActions').style.display =
+      (nome === 'fiscais' || nome === 'certificado' || nome === 'integracao') ? 'none' : '';
+    if (nome === 'integracao' && editando) carregarIntegracao(editando);
   }
 
   function travarAbasNovas(novo) {
@@ -739,6 +777,66 @@
     var b = ev.target.closest('button');
     if (b && !b.disabled) setTab(b.dataset.pane);
   };
+  // ---------- integração / API ----------
+  function carregarIntegracao(cnpj) {
+    el('intResumo').innerHTML = '<div class="hint">Carregando…</div>';
+    api('/integracao/' + cnpj).then(function (d) {
+      el('intResumo').innerHTML =
+        '<div class="kv">' +
+        '<dt>URL base</dt><dd class="mono">' + esc(d.baseUrl) + '</dd>' +
+        '<dt>Autenticação</dt><dd>header <span class="mono">' + esc(d.autenticacao.header) + '</span></dd>' +
+        '<dt>Certificado</dt><dd>' + (d.empresa.certificadoOk
+          ? '<span class="tag ok">configurado</span>'
+          : '<span class="tag err">ausente — a emissão vai falhar</span>') + '</dd>' +
+        '</div>';
+
+      el('intTokens').innerHTML = '';
+      d.tokens.forEach(function (t) {
+        var box = document.createElement('div');
+        box.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap';
+        var tagKind = t.ambiente === 'producao' ? 'err' : 'ok';
+        box.innerHTML =
+          '<span class="tag ' + tagKind + '" style="min-width:104px;text-align:center">' + esc(t.ambiente) + '</span>' +
+          '<input class="mono" readonly value="' + esc(t.token) + '" style="flex:1;min-width:220px">';
+        var bCopy = document.createElement('button');
+        bCopy.className = 'sm'; bCopy.textContent = 'Copiar';
+        bCopy.onclick = function () {
+          navigator.clipboard.writeText(t.token).then(function () { msg('Token copiado.'); });
+        };
+        var bNovo = document.createElement('button');
+        bNovo.className = 'sm'; bNovo.textContent = 'Gerar novo';
+        bNovo.onclick = function () {
+          if (!confirm('Gerar novo token de ' + t.ambiente + '?\n\nO token atual para de funcionar imediatamente.')) return;
+          api('/integracao/' + cnpj + '/tokens', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ambiente: t.ambiente })
+          }).then(function () { msg('Novo token de ' + t.ambiente + ' gerado.'); carregarIntegracao(cnpj); })
+            .catch(function (e) { msg(e.message, 'err'); });
+        };
+        box.appendChild(bCopy); box.appendChild(bNovo);
+        el('intTokens').appendChild(box);
+      });
+
+      el('intEndpoints').innerHTML = Object.keys(d.endpoints).map(function (k) {
+        var e = d.endpoints[k];
+        return '<div><span class="tag muted">' + e.metodo + '</span> ' + esc(e.url) + '</div>';
+      }).join('');
+
+      el('intExemplo').textContent = d.exemplo.curl;
+
+      el('intWebhooks').innerHTML = d.webhooks.length
+        ? d.webhooks.map(function (w) {
+            return '<div class="mono" style="font-size:12px">' +
+              '<span class="tag ' + (w.ambiente === 'producao' ? 'err' : (w.ambiente ? 'ok' : 'muted')) + '">' +
+              esc(w.ambiente || 'ambos') + '</span> ' + esc(w.url) +
+              (w.tem_chave ? ' <span class="tag ok">autenticado</span>' : '') + '</div>';
+          }).join('')
+        : '<div class="hint">Nenhum webhook configurado — o cliente precisará consultar o status por conta própria.</div>';
+    }).catch(function (e) {
+      el('intResumo').innerHTML = '<div class="msg err" style="display:block">' + esc(e.message) + '</div>';
+    });
+  }
+
   // ---------- notas ----------
   var STATUS_TAG = {
     processando: 'warn', autorizada: 'ok', rejeitada: 'err', cancelada: 'muted',

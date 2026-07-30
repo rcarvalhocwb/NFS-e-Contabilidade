@@ -2,11 +2,13 @@ const path = require('path');
 const express = require('express');
 const config = require('./config');
 const auth = require('./middleware/auth');
+const { somenteAdmin, fixarEscopoEmpresa } = require('./middleware/escopo');
 const empresasRouter = require('./routes/empresas');
 const nfseRouter = require('./routes/nfse');
 const webhooksRouter = require('./routes/webhooks');
 const municipiosRouter = require('./routes/municipios');
 const consultaRouter = require('./routes/consulta');
+const integracaoRouter = require('./routes/integracao');
 const fila = require('./services/filaEmissao');
 const webhooks = require('./services/webhooks');
 const emailTomador = require('./services/emailTomador');
@@ -23,11 +25,17 @@ app.get('/health', (_req, res) => res.json({ ok: true, servico: 'nfse-gateway' }
 app.get('/admin', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
 app.use(auth); // todas as rotas abaixo exigem X-API-Key
-app.use('/empresas', empresasRouter);
-app.use('/nfse', nfseRouter);
-app.use('/webhooks', webhooksRouter);
-app.use('/municipios', municipiosRouter);
-app.use('/consulta', consultaRouter);
+
+// Rotas de gestão: só a credencial administrativa. O token entregue ao
+// sistema cliente não cadastra empresa nem troca certificado.
+app.use('/empresas', somenteAdmin, empresasRouter);
+app.use('/webhooks', somenteAdmin, webhooksRouter);
+app.use('/municipios', somenteAdmin, municipiosRouter);
+app.use('/consulta', somenteAdmin, consultaRouter);
+app.use('/integracao', somenteAdmin, integracaoRouter);
+
+// NFS-e: aberta ao token da empresa, restrita ao escopo dele.
+app.use('/nfse', fixarEscopoEmpresa, nfseRouter);
 
 // tratamento central de erros
 app.use((err, _req, res, _next) => {

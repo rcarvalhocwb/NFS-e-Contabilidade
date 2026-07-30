@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { emitir, consultar, cancelar } = require('../services/emissaoService');
 const { criarZip } = require('../util/zip');
+const { notaNoEscopo } = require('../middleware/escopo');
 const { gerarDanfse } = require('../nfse/danfse');
 
 const router = express.Router();
@@ -129,26 +130,33 @@ router.get('/local/:id', async (req, res, next) => {
        JOIN empresas e ON e.id = n.empresa_id WHERE n.id = $1`,
       [req.params.id]
     );
-    if (!r.rows.length) return res.status(404).json({ erro: 'Nota não encontrada' });
+    // Fora do escopo do token = inexistente, para não revelar notas de outra
+    // empresa do grupo.
+    if (!r.rows.length || !notaNoEscopo(req, r.rows[0])) {
+      return res.status(404).json({ erro: 'Nota não encontrada' });
+    }
     res.json(r.rows[0]);
   } catch (e) { next(e); }
 });
 
 /* Busca a nota por id local OU por chave de acesso — os sistemas conectados
    costumam ter só a chave, enquanto o painel tem o id. */
-async function acharNota(idOuChave) {
+async function acharNota(idOuChave, req) {
   const campo = /^\d{1,9}$/.test(String(idOuChave)) ? 'n.id = $1' : 'n.chave_acesso = $1';
   const r = await db.query(
     `SELECT n.*, e.cnpj AS cnpj_empresa, e.razao_social FROM notas n
      JOIN empresas e ON e.id = n.empresa_id WHERE ${campo}`, [idOuChave]);
-  return r.rows[0] || null;
+  const nota = r.rows[0] || null;
+  // Nota de outra empresa é tratada como inexistente para o token do cliente.
+  if (nota && req && !notaNoEscopo(req, nota)) return null;
+  return nota;
 }
 
 /* XML da NFS-e autorizada — é o documento com valor fiscal.
    É o mesmo XML assinado pela Sefin, para o sistema conectado arquivar. */
 router.get('/:idOuChave/xml', async (req, res, next) => {
   try {
-    const nota = await acharNota(req.params.idOuChave);
+    const nota = await acharNota(req.params.idOuChave, req);
     if (!nota) return res.status(404).json({ erro: 'Nota não encontrada' });
     if (!nota.nfse_xml) {
       return res.status(409).json({
@@ -166,7 +174,7 @@ router.get('/:idOuChave/xml', async (req, res, next) => {
 /* XML da DPS assinada — útil para auditoria do que foi transmitido. */
 router.get('/:idOuChave/xml-dps', async (req, res, next) => {
   try {
-    const nota = await acharNota(req.params.idOuChave);
+    const nota = await acharNota(req.params.idOuChave, req);
     if (!nota) return res.status(404).json({ erro: 'Nota não encontrada' });
     if (!nota.dps_xml) return res.status(409).json({ erro: 'Nota sem DPS gravada' });
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
@@ -180,7 +188,7 @@ router.get('/:idOuChave/xml-dps', async (req, res, next) => {
    então o gateway monta o documento auxiliar por conta própria. */
 router.get('/:idOuChave/danfse', async (req, res, next) => {
   try {
-    const nota = await acharNota(req.params.idOuChave);
+    const nota = await acharNota(req.params.idOuChave, req);
     if (!nota) return res.status(404).json({ erro: 'Nota não encontrada' });
     if (!nota.nfse_xml) {
       return res.status(409).json({

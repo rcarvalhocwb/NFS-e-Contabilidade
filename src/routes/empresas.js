@@ -49,7 +49,25 @@ router.post('/', async (req, res, next) => {
        ON CONFLICT (empresa_id, ambiente) DO NOTHING`,
       [empresa.id, b.serieDps || '1']
     );
-    res.status(201).json(empresa);
+
+    // Gera os tokens de API já no cadastro: a empresa nasce pronta para
+    // integrar, sem passo manual de "criar credencial" depois.
+    const tk = await db.query(
+      `INSERT INTO empresa_tokens (empresa_id, ambiente, token, descricao)
+       VALUES ($1,'homologacao',encode(gen_random_bytes(24),'hex'),'Gerado no cadastro'),
+              ($1,'producao',   encode(gen_random_bytes(24),'hex'),'Gerado no cadastro')
+       ON CONFLICT (empresa_id, ambiente) DO NOTHING
+       RETURNING ambiente, token`,
+      [empresa.id]
+    );
+
+    // Devolve os tokens no cadastro — é o único momento em que aparecem sem
+    // consulta extra, e é o que a contabilidade entrega ao sistema cliente.
+    res.status(201).json({
+      ...empresa,
+      tokens: tk.rows,
+      integracao: `/integracao/${empresa.cnpj}`
+    });
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({ erro: 'Empresa já cadastrada' });
     next(e);
