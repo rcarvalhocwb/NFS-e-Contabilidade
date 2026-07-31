@@ -1,0 +1,93 @@
+===========================================================
+   NFS-e Gateway - Guia rapido
+===========================================================
+
+Este programa emite notas fiscais de servico (NFS-e) direto
+do seu computador.
+
+
+-----------------------------------------------------------
+INSTALACAO (so na primeira vez)
+-----------------------------------------------------------
+
+1. Clique com o botao DIREITO no arquivo "instalar.ps1"
+2. Escolha "Executar com o PowerShell"
+3. Siga as instrucoes na tela
+
+O assistente vai pedir o endereco do banco de dados. Se voce
+nao tiver essa informacao, peca a quem cuida da TI.
+
+IMPORTANTE: ao final, o instalador mostra uma CHAVE DE
+ACESSO. Anote em local seguro - e a senha para entrar no
+gateway.
+
+Se aparecer "Node.js nao encontrado", instale primeiro o
+Node.js (versao LTS) em https://nodejs.org e execute o
+instalador de novo.
+
+
+-----------------------------------------------------------
+USO NO DIA A DIA
+-----------------------------------------------------------
+
+1. Clique no atalho "Emitir NFS-e" na area de trabalho
+2. Uma janela preta vai abrir - NAO FECHE ela
+3. O navegador abre sozinho na tela de emissao
+4. Emita as notas
+5. Quando terminar, feche a janela preta
+
+A janela preta e o gateway funcionando. Fechar ela desliga
+o programa.
+
+
+-----------------------------------------------------------
+ANTES DA PRIMEIRA NOTA
+-----------------------------------------------------------
+
+E preciso cadastrar a empresa e o certificado digital:
+
+1. Abra http://localhost:3000/admin
+2. Informe a chave de acesso (a que voce anotou)
+3. Clique em "Nova empresa" e digite o CNPJ
+4. Clique em "Buscar" - os dados vem preenchidos
+5. Salve
+6. Va na aba "Certificado" e anexe o arquivo .pfx com a senha
+
+Comece com o ambiente de HOMOLOGACAO (teste). So mude para
+PRODUCAO quando tiver certeza - notas de producao tem valor
+fiscal e geram imposto.
+
+
+-----------------------------------------------------------
+PROBLEMAS COMUNS
+-----------------------------------------------------------
+
+"O navegador nao abriu"
+   Abra manualmente: http://localhost:3000/emitir
+
+"Chave de API invalida"
+   A chave esta no arquivo .env, na pasta do gateway.
+   Abra com o Bloco de Notas e procure GATEWAY_API_KEY.
+
+"Empresa sem certificado ativo"
+   Falta anexar o certificado digital A1 no painel.
+
+"A nota nao foi autorizada"
+   A tela mostra o motivo. Os mais comuns sao dados do
+   cliente incorretos ou certificado vencido.
+
+"Nao consigo conectar ao banco de dados"
+   Verifique a conexao com a internet. Se persistir, peca
+   ajuda a quem cuida da TI.
+
+
+-----------------------------------------------------------
+IMPORTANTE
+-----------------------------------------------------------
+
+O arquivo .env contem as senhas do sistema e a chave que
+protege os certificados digitais. Nao apague, nao compartilhe
+e mantenha uma copia de seguranca em local seguro.
+
+Sem esse arquivo, os certificados cadastrados nao podem mais
+ser usados.
