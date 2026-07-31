@@ -10,6 +10,7 @@ const webhooksRouter = require('./routes/webhooks');
 const municipiosRouter = require('./routes/municipios');
 const consultaRouter = require('./routes/consulta');
 const integracaoRouter = require('./routes/integracao');
+const emissorRouter = require('./routes/emissor');
 const fila = require('./services/filaEmissao');
 const webhooks = require('./services/webhooks');
 const emailTomador = require('./services/emailTomador');
@@ -66,6 +67,8 @@ if (process.env.ADMIN_ATIVO === 'false') {
     res.status(404).json({ erro: 'Painel desativado neste servidor (ADMIN_ATIVO=false)' }));
 } else {
   app.get('/admin', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+  // Emissor: tela de emissão manual, para operar sem sistema integrado.
+  app.get('/emitir', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'emitir.html')));
 }
 
 app.use(auth); // todas as rotas abaixo exigem X-API-Key
@@ -77,6 +80,7 @@ app.use('/webhooks', somenteAdmin, webhooksRouter);
 app.use('/municipios', somenteAdmin, municipiosRouter);
 app.use('/consulta', somenteAdmin, consultaRouter);
 app.use('/integracao', somenteAdmin, integracaoRouter);
+app.use('/emissor', somenteAdmin, emissorRouter);
 
 // NFS-e: aberta ao token da empresa, restrita ao escopo dele.
 app.use('/nfse', fixarEscopoEmpresa, nfseRouter);
