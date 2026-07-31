@@ -3,6 +3,7 @@ const db = require('../db');
 const { emitir, consultar, cancelar } = require('../services/emissaoService');
 const { criarZip } = require('../util/zip');
 const { notaNoEscopo } = require('../middleware/escopo');
+const { validarDocumento } = require('../util/documento');
 const { gerarDanfse } = require('../nfse/danfse');
 
 const router = express.Router();
@@ -21,6 +22,15 @@ router.post('/', async (req, res, next) => {
     }
     if (b.referencia !== undefined && !/^[\w.:-]{1,100}$/.test(String(b.referencia))) {
       return res.status(400).json({ erro: 'referencia deve ter até 100 caracteres (letras, números, . : _ -)' });
+    }
+    // Documento do tomador conferido aqui: se estiver errado, a Sefin recusa
+    // (E0188) só depois de reservarmos número e assinarmos a DPS — deixando um
+    // buraco na numeração fiscal por um erro de digitação.
+    const docTomador = b.tomador && (b.tomador.cnpj || b.tomador.cpf);
+    if (docTomador && !validarDocumento(docTomador)) {
+      return res.status(400).json({
+        erro: `Documento do tomador inválido (dígito verificador não confere): ${docTomador}`
+      });
     }
     if (b.substituicao) {
       const ch = String(b.substituicao.chaveSubstituida || '').replace(/\D/g, '');

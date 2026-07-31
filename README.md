@@ -1,142 +1,235 @@
 # nfse-gateway
 
-Gateway de comunicação entre o seu sistema emissor e o **Portal Nacional NFS-e** (API Sefin Nacional).
+Gateway entre os sistemas do grupo e o **Portal Nacional NFS-e** (Sefin Nacional).
 
-O que ele faz: você cadastra as empresas e os certificados digitais A1 (.pfx) no gateway; o seu sistema envia os dados da nota em JSON via API REST; o gateway monta a DPS, assina com o certificado da empresa, transmite à Sefin Nacional (mTLS) e devolve a NFS-e autorizada (chave de acesso + XML). Também consulta e cancela notas.
+Você cadastra as empresas e os certificados A1 (.pfx); o sistema cliente envia a
+nota em JSON; o gateway monta a DPS, assina com o certificado da empresa,
+transmite à Sefin (mTLS) e devolve a NFS-e autorizada. Também consulta, cancela,
+substitui e entrega XML e DANFSe.
 
-## Ambientes da Sefin Nacional
+> **Status:** validado em produção — emissão, cancelamento e substituição
+> confirmados com notas fiscais reais (`cStat 100`).
 
-| Ambiente | URL base |
-|---|---|
-| Produção | `https://sefin.nfse.gov.br/sefinnacional` |
-| Homologação (produção restrita) | `https://sefin.producaorestrita.nfse.gov.br/SefinNacional` |
+## Sumário
 
-Documentação oficial: https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica
+- [Como rodar](#como-rodar)
+- [Autenticação](#autenticação)
+- [Painel](#painel)
+- [API para o sistema cliente](#api-para-o-sistema-cliente)
+- [Webhook](#webhook)
+- [Administração](#administração)
+- [Publicação](#publicação)
+
+---
 
 ## Como rodar
 
 ```bash
 cp .env.example .env
-# edite o .env: gere a MASTER_KEY e defina GATEWAY_API_KEY
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # gera MASTER_KEY
+# gere as chaves e edite o .env:
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # MASTER_KEY
+node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"   # GATEWAY_API_KEY
 
-docker compose up -d db     # sobe o PostgreSQL
 npm install
-npm run migrate             # cria as tabelas
-npm start                   # gateway em http://localhost:3000
+npm run migrate     # cria/atualiza o schema
+npm start           # http://localhost:3000
+npm test            # testes dos pontos fiscais
 ```
 
-Ou tudo via Docker: `docker compose up --build`.
+Com Postgres local: `docker compose up -d db` antes do migrate.
+Em produção, veja [DEPLOY.md](DEPLOY.md).
 
 ## Autenticação
 
-Todas as rotas (exceto `/health`) exigem o header `X-API-Key` com o valor de `GATEWAY_API_KEY`.
+Header `X-API-Key`, em dois níveis:
 
-## Rotas
+| Credencial | Para quem | Alcance |
+|---|---|---|
+| `GATEWAY_API_KEY` | painel / contabilidade | tudo |
+| **token da empresa** | sistema cliente | uma empresa, um ambiente |
 
-### 1. Cadastrar empresa
+O token **define** a empresa e o ambiente: o cliente não precisa (nem consegue)
+informar `cnpjEmpresa` ou `ambiente` — o gateway usa os do token. Isso impede que
+um sistema emita por outro CNPJ do grupo, ou que um token de teste emita em
+produção.
 
-```bash
-curl -X POST http://localhost:3000/empresas \
-  -H "X-API-Key: SUA_CHAVE" -H "Content-Type: application/json" \
-  -d '{
-    "cnpj": "12345678000199",
-    "razaoSocial": "Empresa Exemplo LTDA",
-    "inscricaoMunicipal": "123456",
-    "codigoMunicipio": "4106902",
-    "opSimpNac": 3,
-    "regEspTrib": 0,
-    "serieDps": "1",
-    "ambiente": "homologacao"
-  }'
-```
+Os tokens são criados junto com a empresa. Para vê-los:
+`GET /integracao/{cnpj}` (credencial administrativa).
 
-- `codigoMunicipio`: código IBGE de 7 dígitos do município emissor
-- `opSimpNac`: 1 = não optante, 2 = MEI, 3 = ME/EPP Simples Nacional
-- `ambiente`: `homologacao` ou `producao` (por empresa)
+## Painel
 
-Outras: `GET /empresas`, `GET /empresas/{cnpj}`, `PUT /empresas/{cnpj}`.
+`http://localhost:3000/admin` — a raiz `/` redireciona para lá.
 
-### 2. Cadastrar certificado digital A1 (.pfx)
+Empresas (cadastro em abas, com autopreenchimento por CNPJ e CEP), certificados,
+numeração por ambiente, notas com filtros e XMLs, municípios e a aba
+**Integração / API** com os tokens e exemplos prontos para entregar ao cliente.
 
-```bash
-curl -X POST http://localhost:3000/empresas/12345678000199/certificado \
-  -H "X-API-Key: SUA_CHAVE" \
-  -F "certificado=@/caminho/certificado.pfx" \
-  -F "senha=senha-do-pfx"
-```
+---
 
-O gateway valida a senha, extrai validade/CNPJ e grava o arquivo e a senha **criptografados (AES-256-GCM)** no banco. Um novo upload desativa o certificado anterior.
+## API para o sistema cliente
 
-### 3. Emitir NFS-e
+Todas exigem `X-API-Key` com o token da empresa.
+
+### Emitir
 
 ```bash
 curl -X POST http://localhost:3000/nfse \
-  -H "X-API-Key: SUA_CHAVE" -H "Content-Type: application/json" \
+  -H "X-API-Key: SEU_TOKEN" -H "Content-Type: application/json" \
   -d '{
-    "cnpjEmpresa": "12345678000199",
-    "dataCompetencia": "2026-07-21",
+    "referencia": "PEDIDO-123",
+    "dataCompetencia": "2026-07-01",
     "tomador": {
-      "cnpj": "98765432000188",
+      "cnpj": "00000000000191",
       "razaoSocial": "Cliente Exemplo SA",
-      "email": "financeiro@cliente.com",
-      "endereco": {
-        "codigoMunicipio": "4106902",
-        "cep": "80010000",
-        "logradouro": "Rua Exemplo",
-        "numero": "100",
-        "bairro": "Centro"
-      }
+      "endereco": { "codigoMunicipio": "4106902", "cep": "80010000",
+                    "logradouro": "Rua Exemplo", "numero": "100", "bairro": "Centro" }
     },
     "servico": {
-      "codigoTributacaoNacional": "010101",
-      "descricao": "Desenvolvimento de software sob encomenda",
+      "codigoTributacaoNacional": "110201",
+      "descricao": "Descricao do servico prestado",
       "codigoMunicipioPrestacao": "4106902"
     },
-    "valores": {
-      "valorServico": 1500.00,
-      "aliquotaIss": 2.00,
-      "issRetido": false
-    }
+    "valores": { "valorServico": 1000.00, "percentualTotalTributosSN": 10.43 }
   }'
 ```
 
-Resposta (autorizada): `status`, `chaveAcesso`, `nfseXml`, `urlDanfse`, `numero`, `idDps`.
-A numeração da DPS é sequencial por empresa e controlada pelo gateway (pode ser sobrescrita enviando `numero`/`serie`).
+Responde **202** — a nota entra na fila e é transmitida em seguida:
 
-### 4. Consultar / listar
+```json
+{ "notaId": 12, "serie": "2", "numero": 5, "status": "processando",
+  "acompanhe": "/nfse/local/12" }
+```
 
-- `GET /nfse/{chaveAcesso}?cnpjEmpresa=...` — consulta na Sefin Nacional
-- `GET /nfse?cnpjEmpresa=...&status=autorizada` — lista notas no banco local
-- `GET /nfse/local/{id}` — detalhe local com XMLs (DPS assinada e NFS-e)
+O resultado chega pelo [webhook](#webhook), ou por consulta.
 
-### 5. Cancelar
+**`referencia`** é a chave de idempotência: repetir a mesma emissão devolve
+**200** com a nota original, em vez de emitir outra. Use o identificador do
+pedido no seu sistema.
+
+**Tributos:** empresa do Simples Nacional informa `percentualTotalTributosSN`
+(a alíquota efetiva do PGDAS). Fora do Simples, informe `valores.aliquotaIss`.
+
+### Consultar e obter documentos
+
+```bash
+GET /nfse/{chaveAcesso}            # consulta na Sefin
+GET /nfse?status=autorizada        # lista as notas da empresa
+GET /nfse/local/{id}               # detalhe, com XMLs
+GET /nfse/{chaveAcesso}/xml        # XML da NFS-e (documento fiscal)
+GET /nfse/{chaveAcesso}/xml-dps    # DPS assinada (auditoria)
+GET /nfse/{chaveAcesso}/danfse     # DANFSe em PDF
+GET /nfse/export?inicio=2026-07-01&fim=2026-07-31   # XMLs em .zip
+```
+
+### Cancelar
 
 ```bash
 curl -X POST http://localhost:3000/nfse/{chaveAcesso}/cancelamento \
-  -H "X-API-Key: SUA_CHAVE" -H "Content-Type: application/json" \
-  -d '{ "cnpjEmpresa": "12345678000199", "codigoMotivo": 1 }'
+  -H "X-API-Key: SEU_TOKEN" -H "Content-Type: application/json" \
+  -d '{ "codigoMotivo": 1, "motivo": "Erro na emissao" }'
 ```
 
-`codigoMotivo`: 1 = erro na emissão, 2 = serviço não prestado, 9 = outros (exige `motivo`).
+`codigoMotivo`: 1 = erro na emissão, 2 = serviço não prestado, 9 = outros
+(exige `motivo`).
 
-## Arquitetura
+### Substituir
 
+NFS-e não pode ser alterada. Para corrigir, emita uma nova apontando para a
+anterior — a Sefin cancela a original automaticamente:
+
+```json
+{
+  "...": "demais campos da nota",
+  "substituicao": {
+    "chaveSubstituida": "4106902...",
+    "codigoMotivo": "99",
+    "motivo": "Correcao de dados do servico"
+  }
+}
 ```
-Seu sistema ──JSON/REST──▶ nfse-gateway ──DPS assinada (gzip+b64, mTLS)──▶ Sefin Nacional
-                              │
-                        PostgreSQL
-              (empresas, certificados cifrados, notas)
+
+### Status possíveis
+
+| Status | Significado |
+|---|---|
+| `processando` | na fila, aguardando transmissão |
+| `autorizada` | NFS-e emitida — XML e DANFSe disponíveis |
+| `rejeitada` | a Sefin analisou e recusou (ver `mensagens`) |
+| `erro` | falha de comunicação ou credencial (ver `ultimo_erro`) |
+| `cancelada` | cancelada por evento |
+| `substituida` | substituída por outra nota |
+
+---
+
+## Webhook
+
+Ao chegar a estado final, o gateway envia POST ao endpoint configurado:
+
+```json
+{
+  "evento": "nfse",
+  "referencia": "PEDIDO-123",
+  "status": "autorizada",
+  "chaveAcesso": "4106902...",
+  "documentos": {
+    "xmlNfse":   "https://.../nfse/{chave}/xml",
+    "xmlDps":    "https://.../nfse/{chave}/xml-dps",
+    "danfsePdf": "https://.../nfse/{chave}/danfse"
+  },
+  "ocorridoEm": "2026-07-29T16:00:34.000Z"
+}
 ```
 
-- `src/nfse/dpsBuilder.js` — monta o XML da DPS v1.00 (namespace `http://www.sped.fazenda.gov.br/nfse`)
-- `src/nfse/assinador.js` — assinatura XMLDSig enveloped (RSA-SHA1 padrão; configurável p/ SHA256)
-- `src/nfse/sefinClient.js` — mTLS + gzip/base64 + endpoints `/nfse`, `/dps/{id}`, `/nfse/{chave}/eventos`
-- `src/secretbox.js` — AES-256-GCM para certificados/senhas em repouso
+Os links usam o mesmo token da emissão. A entrega é enfileirada com retentativa
+(backoff até 6 tentativas), então um endpoint fora do ar não perde a
+notificação. Configure em `POST /webhooks`, com `headerAutorizacao` e
+`chaveAutorizacao` para o receptor confirmar a origem.
 
-## Avisos importantes
+---
 
-1. **Valide a DPS contra o XSD oficial** (gov.br/nfse → Documentação técnica). O builder cobre o caso comum de prestação de serviço; casos especiais (exportação, obra, deduções, reduções de base) exigem campos adicionais.
-2. **Homologue primeiro na produção restrita** com o certificado real da empresa.
-3. Proteja o `.env` (MASTER_KEY e GATEWAY_API_KEY) e use HTTPS entre seu sistema e o gateway em produção.
-4. O leiaute nacional evolui (ver "Atualizações e Implantações" no portal). Acompanhe as notas técnicas.
+## Administração
+
+Exigem a `GATEWAY_API_KEY`:
+
+```bash
+POST   /empresas                        # cadastra e já devolve os tokens
+GET    /empresas/{cnpj}/numeracao       # série e próximo número por ambiente
+PUT    /empresas/{cnpj}/numeracao       # ajusta a numeração de um ambiente
+POST   /empresas/{cnpj}/certificado     # upload do .pfx (multipart)
+GET    /integracao/{cnpj}               # pacote de integração do cliente
+POST   /integracao/{cnpj}/tokens        # gera novo token (invalida o anterior)
+GET    /municipios                      # Nacional vs. emissor próprio
+POST   /webhooks                        # cadastra destino de notificação
+```
+
+### Numeração por ambiente
+
+Homologação e produção têm série e sequência **independentes**. Emitir em
+homologação não consome números da produção. Ao migrar de outro emissor, ajuste
+o próximo número em `PUT /empresas/{cnpj}/numeracao` — ou use uma série própria
+para o gateway, evitando colisão.
+
+### Municípios
+
+Sob a LC 214/2025 os municípios migram para o Sistema Nacional, mas alguns ainda
+usam emissor próprio (padrão ABRASF). O gateway só fala o Nacional: municípios
+marcados como `proprio` têm a emissão bloqueada com aviso, em vez de falharem na
+Sefin. Classifique em `PUT /municipios/{codigoIbge}`.
+
+---
+
+## Publicação
+
+Veja [DEPLOY.md](DEPLOY.md). Em resumo: HTTPS é obrigatório (a senha do `.pfx`
+trafega no upload), a `MASTER_KEY` é insubstituível e precisa de backup próprio,
+e o painel `/admin` deve ficar atrás de VPN/IP restrito ou desligado com
+`ADMIN_ATIVO=false`.
+
+## Avisos
+
+1. **Valide a DPS contra o XSD oficial** para casos especiais (exportação, obra,
+   deduções, retenções federais). O builder cobre a prestação de serviço comum.
+2. **Homologue antes de produzir.** Empresa com `ambiente: producao` emite nota
+   com valor legal.
+3. O leiaute nacional evolui — acompanhe as notas técnicas em
+   [gov.br/nfse](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica).

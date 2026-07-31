@@ -1,0 +1,15 @@
+# Nunca entram na imagem: segredos e artefatos locais.
+.env
+*.pfx
+*.p12
+
+node_modules
+npm-debug.log*
+
+.git
+.gitignore
+.claude
+
+# Documentação e material de apoio não pertencem à imagem de execução.
+README.md
+*.md

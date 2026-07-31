@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const db = require('../db');
 const { salvarCertificado } = require('../services/certificadoService');
+const { validarCnpj } = require('../util/documento');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
@@ -13,7 +14,9 @@ router.post('/', async (req, res, next) => {
   try {
     const b = req.body || {};
     const cnpj = limparCnpj(b.cnpj);
-    if (cnpj.length !== 14) return res.status(400).json({ erro: 'cnpj inválido' });
+    if (!validarCnpj(cnpj)) {
+      return res.status(400).json({ erro: 'CNPJ inválido (verifique os dígitos)' });
+    }
     if (!b.razaoSocial) return res.status(400).json({ erro: 'razaoSocial é obrigatória' });
     if (!/^\d{7}$/.test(String(b.codigoMunicipio || ''))) {
       return res.status(400).json({ erro: 'codigoMunicipio deve ser o código IBGE de 7 dígitos' });
