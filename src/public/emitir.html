@@ -4,27 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Emitir NFS-e</title>
+<link rel="stylesheet" href="/assets/app.css">
 <style>
+  /* Nomes locais mapeados para o design system, para o chat herdar a paleta da
+     marca (inclusive o modo escuro) sem reescrever as regras abaixo.
+     --bg, --ok e --ok-bg já vêm de app.css com o mesmo significado. */
   :root {
-    --bg:#f6f7f9; --card:#fff; --fg:#1a1d21; --muted:#6b7280;
-    --line:#e3e6ea; --accent:#1f6feb; --accent-fg:#fff;
-    --ok:#157347; --ok-bg:#e8f5ec; --warn:#9a6700; --warn-bg:#fff8e1;
-    --err:#b42318; --err-bg:#fdeceb; --bolha:#eef2f7;
+    --card: var(--superficie);
+    --fg: var(--texto);
+    --muted: var(--texto-2);
+    --line: var(--linha);
+    --accent: var(--acento);
+    --accent-fg: var(--acento-fg);
+    --warn: var(--alerta);  --warn-bg: var(--alerta-bg);
+    --err:  var(--erro);    --err-bg:  var(--erro-bg);
+    --bolha: var(--superficie-2);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg:#14171a; --card:#1c2024; --fg:#e6e8ea; --muted:#9aa4b2;
-      --line:#2c3238; --accent:#4b8ef7; --accent-fg:#fff;
-      --ok:#6cd08f; --ok-bg:#143024; --warn:#e3b341; --warn-bg:#33280c;
-      --err:#ff7b72; --err-bg:#3a1a18; --bolha:#242a31;
-    }
-  }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg);
-         font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  header { background:var(--card); border-bottom:1px solid var(--line); padding:14px 20px;
-           display:flex; align-items:center; gap:14px; position:sticky; top:0; z-index:10; }
-  header h1 { font-size:17px; margin:0; font-weight:650; }
+  /* Texto maior que o do painel: aqui se lê e responde, não se consulta tabela */
+  body { font-size:16px; }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:11px 20px;
+           display:flex; align-items:center; gap:12px; position:sticky; top:0; z-index:10; }
+  header .logo { width:32px; height:32px; border-radius:8px; background:var(--acento);
+                 color:#fff; display:grid; place-items:center; font-weight:700; font-size:13px; }
+  header h1 { font-size:16px; margin:0; font-weight:650; letter-spacing:-.2px; }
+  header .sub { font-size:12px; color:var(--texto-3); }
   .spacer { flex:1; }
   a.link { color:var(--accent); text-decoration:none; font-size:14px; }
   main { max-width:760px; margin:0 auto; padding:20px 16px 140px; }
@@ -82,9 +85,13 @@
 </div>
 
 <header>
-  <h1>Emitir NFS-e</h1>
+  <div class="logo">NF</div>
+  <div>
+    <h1>Emitir NFS-e</h1>
+    <div class="sub">NFS-e Gateway</div>
+  </div>
   <span class="spacer"></span>
-  <a class="link" href="/admin">Painel</a>
+  <a class="link" href="/admin">‹ Voltar ao painel</a>
 </header>
 
 <main id="conversa"></main>

@@ -1,0 +1,323 @@
+/* Design system do NFS-e Gateway.
+   Compartilhado entre as telas para que o produto pareça um sistema só, e não
+   páginas montadas em momentos diferentes. */
+
+:root {
+  /* Superfícies — cinzas levemente frios, para o conteúdo dominar */
+  --bg:        #f4f6f9;
+  --superficie:#ffffff;
+  --superficie-2:#f8fafc;
+  --linha:     #e2e8f0;
+  --linha-forte:#cbd5e1;
+
+  /* Texto */
+  --texto:     #0f172a;
+  --texto-2:   #475569;
+  --texto-3:   #94a3b8;
+
+  /* Marca: azul profundo passa formalidade — é um sistema fiscal, não um app
+     de consumo. O acento mais vivo fica só nas ações. */
+  --marca:     #1e3a5f;
+  --marca-2:   #16304e;
+  --acento:    #2563eb;
+  --acento-fg: #ffffff;
+  --acento-suave:#eff6ff;
+
+  /* Estados */
+  --ok:#15803d;    --ok-bg:#dcfce7;
+  --alerta:#b45309; --alerta-bg:#fef3c7;
+  --erro:#b91c1c;  --erro-bg:#fee2e2;
+  --info:#1d4ed8;  --info-bg:#dbeafe;
+
+  --raio: 10px;
+  --raio-sm: 7px;
+  --sombra: 0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.04);
+  --sombra-alta: 0 4px 12px rgba(15,23,42,.10);
+  --sidebar-larg: 244px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#0f1216; --superficie:#171b21; --superficie-2:#1d222a;
+    --linha:#2a313b; --linha-forte:#3a434f;
+    --texto:#e8eaed; --texto-2:#a3adba; --texto-3:#6b7684;
+    --marca:#141922; --marca-2:#0f131a;
+    --acento:#3b82f6; --acento-suave:#17233a;
+    --ok:#4ade80; --ok-bg:#14321f;
+    --alerta:#fbbf24; --alerta-bg:#3a2c0c;
+    --erro:#f87171; --erro-bg:#3a1717;
+    --info:#60a5fa; --info-bg:#152744;
+    --sombra: 0 1px 2px rgba(0,0,0,.3);
+    --sombra-alta: 0 4px 14px rgba(0,0,0,.4);
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* `hidden` vem do stylesheet do navegador com especificidade baixíssima: um
+   `.app { display:flex }` qualquer o anula silenciosamente. Como a troca de
+   telas depende do atributo, ele precisa ganhar. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--texto);
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------- estrutura */
+
+.app { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: var(--sidebar-larg);
+  flex-shrink: 0;
+  background: var(--marca);
+  color: #e8eef7;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.marca {
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+  display: flex; align-items: center; gap: 11px;
+}
+.marca .logo {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--acento); color: #fff;
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 13px; letter-spacing: -.3px;
+}
+.marca .nome { font-weight: 650; font-size: 15px; letter-spacing: -.2px; }
+.marca .versao { font-size: 11px; color: rgba(232,238,247,.5); }
+
+.menu { flex: 1; overflow-y: auto; padding: 14px 10px 20px; }
+.menu-grupo {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: rgba(232,238,247,.42);
+  padding: 16px 10px 7px;
+}
+.menu a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; border-radius: var(--raio-sm);
+  color: rgba(232,238,247,.82); text-decoration: none;
+  font-size: 13.5px; margin-bottom: 1px;
+  transition: background .12s, color .12s;
+}
+.menu a:hover { background: rgba(255,255,255,.07); color: #fff; }
+.menu a.ativo { background: var(--acento); color: #fff; font-weight: 550; }
+.menu a .ico { width: 17px; text-align: center; opacity: .9; flex-shrink: 0; }
+.menu a .selo {
+  margin-left: auto; font-size: 11px; font-weight: 600;
+  background: rgba(255,255,255,.16); padding: 1px 7px; border-radius: 10px;
+}
+.menu a.ativo .selo { background: rgba(255,255,255,.25); }
+
+.rodape-sidebar {
+  padding: 12px 14px; border-top: 1px solid rgba(255,255,255,.09);
+  font-size: 12px; color: rgba(232,238,247,.55);
+  display: flex; align-items: center; gap: 8px;
+}
+.rodape-sidebar button {
+  background: none; border: 0; color: inherit; font: inherit;
+  cursor: pointer; padding: 0; text-decoration: underline;
+}
+.rodape-sidebar button:hover { color: #fff; }
+
+.conteudo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.topo {
+  background: var(--superficie);
+  border-bottom: 1px solid var(--linha);
+  padding: 0 26px; height: 62px;
+  display: flex; align-items: center; gap: 14px;
+  position: sticky; top: 0; z-index: 20;
+}
+.topo h1 { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -.2px; }
+.topo .sub { font-size: 12.5px; color: var(--texto-2); }
+.espaco { flex: 1; }
+
+.pagina { padding: 24px 26px 60px; max-width: 1240px; width: 100%; }
+
+/* ------------------------------------------------------------------ blocos */
+
+.cartao {
+  background: var(--superficie);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra);
+  margin-bottom: 18px;
+}
+.cartao-cab {
+  padding: 15px 18px; border-bottom: 1px solid var(--linha);
+  display: flex; align-items: center; gap: 12px;
+}
+.cartao-cab h2 { font-size: 14.5px; font-weight: 650; margin: 0; }
+.cartao-corpo { padding: 18px; }
+.cartao-corpo.sem-padding { padding: 0; }
+
+.grade { display: grid; gap: 16px; }
+.grade.c2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.grade.c3 { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.grade.c4 { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
+
+/* Indicadores do painel inicial */
+.metrica {
+  background: var(--superficie); border: 1px solid var(--linha);
+  border-radius: var(--raio); padding: 16px 18px; box-shadow: var(--sombra);
+}
+.metrica .rotulo {
+  font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--texto-3);
+}
+.metrica .valor { font-size: 27px; font-weight: 680; letter-spacing: -.6px; margin-top: 5px; }
+.metrica .nota { font-size: 12px; color: var(--texto-2); margin-top: 2px; }
+.metrica.destaque { border-left: 3px solid var(--acento); }
+
+/* ---------------------------------------------------------------- controles */
+
+button, .botao {
+  font: inherit; font-size: 13.5px;
+  border: 1px solid var(--linha-forte); background: var(--superficie);
+  color: var(--texto); padding: 8px 14px; border-radius: var(--raio-sm);
+  cursor: pointer; text-decoration: none; display: inline-flex;
+  align-items: center; gap: 7px; transition: all .12s;
+}
+button:hover:not(:disabled), .botao:hover { border-color: var(--texto-3); }
+button.primario, .botao.primario {
+  background: var(--acento); color: var(--acento-fg); border-color: transparent; font-weight: 550;
+}
+button.primario:hover:not(:disabled), .botao.primario:hover { filter: brightness(1.08); }
+button.perigo { color: var(--erro); border-color: var(--erro-bg); }
+button.pequeno, .botao.pequeno { padding: 5px 10px; font-size: 12.5px; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.plano { border-color: transparent; background: none; }
+button.plano:hover:not(:disabled) { background: var(--superficie-2); }
+
+label { display: block; font-size: 12.5px; font-weight: 550; color: var(--texto-2); margin-bottom: 5px; }
+input, select, textarea {
+  font: inherit; font-size: 13.5px; width: 100%; padding: 8px 11px;
+  border-radius: var(--raio-sm); border: 1px solid var(--linha-forte);
+  background: var(--superficie); color: var(--texto);
+}
+input:focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--acento); box-shadow: 0 0 0 3px var(--acento-suave);
+}
+input:disabled { background: var(--superficie-2); color: var(--texto-2); }
+.ajuda { font-size: 11.5px; color: var(--texto-3); margin-top: 4px; }
+
+/* ------------------------------------------------------------------ tabelas */
+
+.tabela-area { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--linha); }
+th {
+  font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--texto-3); background: var(--superficie-2);
+  position: sticky; top: 0;
+}
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--superficie-2); }
+td.acoes { text-align: right; white-space: nowrap; }
+
+/* ------------------------------------------------------------------ estados */
+
+.selo-status {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 20px; font-size: 11.5px; font-weight: 600;
+}
+.selo-status::before { content: '●'; font-size: 8px; }
+.s-ok    { background: var(--ok-bg);    color: var(--ok); }
+.s-alerta{ background: var(--alerta-bg);color: var(--alerta); }
+.s-erro  { background: var(--erro-bg);  color: var(--erro); }
+.s-info  { background: var(--info-bg);  color: var(--info); }
+.s-neutro{ background: var(--linha);    color: var(--texto-2); }
+.selo-status.sem-ponto::before { content: none; }
+
+.aviso {
+  padding: 12px 15px; border-radius: var(--raio-sm); font-size: 13.5px;
+  margin-bottom: 16px; display: none; border: 1px solid transparent;
+}
+.aviso.ok   { background: var(--ok-bg);   color: var(--ok);   border-color: var(--ok);   display: block; }
+.aviso.erro { background: var(--erro-bg); color: var(--erro); border-color: var(--erro); display: block; }
+.aviso.info { background: var(--info-bg); color: var(--info); display: block; }
+
+.vazio { text-align: center; padding: 44px 20px; color: var(--texto-3); }
+.vazio .icone { font-size: 30px; opacity: .35; margin-bottom: 10px; }
+.vazio .titulo { font-weight: 600; color: var(--texto-2); margin-bottom: 4px; font-size: 14px; }
+
+.mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
+
+/* ------------------------------------------------------------------- abas */
+
+/* Quebra em vez de rolar: aba escondida atrás de scroll lateral é aba que o
+   operador não encontra — e "Certificado" e "Integração" são justamente as
+   últimas da fila. */
+.abas { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--linha); }
+.abas button {
+  border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  background: none; padding: 11px 15px; color: var(--texto-2);
+  white-space: nowrap; font-size: 13.5px;
+}
+.abas button:hover:not(:disabled) { color: var(--texto); background: none; }
+.abas button.ativo { color: var(--acento); border-bottom-color: var(--acento); font-weight: 600; }
+.painel-aba { display: none; padding: 20px 18px; }
+.painel-aba.ativo { display: block; }
+
+/* ----------------------------------------------------------------- diálogos */
+
+dialog {
+  border: 1px solid var(--linha); border-radius: 12px; padding: 0;
+  background: var(--superficie); color: var(--texto);
+  max-width: 540px; width: calc(100% - 32px); box-shadow: var(--sombra-alta);
+}
+dialog::backdrop { background: rgba(15,23,42,.5); backdrop-filter: blur(2px); }
+dialog .interno { padding: 22px; }
+dialog h3 { margin: 0 0 5px; font-size: 16px; font-weight: 650; }
+dialog .dsub { color: var(--texto-2); font-size: 13px; margin-bottom: 18px; }
+.acoes-form {
+  display: flex; gap: 9px; justify-content: flex-end;
+  margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--linha);
+}
+
+/* ------------------------------------------------------------------ entrada */
+
+/* Tela de acesso: primeira impressão do sistema, sem sidebar. */
+.tela-acesso {
+  min-height: 100vh; display: grid; place-items: center;
+  background: linear-gradient(160deg, var(--marca) 0%, var(--marca-2) 100%);
+  padding: 20px;
+}
+.caixa-acesso {
+  background: var(--superficie); border-radius: 14px; padding: 34px;
+  width: 100%; max-width: 400px; box-shadow: 0 12px 40px rgba(0,0,0,.28);
+}
+.caixa-acesso .marca-grande {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 6px;
+}
+.caixa-acesso .logo {
+  width: 40px; height: 40px; border-radius: 10px; background: var(--acento);
+  color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 15px;
+}
+.caixa-acesso h1 { font-size: 19px; margin: 0; font-weight: 650; }
+.caixa-acesso .desc { color: var(--texto-2); font-size: 13.5px; margin: 14px 0 20px; }
+
+/* ------------------------------------------------------------------- mobile */
+
+@media (max-width: 860px) {
+  .sidebar {
+    position: fixed; left: 0; top: 0; z-index: 50;
+    transform: translateX(-100%); transition: transform .2s;
+  }
+  .sidebar.aberta { transform: translateX(0); box-shadow: var(--sombra-alta); }
+  .abrir-menu { display: inline-flex !important; }
+  .pagina { padding: 18px 16px 50px; }
+  .topo { padding: 0 16px; }
+}
+.abrir-menu { display: none; }

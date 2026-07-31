@@ -10,6 +10,7 @@ const webhooksRouter = require('./routes/webhooks');
 const municipiosRouter = require('./routes/municipios');
 const consultaRouter = require('./routes/consulta');
 const integracaoRouter = require('./routes/integracao');
+const painelRouter = require('./routes/painel');
 const emissorRouter = require('./routes/emissor');
 const fila = require('./services/filaEmissao');
 const webhooks = require('./services/webhooks');
@@ -23,6 +24,13 @@ const app = express();
 if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
 
 app.use(express.json({ limit: '2mb' }));
+
+// Arquivos da interface (CSS). Ficam antes da autenticacao: sao estaticos,
+// sem dados nem segredos — as rotas de dados seguem protegidas.
+/* Sem cache por tempo: os arquivos não são versionados, então um `maxAge` longo
+   faz o operador continuar vendo a versão antiga do painel depois de atualizar
+   o gateway. O ETag resolve com um 304 barato — é tudo local mesmo. */
+app.use('/assets', express.static(path.join(__dirname, 'public'), { etag: true, maxAge: 0 }));
 
 app.get('/health', (_req, res) => res.json({ ok: true, servico: 'nfse-gateway' }));
 
@@ -81,6 +89,7 @@ app.use('/municipios', somenteAdmin, municipiosRouter);
 app.use('/consulta', somenteAdmin, consultaRouter);
 app.use('/integracao', somenteAdmin, integracaoRouter);
 app.use('/emissor', somenteAdmin, emissorRouter);
+app.use('/painel', somenteAdmin, painelRouter);
 
 // NFS-e: aberta ao token da empresa, restrita ao escopo dele.
 app.use('/nfse', fixarEscopoEmpresa, nfseRouter);

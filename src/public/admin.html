@@ -3,1107 +3,673 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>nfse-gateway · Painel</title>
+<title>NFS-e Gateway</title>
+<link rel="stylesheet" href="/assets/app.css">
 <style>
-  :root {
-    --bg:#f6f7f9; --card:#fff; --fg:#1a1d21; --muted:#6b7280;
-    --line:#e3e6ea; --accent:#1f6feb; --accent-fg:#fff;
-    --ok:#157347; --ok-bg:#e8f5ec; --warn:#9a6700; --warn-bg:#fff8e1;
-    --err:#b42318; --err-bg:#fdeceb;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg:#14171a; --card:#1c2024; --fg:#e6e8ea; --muted:#9aa4b2;
-      --line:#2c3238; --accent:#4b8ef7; --accent-fg:#fff;
-      --ok:#6cd08f; --ok-bg:#143024; --warn:#e3b341; --warn-bg:#33280c;
-      --err:#ff7b72; --err-bg:#3a1a18;
-    }
-  }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg);
-         font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  header { background:var(--card); border-bottom:1px solid var(--line); padding:14px 20px;
-           display:flex; align-items:center; gap:14px; position:sticky; top:0; z-index:10; }
-  header h1 { font-size:17px; margin:0; font-weight:650; }
-  header .sub { color:var(--muted); font-size:13px; }
-  .spacer { flex:1; }
-  main { max-width:1080px; margin:0 auto; padding:22px 20px 70px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
-          padding:20px; margin-bottom:18px; }
-  .card h2 { font-size:15px; margin:0 0 16px; font-weight:650; display:flex; align-items:center; gap:12px; }
-  button { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--fg);
-           padding:7px 13px; border-radius:7px; cursor:pointer; }
-  button:hover:not(:disabled) { border-color:var(--muted); }
-  button.primary { background:var(--accent); color:var(--accent-fg); border-color:transparent; }
-  button.primary:hover:not(:disabled) { filter:brightness(1.08); }
-  button.sm { padding:4px 9px; font-size:13px; }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th,td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
-  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
-  tbody tr:last-child td { border-bottom:0; }
-  .table-wrap { overflow-x:auto; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; }
-  .grid.g3 { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
-  label { display:block; font-size:13px; color:var(--muted); margin-bottom:5px; }
-  input,select { font:inherit; width:100%; padding:8px 10px; border-radius:7px;
-                 border:1px solid var(--line); background:var(--bg); color:var(--fg); }
-  input:disabled { opacity:.6; }
-  input:focus,select:focus { outline:2px solid var(--accent); outline-offset:-1px; }
-  .hint { font-size:12px; color:var(--muted); margin-top:4px; }
-  .tag { display:inline-block; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:600; }
-  .tag.ok{background:var(--ok-bg);color:var(--ok)} .tag.warn{background:var(--warn-bg);color:var(--warn)}
-  .tag.err{background:var(--err-bg);color:var(--err)} .tag.muted{background:var(--line);color:var(--muted)}
-  .msg { padding:11px 14px; border-radius:8px; margin-bottom:16px; font-size:14px; display:none; }
-  .msg.ok { background:var(--ok-bg); color:var(--ok); display:block; }
-  .msg.err { background:var(--err-bg); color:var(--err); display:block; }
-  .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:20px;
-             padding-top:16px; border-top:1px solid var(--line); }
-  dialog { border:1px solid var(--line); border-radius:12px; padding:0; background:var(--card);
-           color:var(--fg); max-width:520px; width:calc(100% - 32px); }
-  dialog::backdrop { background:rgba(0,0,0,.45); }
-  dialog .inner { padding:22px; }
-  dialog h3 { margin:0 0 4px; font-size:16px; }
-  dialog .dsub { color:var(--muted); font-size:13px; margin-bottom:18px; }
-  .empty { color:var(--muted); text-align:center; padding:34px 10px; font-size:14px; }
-  .mono { font-family:ui-monospace,"Cascadia Code",Consolas,monospace; font-size:13px; }
-  .warnbar { background:var(--warn-bg); color:var(--warn); padding:9px 14px; font-size:13px; text-align:center; }
-  .tabs { display:flex; gap:2px; border-bottom:1px solid var(--line); margin-bottom:20px; overflow-x:auto; }
-  .tabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:none;
-                 padding:10px 14px; color:var(--muted); white-space:nowrap; font-size:14px; }
-  .tabs button:hover:not(:disabled) { color:var(--fg); }
-  .tabs button.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
-  .pane { display:none; } .pane.active { display:block; }
-  .titlebar { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
-  .titlebar h2 { font-size:19px; margin:0; font-weight:650; }
-  .back { background:none; border:0; color:var(--accent); padding:0; font-size:14px; cursor:pointer; }
-  .ident { color:var(--muted); font-size:13px; margin-bottom:18px; }
-  .amb-box { border:1px solid var(--line); border-radius:9px; padding:16px; margin-bottom:14px; }
-  .amb-box h4 { margin:0 0 12px; font-size:14px; display:flex; align-items:center; gap:10px; }
-  .topnav { display:flex; gap:4px; }
-  .topnav button { border:0; background:none; color:var(--muted); padding:6px 12px; border-radius:7px; font-size:14px; }
-  .topnav button:hover { color:var(--fg); background:var(--bg); }
-  .topnav button.active { color:var(--accent); font-weight:600; }
-  .filtros { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; align-items:end; margin-bottom:4px; }
-  pre.xml { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:12px;
-            overflow-x:auto; font-family:ui-monospace,Consolas,monospace; font-size:12px;
-            line-height:1.45; max-height:340px; white-space:pre; }
-  .kv { display:grid; grid-template-columns:auto 1fr; gap:5px 16px; font-size:14px; margin-bottom:8px; }
-  .kv dt { color:var(--muted); } .kv dd { margin:0; word-break:break-all; }
-  .rowlink { color:var(--accent); cursor:pointer; }
+  /* Específico do painel — o compartilhado está em app.css */
+  .linha-alerta { display:flex; align-items:center; gap:10px; padding:11px 14px;
+                  border-radius:var(--raio-sm); margin-bottom:8px; font-size:13.5px; }
+  .linha-alerta.critico { background:var(--erro-bg); color:var(--erro); }
+  .linha-alerta.aviso   { background:var(--alerta-bg); color:var(--alerta); }
+  .acao-rapida { display:flex; align-items:center; gap:13px; padding:15px 17px;
+                 border:1px solid var(--linha); border-radius:var(--raio);
+                 background:var(--superficie); text-decoration:none; color:inherit;
+                 transition:all .13s; }
+  .acao-rapida:hover { border-color:var(--acento); box-shadow:var(--sombra); transform:translateY(-1px); }
+  .acao-rapida .ic { width:38px; height:38px; border-radius:9px; background:var(--acento-suave);
+                     color:var(--acento); display:grid; place-items:center; font-size:17px; flex-shrink:0; }
+  .acao-rapida .tit { display:block; font-weight:600; font-size:14px; }
+  .acao-rapida .des { display:block; font-size:12px; color:var(--texto-2); }
+  .caixa-amb { border:1px solid var(--linha); border-radius:var(--raio); padding:16px; margin-bottom:13px; }
+  .caixa-amb h4 { margin:0 0 12px; font-size:13.5px; display:flex; align-items:center; gap:9px; }
+  pre.xml { background:var(--superficie-2); border:1px solid var(--linha); border-radius:var(--raio-sm);
+            padding:13px; overflow-x:auto; font-family:ui-monospace,Consolas,monospace;
+            font-size:12px; line-height:1.5; max-height:330px; white-space:pre; margin:0; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:6px 16px; font-size:13.5px; }
+  .kv dt { color:var(--texto-2); } .kv dd { margin:0; word-break:break-all; }
+  .filtros { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; align-items:end; }
+  /* XML não cabe em 540px sem virar uma coluna de rolagem */
+  dialog.largo { max-width:880px; }
 </style>
 </head>
 <body>
 
-<div id="httpWarn" class="warnbar" hidden>
-  Conexão sem HTTPS fora de localhost — a senha do certificado trafegaria em texto claro. Use HTTPS em produção.
+<!-- ===================== TELA DE ACESSO ===================== -->
+<div class="tela-acesso" id="telaAcesso" hidden>
+  <div class="caixa-acesso">
+    <div class="marca-grande">
+      <div class="logo">NF</div>
+      <div>
+        <h1>NFS-e Gateway</h1>
+        <div style="font-size:12px;color:var(--texto-3)">Emissão de notas fiscais de serviço</div>
+      </div>
+    </div>
+    <p class="desc">Informe a chave de acesso para entrar. Ela fica no arquivo
+       <span class="mono">.env</span> do gateway, no campo <span class="mono">GATEWAY_API_KEY</span>.</p>
+    <form id="formAcesso">
+      <label for="campoChave">Chave de acesso</label>
+      <input id="campoChave" type="password" autocomplete="off" required>
+      <div class="ajuda">Fica guardada apenas nesta aba do navegador.</div>
+      <button type="submit" class="primario" style="width:100%;justify-content:center;margin-top:16px">Entrar</button>
+    </form>
+    <div id="erroAcesso" class="aviso" style="margin-top:14px"></div>
+  </div>
 </div>
 
-<header>
-  <h1>nfse-gateway</h1>
-  <nav class="topnav">
-    <button id="navEmpresas" class="active">Empresas</button>
-    <button id="navNotas">Notas</button>
-    <button id="navMunicipios">Municípios</button>
-  </nav>
-  <span class="spacer"></span>
-  <a href="/emitir" class="sm" style="text-decoration:none;border:1px solid var(--line);
-     padding:6px 13px;border-radius:7px;color:var(--fg)">Emitir nota</a>
-  <button class="sm" id="btnKey">Trocar chave de API</button>
-</header>
+<!-- ===================== APLICAÇÃO ===================== -->
+<div class="app" id="app" hidden>
 
-<main>
-  <div id="msg" class="msg"></div>
-
-  <section id="viewList">
-    <div class="card">
-      <h2>Empresas <span class="spacer"></span>
-        <button class="sm" id="btnReload">Atualizar</button>
-        <button class="sm primary" id="btnNew">Nova empresa</button>
-      </h2>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>CNPJ</th><th>Empresa</th><th>Município</th>
-            <th>Ambiente</th><th>Certificado</th><th>Série / Próx.</th><th></th>
-          </tr></thead>
-          <tbody id="tbody"></tbody>
-        </table>
+  <aside class="sidebar" id="sidebar">
+    <div class="marca">
+      <div class="logo">NF</div>
+      <div>
+        <div class="nome">NFS-e Gateway</div>
+        <div class="versao">Notas fiscais de serviço</div>
       </div>
-      <div id="empty" class="empty" hidden>Nenhuma empresa cadastrada ainda.</div>
     </div>
-  </section>
 
-  <section id="viewEdit" hidden>
-    <button class="back" id="btnBack">&lsaquo; Voltar</button>
-    <div class="titlebar"><h2 id="edTitle">Nova empresa</h2></div>
-    <div class="ident" id="edIdent"></div>
+    <nav class="menu">
+      <a href="#inicio" data-tela="inicio"><span class="ico">▤</span> Início</a>
 
-    <div class="card">
-      <div class="tabs" id="tabs">
-        <button data-pane="identificacao" class="active">Identificação</button>
-        <button data-pane="endereco">Endereço</button>
-        <button data-pane="contato">Contato</button>
-        <button data-pane="responsavel">Responsável</button>
-        <button data-pane="contabilidade">Contabilidade</button>
-        <button data-pane="fiscais" data-needs-save="1">Documentos Fiscais</button>
-        <button data-pane="certificado" data-needs-save="1">Certificado</button>
-        <button data-pane="integracao" data-needs-save="1">Integração / API</button>
+      <div class="menu-grupo">Emissão</div>
+      <a href="/emitir"><span class="ico">✎</span> Emitir nota</a>
+      <a href="#notas" data-tela="notas"><span class="ico">▦</span> Notas emitidas</a>
+
+      <div class="menu-grupo">Cadastros</div>
+      <a href="#empresas" data-tela="empresas"><span class="ico">▣</span> Empresas</a>
+      <a href="#clientes" data-tela="clientes"><span class="ico">◪</span> Clientes</a>
+      <a href="#servicos" data-tela="servicos"><span class="ico">◈</span> Serviços</a>
+
+      <div class="menu-grupo">Configuração</div>
+      <a href="#municipios" data-tela="municipios"><span class="ico">⬡</span> Municípios</a>
+      <a href="#webhooks" data-tela="webhooks"><span class="ico">⇄</span> Webhooks</a>
+    </nav>
+
+    <div class="rodape-sidebar">
+      <span id="rodapeAmbiente">—</span>
+      <span class="espaco"></span>
+      <button id="btnSair">Sair</button>
+    </div>
+  </aside>
+
+  <div class="conteudo">
+    <header class="topo">
+      <button class="plano abrir-menu" id="btnMenu" style="font-size:19px;padding:4px 9px">☰</button>
+      <div>
+        <h1 id="tituloTela">Início</h1>
+        <div class="sub" id="subtituloTela"></div>
       </div>
+      <span class="espaco"></span>
+      <a class="botao primario pequeno" href="/emitir">✎ Emitir nota</a>
+    </header>
 
-      <div class="pane active" id="pane-identificacao">
-        <div class="grid">
-          <div>
-            <label for="f_cnpj">CNPJ *</label>
-            <div style="display:flex;gap:8px">
-              <input id="f_cnpj" inputmode="numeric" placeholder="00000000000000">
-              <button type="button" class="sm" id="btnBuscaCnpj" style="white-space:nowrap">Buscar</button>
+    <div class="pagina">
+      <div id="aviso" class="aviso"></div>
+
+      <!-- ---------------- INÍCIO ---------------- -->
+      <section data-tela-conteudo="inicio">
+        <div id="alertas"></div>
+
+        <div class="grade c4" style="margin-bottom:18px">
+          <div class="metrica destaque">
+            <div class="rotulo">Notas no mês</div>
+            <div class="valor" id="mTotal">—</div>
+            <div class="nota" id="mTotalNota"></div>
+          </div>
+          <div class="metrica">
+            <div class="rotulo">Autorizadas</div>
+            <div class="valor" id="mAut" style="color:var(--ok)">—</div>
+            <div class="nota">documentos válidos</div>
+          </div>
+          <div class="metrica">
+            <div class="rotulo">Em processamento</div>
+            <div class="valor" id="mProc" style="color:var(--alerta)">—</div>
+            <div class="nota">aguardando a Sefin</div>
+          </div>
+          <div class="metrica">
+            <div class="rotulo">Com problema</div>
+            <div class="valor" id="mErro" style="color:var(--erro)">—</div>
+            <div class="nota">rejeitadas ou com erro</div>
+          </div>
+        </div>
+
+        <div class="grade c3" style="margin-bottom:18px">
+          <a class="acao-rapida" href="/emitir">
+            <span class="ic">✎</span>
+            <span><span class="tit">Emitir nota</span><span class="des">passo a passo guiado</span></span>
+          </a>
+          <a class="acao-rapida" href="#empresas" data-tela="empresas">
+            <span class="ic">▣</span>
+            <span><span class="tit">Empresas</span><span class="des" id="qtdEmpresas">cadastro e certificados</span></span>
+          </a>
+          <a class="acao-rapida" href="#notas" data-tela="notas">
+            <span class="ic">▦</span>
+            <span><span class="tit">Consultar notas</span><span class="des">XML, PDF e cancelamento</span></span>
+          </a>
+        </div>
+
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Últimas notas</h2>
+            <span class="espaco"></span>
+            <a class="botao pequeno" href="#notas" data-tela="notas">Ver todas</a>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr><th>Nº</th><th>Empresa</th><th>Série/Nº</th><th>Status</th><th>Data</th></tr></thead>
+                <tbody id="corpoUltimas"></tbody>
+              </table>
             </div>
-            <div class="hint">14 dígitos. "Buscar" preenche os dados pela Receita. Não pode ser alterado depois.</div>
-          </div>
-          <div>
-            <label for="f_razao">Razão social *</label>
-            <input id="f_razao" maxlength="300">
-          </div>
-        </div>
-        <div class="grid" style="margin-top:14px">
-          <div><label for="f_fantasia">Nome fantasia</label><input id="f_fantasia" maxlength="300"></div>
-          <div><label for="f_im">Inscrição municipal</label><input id="f_im" maxlength="15"></div>
-          <div><label for="f_ie">Inscrição estadual</label><input id="f_ie" maxlength="20"></div>
-        </div>
-        <div class="grid" style="margin-top:14px">
-          <div>
-            <label for="f_simp">Regime do Simples Nacional</label>
-            <select id="f_simp">
-              <option value="1">1 — Não optante</option>
-              <option value="2">2 — MEI</option>
-              <option value="3">3 — ME/EPP do Simples Nacional</option>
-            </select>
-          </div>
-          <div>
-            <label for="f_regesp">Regime especial de tributação</label>
-            <input id="f_regesp" type="number" min="0" value="0">
-            <div class="hint">0 = nenhum. Demais códigos conforme o leiaute nacional.</div>
+            <div id="vazioUltimas" class="vazio" hidden>
+              <div class="icone">▦</div>
+              <div class="titulo">Nenhuma nota emitida ainda</div>
+              <div>Cadastre uma empresa com certificado e emita a primeira nota.</div>
+            </div>
           </div>
         </div>
-        <div class="grid" style="margin-top:14px">
-          <div>
-            <label for="f_amb">Ambiente de operação</label>
-            <select id="f_amb">
-              <option value="homologacao">Homologação (produção restrita)</option>
-              <option value="producao">Produção</option>
-            </select>
-            <div class="hint">Define qual numeração será usada nas emissões.</div>
-          </div>
-          <div id="wrapAtivo" hidden>
-            <label for="f_ativo">Situação</label>
-            <select id="f_ativo"><option value="true">Ativa</option><option value="false">Inativa</option></select>
-          </div>
-        </div>
-      </div>
+      </section>
 
-      <div class="pane" id="pane-endereco">
-        <div class="grid">
-          <div>
-            <label for="f_mun">Código do município (IBGE) *</label>
-            <input id="f_mun" inputmode="numeric" placeholder="4106902">
-            <div class="hint">7 dígitos, município emissor</div>
+      <!-- ---------------- EMPRESAS ---------------- -->
+      <section data-tela-conteudo="empresas" hidden>
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Empresas cadastradas</h2>
+            <span class="espaco"></span>
+            <button class="pequeno" id="btnRecarregarEmp">Atualizar</button>
+            <button class="pequeno primario" id="btnNovaEmp">+ Nova empresa</button>
           </div>
-          <div><label for="f_uf">UF</label><input id="f_uf" maxlength="2" placeholder="PR" style="text-transform:uppercase"></div>
-          <div><label for="f_cep">CEP</label><input id="f_cep" inputmode="numeric" placeholder="80010000"></div>
-        </div>
-        <div class="grid" style="margin-top:14px">
-          <div style="grid-column:span 2"><label for="f_lgr">Logradouro</label><input id="f_lgr" maxlength="255"></div>
-          <div><label for="f_num">Número</label><input id="f_num" maxlength="20"></div>
-        </div>
-        <div class="grid" style="margin-top:14px">
-          <div><label for="f_cpl">Complemento</label><input id="f_cpl" maxlength="150"></div>
-          <div><label for="f_bairro">Bairro</label><input id="f_bairro" maxlength="150"></div>
-        </div>
-        <div class="hint" style="margin-top:14px">
-          O endereço vai no bloco <span class="mono">&lt;prest&gt;</span> da DPS. Se não for preenchido, é omitido.
-        </div>
-      </div>
-
-      <div class="pane" id="pane-contato">
-        <div class="grid">
-          <div><label for="f_email">E-mail</label><input id="f_email" type="email" maxlength="255"></div>
-          <div><label for="f_tel">Telefone</label><input id="f_tel" maxlength="20" placeholder="(41) 99999-9999"></div>
-        </div>
-        <div style="margin-top:16px">
-          <label for="f_email_tom">Enviar NFS-e por e-mail ao tomador</label>
-          <select id="f_email_tom">
-            <option value="false">Não</option>
-            <option value="true">Sim, ao autorizar</option>
-          </select>
-          <div class="hint">Requer SMTP configurado no servidor (.env). O e-mail vai ao endereço informado no tomador de cada nota.</div>
-        </div>
-      </div>
-
-      <div class="pane" id="pane-responsavel">
-        <div class="grid">
-          <div><label for="f_respnome">Nome do responsável</label><input id="f_respnome" maxlength="255"></div>
-          <div><label for="f_respcpf">CPF do responsável</label><input id="f_respcpf" inputmode="numeric" maxlength="14"></div>
-        </div>
-      </div>
-
-      <div class="pane" id="pane-contabilidade">
-        <div class="grid">
-          <div>
-            <label for="f_contador">CPF / CNPJ do contador</label>
-            <input id="f_contador" inputmode="numeric" maxlength="18">
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr>
+                  <th>CNPJ</th><th>Empresa</th><th>Município</th>
+                  <th>Ambiente</th><th>Certificado</th><th>Série/Próx.</th><th></th>
+                </tr></thead>
+                <tbody id="corpoEmpresas"></tbody>
+              </table>
+            </div>
+            <div id="vazioEmpresas" class="vazio" hidden>
+              <div class="icone">▣</div>
+              <div class="titulo">Nenhuma empresa cadastrada</div>
+              <div>Cadastre a primeira empresa para começar a emitir.</div>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div class="pane" id="pane-fiscais">
-        <div class="hint" style="margin-bottom:16px">
-          Homologação e produção têm <strong>numeração independente</strong>. Emitir em
-          homologação não consome números da sequência de produção.
-        </div>
-        <div class="amb-box">
-          <h4>Homologação <span class="tag ok">produção restrita</span></h4>
-          <div class="grid g3">
-            <div><label for="f_serie_h">Série</label><input id="f_serie_h" maxlength="5"></div>
-            <div><label for="f_num_h">Próximo número</label><input id="f_num_h" type="number" min="1"></div>
-            <div style="align-self:end"><button class="sm" data-amb="homologacao">Salvar numeração</button></div>
+      <!-- ---------------- EDIÇÃO DE EMPRESA ---------------- -->
+      <section data-tela-conteudo="empresaEdit" hidden>
+        <button class="plano pequeno" id="btnVoltarEmp" style="margin-bottom:12px">‹ Voltar para empresas</button>
+        <div class="cartao">
+          <div class="abas" id="abas">
+            <button data-aba="identificacao" class="ativo">Identificação</button>
+            <button data-aba="endereco">Endereço</button>
+            <button data-aba="contato">Contato</button>
+            <button data-aba="responsavel">Responsável</button>
+            <button data-aba="contabilidade">Contabilidade</button>
+            <button data-aba="fiscais" data-precisa-salvar="1">Documentos Fiscais</button>
+            <button data-aba="certificado" data-precisa-salvar="1">Certificado</button>
+            <button data-aba="integracao" data-precisa-salvar="1">Integração / API</button>
+          </div>
+
+          <div class="painel-aba ativo" id="aba-identificacao">
+            <div class="grade c2">
+              <div>
+                <label for="f_cnpj">CNPJ *</label>
+                <div style="display:flex;gap:8px">
+                  <input id="f_cnpj" inputmode="numeric" placeholder="00000000000000">
+                  <button type="button" class="pequeno" id="btnBuscaCnpj" style="white-space:nowrap">Buscar</button>
+                </div>
+                <div class="ajuda">"Buscar" preenche os dados pela Receita.</div>
+              </div>
+              <div><label for="f_razao">Razão social *</label><input id="f_razao" maxlength="300"></div>
+            </div>
+            <div class="grade c3" style="margin-top:14px">
+              <div><label for="f_fantasia">Nome fantasia</label><input id="f_fantasia" maxlength="300"></div>
+              <div><label for="f_im">Inscrição municipal</label><input id="f_im" maxlength="15"></div>
+              <div><label for="f_ie">Inscrição estadual</label><input id="f_ie" maxlength="20"></div>
+            </div>
+            <div class="grade c2" style="margin-top:14px">
+              <div>
+                <label for="f_simp">Regime do Simples Nacional</label>
+                <select id="f_simp">
+                  <option value="1">1 — Não optante</option>
+                  <option value="2">2 — MEI</option>
+                  <option value="3">3 — ME/EPP do Simples Nacional</option>
+                </select>
+              </div>
+              <div>
+                <label for="f_regesp">Regime especial de tributação</label>
+                <input id="f_regesp" type="number" min="0" value="0">
+                <div class="ajuda">0 = nenhum.</div>
+              </div>
+            </div>
+            <div class="grade c2" style="margin-top:14px">
+              <div>
+                <label for="f_amb">Ambiente de operação</label>
+                <select id="f_amb">
+                  <option value="homologacao">Homologação (teste)</option>
+                  <option value="producao">Produção (valor fiscal)</option>
+                </select>
+              </div>
+              <div id="wrapAtivo" hidden>
+                <label for="f_ativo">Situação</label>
+                <select id="f_ativo"><option value="true">Ativa</option><option value="false">Inativa</option></select>
+              </div>
+            </div>
+          </div>
+
+          <div class="painel-aba" id="aba-endereco">
+            <div class="grade c3">
+              <div>
+                <label for="f_mun">Código do município (IBGE) *</label>
+                <input id="f_mun" inputmode="numeric" placeholder="4106902">
+                <div class="ajuda">7 dígitos.</div>
+              </div>
+              <div><label for="f_uf">UF</label><input id="f_uf" maxlength="2" style="text-transform:uppercase"></div>
+              <div><label for="f_cep">CEP</label><input id="f_cep" inputmode="numeric"></div>
+            </div>
+            <div class="grade c3" style="margin-top:14px">
+              <div style="grid-column:span 2"><label for="f_lgr">Logradouro</label><input id="f_lgr" maxlength="255"></div>
+              <div><label for="f_num">Número</label><input id="f_num" maxlength="20"></div>
+            </div>
+            <div class="grade c2" style="margin-top:14px">
+              <div><label for="f_cpl">Complemento</label><input id="f_cpl" maxlength="150"></div>
+              <div><label for="f_bairro">Bairro</label><input id="f_bairro" maxlength="150"></div>
+            </div>
+            <div class="ajuda" style="margin-top:14px">
+              O endereço não vai na nota quando a empresa é a emitente — a Sefin usa o do cadastro nacional.
+              Fica aqui para referência e para os relatórios.
+            </div>
+          </div>
+
+          <div class="painel-aba" id="aba-contato">
+            <div class="grade c2">
+              <div><label for="f_email">E-mail</label><input id="f_email" type="email" maxlength="255"></div>
+              <div><label for="f_tel">Telefone</label><input id="f_tel" maxlength="20"></div>
+            </div>
+            <div style="margin-top:16px;max-width:340px">
+              <label for="f_email_tom">Enviar NFS-e por e-mail ao tomador</label>
+              <select id="f_email_tom">
+                <option value="false">Não</option>
+                <option value="true">Sim, ao autorizar</option>
+              </select>
+              <div class="ajuda">Requer servidor SMTP configurado no gateway.</div>
+            </div>
+          </div>
+
+          <div class="painel-aba" id="aba-responsavel">
+            <div class="grade c2">
+              <div><label for="f_respnome">Nome do responsável</label><input id="f_respnome" maxlength="255"></div>
+              <div><label for="f_respcpf">CPF do responsável</label><input id="f_respcpf" inputmode="numeric" maxlength="14"></div>
+            </div>
+          </div>
+
+          <div class="painel-aba" id="aba-contabilidade">
+            <div style="max-width:340px">
+              <label for="f_contador">CPF / CNPJ do contador</label>
+              <input id="f_contador" inputmode="numeric" maxlength="18">
+            </div>
+          </div>
+
+          <div class="painel-aba" id="aba-fiscais">
+            <div class="ajuda" style="margin-bottom:15px">
+              Homologação e produção têm <strong>numeração independente</strong>.
+              Emitir em teste não consome números da sequência oficial.
+            </div>
+            <div class="caixa-amb">
+              <h4>Homologação <span class="selo-status s-ok sem-ponto">teste</span></h4>
+              <div class="grade c3">
+                <div><label for="f_serie_h">Série</label><input id="f_serie_h" maxlength="5"></div>
+                <div><label for="f_num_h">Próximo número</label><input id="f_num_h" type="number" min="1"></div>
+                <div style="align-self:end"><button class="pequeno" data-amb="homologacao">Salvar</button></div>
+              </div>
+            </div>
+            <div class="caixa-amb">
+              <h4>Produção <span class="selo-status s-erro sem-ponto">valor fiscal</span></h4>
+              <div class="grade c3">
+                <div><label for="f_serie_p">Série</label><input id="f_serie_p" maxlength="5"></div>
+                <div><label for="f_num_p">Próximo número</label><input id="f_num_p" type="number" min="1"></div>
+                <div style="align-self:end"><button class="pequeno" data-amb="producao">Salvar</button></div>
+              </div>
+              <div class="ajuda" style="margin-top:10px">
+                Alterar a numeração de produção afeta a sequência fiscal.
+              </div>
+            </div>
+          </div>
+
+          <div class="painel-aba" id="aba-certificado">
+            <div id="certAtual" style="margin-bottom:18px"></div>
+            <div class="grade c2">
+              <div>
+                <label for="f_pfx">Arquivo .pfx / .p12</label>
+                <input id="f_pfx" type="file" accept=".pfx,.p12">
+                <div class="ajuda">Somente A1 (arquivo). Máx. 1 MB.</div>
+              </div>
+              <div>
+                <label for="f_senha">Senha do certificado</label>
+                <input id="f_senha" type="password" autocomplete="off">
+                <div class="ajuda">Guardada cifrada (AES-256-GCM).</div>
+              </div>
+            </div>
+            <div style="margin-top:15px"><button class="primario" id="btnCert">Enviar certificado</button></div>
+          </div>
+
+          <div class="painel-aba" id="aba-integracao">
+            <div class="ajuda" style="margin-bottom:14px">
+              Dados para conectar um sistema externo. O token identifica
+              <strong>a empresa e o ambiente</strong>.
+            </div>
+            <div id="intResumo"></div>
+            <div class="caixa-amb" style="margin-top:14px">
+              <h4>Tokens de acesso</h4>
+              <div id="intTokens"></div>
+            </div>
+            <div class="caixa-amb">
+              <h4>Endpoints</h4>
+              <div id="intEndpoints" class="mono" style="line-height:1.9"></div>
+            </div>
+            <div class="caixa-amb">
+              <h4>Exemplo de emissão</h4>
+              <pre class="xml" id="intExemplo">—</pre>
+            </div>
+          </div>
+
+          <div class="acoes-form" id="acoesEmpresa" style="padding:16px 18px">
+            <button id="btnCancelarEmp">Cancelar</button>
+            <button class="primario" id="btnSalvarEmp">Salvar empresa</button>
           </div>
         </div>
-        <div class="amb-box">
-          <h4>Produção <span class="tag err">valor fiscal</span></h4>
-          <div class="grid g3">
-            <div><label for="f_serie_p">Série</label><input id="f_serie_p" maxlength="5"></div>
-            <div><label for="f_num_p">Próximo número</label><input id="f_num_p" type="number" min="1"></div>
-            <div style="align-self:end"><button class="sm" data-amb="producao">Salvar numeração</button></div>
-          </div>
-          <div class="hint" style="margin-top:10px">
-            Alterar a numeração de produção afeta a sequência fiscal. Ajuste apenas se souber o próximo número correto.
-          </div>
-        </div>
-      </div>
+      </section>
 
-      <div class="pane" id="pane-certificado">
-        <div id="certAtual" style="margin-bottom:18px"></div>
-        <div class="grid">
-          <div>
-            <label for="f_pfx">Arquivo .pfx / .p12</label>
-            <input id="f_pfx" type="file" accept=".pfx,.p12">
-            <div class="hint">Somente A1 (arquivo). A3 em token/cartão não é suportado. Máx. 1 MB.</div>
-          </div>
-          <div>
-            <label for="f_senha">Senha do certificado</label>
-            <input id="f_senha" type="password" autocomplete="off">
-            <div class="hint">Guardada cifrada (AES-256-GCM). Um novo envio desativa o anterior.</div>
-          </div>
-        </div>
-        <div style="margin-top:14px"><button class="primary" id="btnCert">Enviar certificado</button></div>
-      </div>
-
-      <div class="pane" id="pane-integracao">
-        <div class="hint" style="margin-bottom:14px">
-          Dados que o sistema cliente precisa para conectar. O token identifica
-          <strong>a empresa e o ambiente</strong> — não é preciso enviar CNPJ nem ambiente no corpo das chamadas.
-        </div>
-        <div id="intResumo"></div>
-
-        <div class="amb-box" style="margin-top:14px">
-          <h4>Tokens de acesso</h4>
-          <div id="intTokens"></div>
-          <div class="hint" style="margin-top:10px">
-            Gerar um novo token <strong>invalida o anterior imediatamente</strong>: quem estiver usando para de funcionar até receber o novo.
+      <!-- ---------------- NOTAS ---------------- -->
+      <section data-tela-conteudo="notas" hidden>
+        <div class="cartao">
+          <div class="cartao-cab"><h2>Filtros</h2></div>
+          <div class="cartao-corpo">
+            <div class="filtros">
+              <div>
+                <label for="nf_empresa">Empresa</label>
+                <select id="nf_empresa"><option value="">Todas</option></select>
+              </div>
+              <div>
+                <label for="nf_status">Status</label>
+                <select id="nf_status">
+                  <option value="">Todos</option>
+                  <option value="processando">Processando</option>
+                  <option value="autorizada">Autorizada</option>
+                  <option value="rejeitada">Rejeitada</option>
+                  <option value="cancelada">Cancelada</option>
+                  <option value="erro">Erro</option>
+                  <option value="substituida">Substituída</option>
+                </select>
+              </div>
+              <div>
+                <label for="nf_ambiente">Ambiente</label>
+                <select id="nf_ambiente">
+                  <option value="">Todos</option>
+                  <option value="homologacao">Homologação</option>
+                  <option value="producao">Produção</option>
+                </select>
+              </div>
+              <div><label for="nf_ref">Referência</label><input id="nf_ref" placeholder="PEDIDO-123"></div>
+              <div><button class="primario" id="btnFiltrarNotas" style="width:100%;justify-content:center">Filtrar</button></div>
+            </div>
           </div>
         </div>
-
-        <div class="amb-box">
-          <h4>Endpoints</h4>
-          <div id="intEndpoints" class="mono" style="font-size:12px;line-height:1.9"></div>
-        </div>
-
-        <div class="amb-box">
-          <h4>Exemplo de emissão</h4>
-          <pre class="xml" id="intExemplo" style="max-height:260px">—</pre>
-        </div>
-
-        <div class="amb-box">
-          <h4>Retorno ao cliente (webhook)</h4>
-          <div id="intWebhooks"></div>
-          <div class="hint" style="margin-top:10px">
-            Ao autorizar, o gateway envia um POST com status, chave de acesso e os
-            <strong>links do XML e do PDF</strong>. Configure os destinos na aba Webhooks do menu principal.
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Notas</h2><span class="espaco"></span>
+            <button class="pequeno" id="btnExpNfse">↓ XMLs das notas</button>
+            <button class="pequeno" id="btnExpDps">↓ XMLs das DPS</button>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr>
+                  <th>Nº</th><th>Empresa</th><th>Série/Nº</th><th>Ambiente</th>
+                  <th>Status</th><th>Referência</th><th>Data</th><th></th>
+                </tr></thead>
+                <tbody id="corpoNotas"></tbody>
+              </table>
+            </div>
+            <div id="vazioNotas" class="vazio" hidden>
+              <div class="icone">▦</div><div class="titulo">Nenhuma nota encontrada</div>
+              <div>Ajuste os filtros ou emita uma nota.</div>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div class="actions" id="edActions">
-        <button id="btnCancel">Cancelar</button>
-        <button class="primary" id="btnSave">Salvar empresa</button>
-      </div>
+      <!-- ---------------- CLIENTES ---------------- -->
+      <section data-tela-conteudo="clientes" hidden>
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Clientes</h2>
+            <span class="espaco"></span>
+            <select id="cl_empresa" style="width:auto;min-width:210px"></select>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr><th>Documento</th><th>Nome</th><th>Município</th><th>E-mail</th><th>Notas</th></tr></thead>
+                <tbody id="corpoClientes"></tbody>
+              </table>
+            </div>
+            <div id="vazioClientes" class="vazio" hidden>
+              <div class="icone">◪</div><div class="titulo">Nenhum cliente cadastrado</div>
+              <div>Os clientes são salvos automaticamente ao emitir a primeira nota para eles.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------- SERVIÇOS ---------------- -->
+      <section data-tela-conteudo="servicos" hidden>
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Serviços</h2>
+            <span class="espaco"></span>
+            <select id="sv_empresa" style="width:auto;min-width:210px"></select>
+            <button class="pequeno primario" id="btnNovoServico">+ Novo serviço</button>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr><th>Apelido</th><th>Código</th><th>Descrição</th><th>Valor padrão</th><th>Usos</th><th></th></tr></thead>
+                <tbody id="corpoServicos"></tbody>
+              </table>
+            </div>
+            <div id="vazioServicos" class="vazio" hidden>
+              <div class="icone">◈</div><div class="titulo">Nenhum serviço salvo</div>
+              <div>Salve os serviços frequentes para emitir mais rápido.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------- MUNICÍPIOS ---------------- -->
+      <section data-tela-conteudo="municipios" hidden>
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Municípios</h2><span class="espaco"></span>
+            <button class="pequeno primario" id="btnNovoMun">+ Classificar município</button>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda">
+              <strong>Nacional</strong>: o gateway emite. <strong>Emissor próprio</strong>: o município
+              usa sistema próprio e a emissão pelo gateway é bloqueada, evitando erro na Sefin.
+            </div>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr><th>Código IBGE</th><th>Município</th><th>UF</th><th>Emissão</th><th>ISS %</th><th>Fonte</th><th></th></tr></thead>
+                <tbody id="corpoMunicipios"></tbody>
+              </table>
+            </div>
+            <div id="vazioMunicipios" class="vazio" hidden>
+              <div class="icone">⬡</div><div class="titulo">Nenhum município classificado</div>
+              <div>Municípios não classificados não bloqueiam a emissão.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------- WEBHOOKS ---------------- -->
+      <section data-tela-conteudo="webhooks" hidden>
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Webhooks</h2><span class="espaco"></span>
+            <button class="pequeno primario" id="btnNovoWebhook">+ Novo webhook</button>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda">
+              Ao autorizar ou rejeitar uma nota, o gateway envia um POST com o resultado
+              e os links do XML e do PDF. A entrega é reenviada automaticamente em caso de falha.
+            </div>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr><th>URL</th><th>Empresa</th><th>Ambiente</th><th>Autenticação</th><th>Situação</th><th></th></tr></thead>
+                <tbody id="corpoWebhooks"></tbody>
+              </table>
+            </div>
+            <div id="vazioWebhooks" class="vazio" hidden>
+              <div class="icone">⇄</div><div class="titulo">Nenhum webhook configurado</div>
+              <div>Sem webhook, o sistema cliente precisa consultar o status por conta própria.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
     </div>
-  </section>
+  </div>
+</div>
 
-  <!-- ============ NOTAS ============ -->
-  <section id="viewNotas" hidden>
-    <div class="card">
-      <h2>Notas emitidas <span class="spacer"></span>
-        <button class="sm" id="btnExportNfse">Exportar NFS-e (.zip)</button>
-        <button class="sm" id="btnExportDps">Exportar DPS (.zip)</button>
-        <button class="sm" id="btnNotasReload">Atualizar</button>
-      </h2>
-      <div class="filtros">
-        <div>
-          <label for="nf_empresa">Empresa</label>
-          <select id="nf_empresa"><option value="">Todas</option></select>
-        </div>
-        <div>
-          <label for="nf_status">Status</label>
-          <select id="nf_status">
-            <option value="">Todos</option>
-            <option value="processando">Processando</option>
-            <option value="autorizada">Autorizada</option>
-            <option value="rejeitada">Rejeitada</option>
-            <option value="cancelada">Cancelada</option>
-            <option value="erro">Erro</option>
-            <option value="substituida">Substituída</option>
-            <option value="encerrada">Encerrada</option>
-          </select>
-        </div>
-        <div>
-          <label for="nf_ambiente">Ambiente</label>
-          <select id="nf_ambiente">
-            <option value="">Todos</option>
-            <option value="homologacao">Homologação</option>
-            <option value="producao">Produção</option>
-          </select>
-        </div>
-        <div>
-          <label for="nf_ref">Referência</label>
-          <input id="nf_ref" placeholder="ex.: PEDIDO-123">
-        </div>
-        <div><button class="primary" id="btnNotasFiltrar" style="width:100%">Filtrar</button></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Nº</th><th>Empresa</th><th>Série/Nº</th><th>Ambiente</th>
-            <th>Status</th><th>Referência</th><th>Criada em</th><th></th>
-          </tr></thead>
-          <tbody id="notasBody"></tbody>
-        </table>
-      </div>
-      <div id="notasEmpty" class="empty" hidden>Nenhuma nota encontrada com esses filtros.</div>
-    </div>
-  </section>
+<!-- ===================== DIÁLOGOS ===================== -->
 
-  <!-- ============ MUNICÍPIOS ============ -->
-  <section id="viewMunicipios" hidden>
-    <div class="card">
-      <h2>Municípios <span class="spacer"></span>
-        <button class="sm" id="btnMunNovo">Classificar município</button>
-        <button class="sm" id="btnMunReload">Atualizar</button>
-      </h2>
-      <div class="hint" style="margin-bottom:4px">
-        <strong>Nacional</strong>: o gateway emite. <strong>Emissor próprio</strong>: o município usa
-        sistema próprio (ABRASF etc.) — a emissão pelo gateway é bloqueada. A classificação pode ser
-        manual ou automática (consulta ao ADN, quando houver certificado).
-      </div>
-    </div>
-    <div class="card">
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Código IBGE</th><th>Município</th><th>UF</th>
-            <th>Emissão</th><th>ISS %</th><th>Fonte</th><th></th>
-          </tr></thead>
-          <tbody id="munBody"></tbody>
-        </table>
-      </div>
-      <div id="munEmpty" class="empty" hidden>Nenhum município classificado ainda.</div>
-    </div>
-  </section>
-</main>
-
-<!-- Classificar município -->
-<dialog id="dlgMun"><div class="inner">
-  <h3>Classificar município</h3>
-  <div class="dsub">Marque como Nacional ou Emissor próprio. Para consultar o ADN automaticamente, informe um CNPJ com certificado.</div>
-  <form id="formMun">
-    <div class="grid">
-      <div>
-        <label for="m_cod">Código IBGE *</label>
-        <input id="m_cod" inputmode="numeric" maxlength="7" placeholder="4106902">
-      </div>
-      <div>
-        <label for="m_uf">UF</label>
-        <input id="m_uf" maxlength="2" placeholder="PR" style="text-transform:uppercase">
-      </div>
-    </div>
-    <div style="margin-top:14px"><label for="m_nome">Nome do município</label><input id="m_nome" maxlength="150"></div>
-    <div class="grid" style="margin-top:14px">
-      <div>
-        <label for="m_modo">Modo de emissão</label>
-        <select id="m_modo">
-          <option value="nacional">Nacional (o gateway emite)</option>
-          <option value="proprio">Emissor próprio (bloqueia emissão)</option>
-          <option value="desconhecido">Desconhecido</option>
-        </select>
-      </div>
-      <div><label for="m_iss">Alíquota ISS (%)</label><input id="m_iss" type="number" step="0.01" min="0" placeholder="opcional"></div>
-    </div>
-    <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
-      <label for="m_cnpj">Ou classificar pelo ADN — CNPJ com certificado</label>
-      <input id="m_cnpj" inputmode="numeric" placeholder="deixe vazio para salvar manualmente">
-      <div class="hint">Se preenchido, consulta o ADN com o certificado dessa empresa e ignora os campos acima.</div>
-    </div>
-    <div class="actions">
-      <button type="button" id="munCancel">Cancelar</button>
-      <button type="submit" class="primary" id="munSave">Salvar</button>
-    </div>
-  </form>
-</div></dialog>
-
-<!-- Detalhe da nota -->
-<dialog id="dlgNota"><div class="inner">
+<dialog id="dlgNota" class="largo"><div class="interno">
   <h3 id="notaTitulo">Nota</h3>
   <div class="dsub" id="notaSub"></div>
-  <dl class="kv" id="notaKv"></dl>
+  <dl class="kv" id="notaKv" style="margin-bottom:12px"></dl>
   <div id="notaErroBox"></div>
-  <div class="tabs" id="notaTabs" style="margin-top:8px">
-    <button data-xml="dps" class="active">DPS assinada</button>
+  <div class="abas" id="notaAbas" style="margin-bottom:12px">
+    <button data-xml="dps" class="ativo">DPS assinada</button>
     <button data-xml="nfse">NFS-e</button>
     <button data-xml="retorno">Retorno Sefin</button>
   </div>
   <pre class="xml" id="notaXml">—</pre>
-  <div class="actions">
-    <button id="notaFechar">Fechar</button>
+  <div class="acoes-form">
+    <button class="perigo" id="notaCancelar">Cancelar nota</button>
+    <span class="espaco"></span>
+    <button id="notaBaixarXml">Baixar XML</button>
+    <button id="notaBaixarPdf">Baixar PDF</button>
+    <button class="primario" id="notaFechar">Fechar</button>
   </div>
 </div></dialog>
 
-<dialog id="dlgKey"><div class="inner">
-  <h3>Chave de API do gateway</h3>
-  <div class="dsub">É o valor de <span class="mono">GATEWAY_API_KEY</span> do arquivo <span class="mono">.env</span>.
-    Fica guardada apenas nesta aba do navegador.</div>
-  <form id="formKey">
-    <label for="f_key">Chave</label>
-    <input id="f_key" type="password" required autocomplete="off">
-    <div class="actions"><button type="submit" class="primary">Salvar</button></div>
+<dialog id="dlgCancelar"><div class="interno">
+  <h3>Cancelar NFS-e</h3>
+  <div class="dsub">O cancelamento é enviado à Sefin Nacional e <strong>não pode ser desfeito</strong>.</div>
+  <form id="formCancelar">
+    <div><label for="c_chave">Nota</label><input id="c_chave" readonly class="mono"></div>
+    <div style="margin-top:14px">
+      <label for="c_codigo">Motivo *</label>
+      <select id="c_codigo">
+        <option value="1">1 — Erro na emissão</option>
+        <option value="2">2 — Serviço não prestado</option>
+        <option value="9">9 — Outros</option>
+      </select>
+    </div>
+    <div style="margin-top:14px">
+      <label for="c_motivo">Descrição do motivo *</label>
+      <input id="c_motivo" maxlength="255" placeholder="Ex.: valor do serviço lançado incorretamente">
+      <div class="ajuda">Fica registrada no evento de cancelamento, com valor fiscal.</div>
+    </div>
+    <div class="acoes-form">
+      <button type="button" id="cancCancelar">Voltar</button>
+      <button type="submit" class="primario">Confirmar cancelamento</button>
+    </div>
   </form>
 </div></dialog>
 
-<script>
-(function () {
-  'use strict';
-  var KEY_STORE = 'nfse_gateway_api_key';
-  var el = function (id) { return document.getElementById(id); };
-  var empresas = [], editando = null;
+<dialog id="dlgMun"><div class="interno">
+  <h3>Classificar município</h3>
+  <div class="dsub">Defina se o município emite pelo Sistema Nacional ou tem emissor próprio.</div>
+  <form id="formMun">
+    <div class="grade c2">
+      <div><label for="m_cod">Código IBGE *</label><input id="m_cod" inputmode="numeric" maxlength="7" placeholder="4106902"></div>
+      <div><label for="m_uf">UF</label><input id="m_uf" maxlength="2" style="text-transform:uppercase"></div>
+    </div>
+    <div style="margin-top:14px"><label for="m_nome">Nome do município</label><input id="m_nome" maxlength="150"></div>
+    <div class="grade c2" style="margin-top:14px">
+      <div>
+        <label for="m_modo">Modo de emissão</label>
+        <select id="m_modo">
+          <option value="nacional">Nacional (o gateway emite)</option>
+          <option value="proprio">Emissor próprio (bloqueia)</option>
+          <option value="desconhecido">Desconhecido</option>
+        </select>
+      </div>
+      <div><label for="m_iss">Alíquota ISS (%)</label><input id="m_iss" type="number" step="0.01" min="0"></div>
+    </div>
+    <div class="acoes-form">
+      <button type="button" id="munCancelar">Cancelar</button>
+      <button type="submit" class="primario">Salvar</button>
+    </div>
+  </form>
+</div></dialog>
 
-  if (location.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) {
-    el('httpWarn').hidden = false;
-  }
+<dialog id="dlgServico"><div class="interno">
+  <h3>Serviço</h3>
+  <div class="dsub">Serviços salvos aparecem como atalho na emissão.</div>
+  <form id="formServico">
+    <div><label for="s_apelido">Apelido *</label><input id="s_apelido" maxlength="100" placeholder="Ex.: Vigilância mensal">
+      <div class="ajuda">Nome curto que aparece na lista.</div></div>
+    <div class="grade c2" style="margin-top:14px">
+      <div><label for="s_codigo">Código de tributação *</label><input id="s_codigo" inputmode="numeric" maxlength="6" placeholder="110201">
+        <div class="ajuda">6 dígitos (cTribNac).</div></div>
+      <div><label for="s_valor">Valor padrão</label><input id="s_valor" type="number" step="0.01" min="0"></div>
+    </div>
+    <div style="margin-top:14px"><label for="s_descricao">Descrição na nota *</label><input id="s_descricao" maxlength="300"></div>
+    <div class="grade c2" style="margin-top:14px">
+      <div><label for="s_aliquota">Alíquota / % tributos</label><input id="s_aliquota" type="number" step="0.0001" min="0">
+        <div class="ajuda">No Simples, o percentual do PGDAS.</div></div>
+      <div><label for="s_retido">ISS retido</label>
+        <select id="s_retido"><option value="false">Não</option><option value="true">Sim</option></select></div>
+    </div>
+    <div class="acoes-form">
+      <button type="button" id="servCancelar">Cancelar</button>
+      <button type="submit" class="primario">Salvar</button>
+    </div>
+  </form>
+</div></dialog>
 
-  function getKey() { return sessionStorage.getItem(KEY_STORE) || ''; }
-  function msg(text, kind) {
-    var m = el('msg'); m.textContent = text; m.className = 'msg ' + (kind || 'ok');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (kind !== 'err') setTimeout(function () { m.className = 'msg'; }, 4500);
-  }
-  function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
-    });
-  }
-  function digits(v) { return String(v || '').replace(/\D/g, ''); }
-  function fmtCnpj(v) {
-    if (!v) return '';
-    if (v.length === 14) return v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-    if (v.length === 11) return v.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
-    return v;
-  }
+<dialog id="dlgWebhook"><div class="interno">
+  <h3>Webhook</h3>
+  <div class="dsub">Endereço que recebe o resultado das emissões.</div>
+  <form id="formWebhook">
+    <div><label for="w_url">URL de destino *</label><input id="w_url" placeholder="https://seusistema.com/nfse-callback"></div>
+    <div class="grade c2" style="margin-top:14px">
+      <div><label for="w_empresa">Empresa</label><select id="w_empresa"><option value="">Todas</option></select></div>
+      <div><label for="w_ambiente">Ambiente</label>
+        <select id="w_ambiente"><option value="">Ambos</option><option value="homologacao">Homologação</option><option value="producao">Produção</option></select></div>
+    </div>
+    <div class="grade c2" style="margin-top:14px">
+      <div><label for="w_header">Header de autorização</label><input id="w_header" placeholder="X-Gateway-Token"></div>
+      <div><label for="w_chave">Chave</label><input id="w_chave" type="password" autocomplete="off"></div>
+    </div>
+    <div class="ajuda" style="margin-top:6px">Opcional: permite ao receptor confirmar que a chamada veio deste gateway.</div>
+    <div class="acoes-form">
+      <button type="button" id="webCancelar">Cancelar</button>
+      <button type="submit" class="primario">Salvar</button>
+    </div>
+  </form>
+</div></dialog>
 
-  function api(path, opts) {
-    opts = opts || {};
-    var headers = opts.headers || {};
-    headers['X-API-Key'] = getKey();
-    return fetch(path, { method: opts.method || 'GET', headers: headers, body: opts.body })
-      .then(function (res) {
-        return res.text().then(function (t) {
-          var data = null;
-          try { data = t ? JSON.parse(t) : null; } catch (e) { data = { erro: t }; }
-          if (res.status === 401) { askKey(); throw new Error('Chave de API inválida ou ausente.'); }
-          if (!res.ok) throw new Error((data && (data.erro || data.detalhe)) || ('Erro HTTP ' + res.status));
-          return data;
-        });
-      });
-  }
-
-  function certStatus(validoAte) {
-    if (!validoAte) return '<span class="tag muted">sem certificado</span>';
-    var ate = new Date(validoAte);
-    var dias = Math.floor((ate - new Date()) / 86400000);
-    var q = ate.toLocaleDateString('pt-BR');
-    if (dias < 0) return '<span class="tag err">vencido em ' + q + '</span>';
-    if (dias <= 30) return '<span class="tag warn">vence em ' + dias + 'd (' + q + ')</span>';
-    return '<span class="tag ok">válido até ' + q + '</span>';
-  }
-
-  function render() {
-    var tb = el('tbody'); tb.innerHTML = '';
-    el('empty').hidden = empresas.length > 0;
-    empresas.forEach(function (e) {
-      var nome = esc(e.razao_social) +
-        (e.nome_fantasia ? '<br><span class="hint">' + esc(e.nome_fantasia) + '</span>' : '') +
-        (e.ativo ? '' : ' <span class="tag muted">inativa</span>');
-      var tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td class="mono">' + fmtCnpj(e.cnpj) + '</td>' +
-        '<td>' + nome + '</td>' +
-        '<td class="mono">' + esc(e.codigo_municipio) + (e.uf ? ' / ' + esc(e.uf) : '') + '</td>' +
-        '<td>' + (e.ambiente === 'producao'
-          ? '<span class="tag err">produção</span>' : '<span class="tag ok">homologação</span>') + '</td>' +
-        '<td>' + certStatus(e.certificado_valido_ate) + '</td>' +
-        '<td class="mono">' + esc(e.serie_dps || '—') + ' / ' + esc(e.prox_num_dps || '—') + '</td>' +
-        '<td style="text-align:right"></td>';
-      var b = document.createElement('button');
-      b.className = 'sm'; b.textContent = 'Editar';
-      b.onclick = function () { abrirEdicao(e.cnpj); };
-      tr.lastChild.appendChild(b);
-      tb.appendChild(tr);
-    });
-  }
-
-  function carregar() {
-    if (!getKey()) { askKey(); return; }
-    api('/empresas').then(function (rows) { empresas = rows || []; render(); })
-      .catch(function (e) { msg(e.message, 'err'); });
-  }
-
-  // Alterna entre as três telas de topo. 'edit' é sub-tela de empresas.
-  function mostrarView(qual) {
-    el('viewList').hidden       = qual !== 'empresas';
-    el('viewEdit').hidden       = qual !== 'edit';
-    el('viewNotas').hidden      = qual !== 'notas';
-    el('viewMunicipios').hidden = qual !== 'municipios';
-    el('navEmpresas').classList.toggle('active', qual === 'empresas' || qual === 'edit');
-    el('navNotas').classList.toggle('active', qual === 'notas');
-    el('navMunicipios').classList.toggle('active', qual === 'municipios');
-  }
-  function mostrarLista() {
-    mostrarView('empresas'); editando = null; carregar();
-  }
-  function mostrarEdicao() { mostrarView('edit'); }
-
-  function setTab(nome) {
-    Array.prototype.forEach.call(el('tabs').children, function (b) {
-      b.classList.toggle('active', b.dataset.pane === nome);
-    });
-    ['identificacao','endereco','contato','responsavel','contabilidade','fiscais','certificado','integracao']
-      .forEach(function (p) { el('pane-' + p).classList.toggle('active', p === nome); });
-    // Numeração, certificado e integração têm gravação própria (ou são leitura).
-    el('edActions').style.display =
-      (nome === 'fiscais' || nome === 'certificado' || nome === 'integracao') ? 'none' : '';
-    if (nome === 'integracao' && editando) carregarIntegracao(editando);
-  }
-
-  function travarAbasNovas(novo) {
-    Array.prototype.forEach.call(el('tabs').children, function (b) {
-      if (b.dataset.needsSave) {
-        b.disabled = novo;
-        b.title = novo ? 'Disponível após salvar a empresa' : '';
-      }
-    });
-  }
-
-  function limparForm() {
-    ['f_cnpj','f_razao','f_fantasia','f_im','f_ie','f_mun','f_uf','f_cep','f_lgr','f_num',
-     'f_cpl','f_bairro','f_email','f_tel','f_respnome','f_respcpf','f_contador',
-     'f_serie_h','f_num_h','f_serie_p','f_num_p','f_senha'].forEach(function (i) { el(i).value = ''; });
-    el('f_pfx').value = '';
-    el('f_simp').value = '1'; el('f_regesp').value = '0';
-    el('f_amb').value = 'homologacao'; el('f_ativo').value = 'true';
-    el('f_email_tom').value = 'false';
-    el('certAtual').innerHTML = '';
-  }
-
-  function novaEmpresa() {
-    limparForm(); editando = null;
-    el('edTitle').textContent = 'Nova empresa';
-    el('edIdent').textContent = 'Numeração e certificado ficam disponíveis após salvar.';
-    el('f_cnpj').disabled = false;
-    el('wrapAtivo').hidden = true;
-    travarAbasNovas(true); setTab('identificacao'); mostrarEdicao();
-  }
-
-  function abrirEdicao(cnpj) {
-    limparForm(); editando = cnpj;
-    el('f_cnpj').disabled = true;
-    el('wrapAtivo').hidden = false;
-    travarAbasNovas(false); setTab('identificacao'); mostrarEdicao();
-
-    api('/empresas/' + cnpj).then(function (e) {
-      el('edTitle').textContent = 'Editar empresa';
-      el('edIdent').textContent = e.razao_social + ' · ' + fmtCnpj(e.cnpj);
-      el('f_cnpj').value = e.cnpj;
-      el('f_razao').value = e.razao_social || '';
-      el('f_fantasia').value = e.nome_fantasia || '';
-      el('f_im').value = e.inscricao_municipal || '';
-      el('f_ie').value = e.inscricao_estadual || '';
-      el('f_simp').value = String(e.op_simp_nac);
-      el('f_regesp').value = String(e.reg_esp_trib);
-      el('f_amb').value = e.ambiente;
-      el('f_ativo').value = String(e.ativo);
-      el('f_mun').value = e.codigo_municipio || '';
-      el('f_uf').value = e.uf || '';
-      el('f_cep').value = e.cep || '';
-      el('f_lgr').value = e.logradouro || '';
-      el('f_num').value = e.numero || '';
-      el('f_cpl').value = e.complemento || '';
-      el('f_bairro').value = e.bairro || '';
-      el('f_email').value = e.email || '';
-      el('f_tel').value = e.telefone || '';
-      el('f_respnome').value = e.responsavel_nome || '';
-      el('f_respcpf').value = e.responsavel_cpf || '';
-      el('f_contador').value = e.contador_doc || '';
-      el('f_email_tom').value = e.email_tomador_ativo ? 'true' : 'false';
-      var atual = empresas.filter(function (x) { return x.cnpj === cnpj; })[0];
-      el('certAtual').innerHTML = 'Certificado atual: ' +
-        certStatus(atual && atual.certificado_valido_ate) +
-        (atual && atual.certificado_subject
-          ? '<div class="hint" style="margin-top:6px">' + esc(atual.certificado_subject) + '</div>' : '');
-    }).catch(function (e) { msg(e.message, 'err'); });
-
-    carregarNumeracao(cnpj);
-  }
-
-  function carregarNumeracao(cnpj) {
-    api('/empresas/' + cnpj + '/numeracao').then(function (rows) {
-      (rows || []).forEach(function (n) {
-        if (n.ambiente === 'homologacao') { el('f_serie_h').value = n.serie; el('f_num_h').value = n.prox_numero; }
-        else { el('f_serie_p').value = n.serie; el('f_num_p').value = n.prox_numero; }
-      });
-    }).catch(function (e) { msg(e.message, 'err'); });
-  }
-
-  function coletar() {
-    return {
-      razaoSocial: el('f_razao').value.trim(),
-      nomeFantasia: el('f_fantasia').value.trim() || null,
-      inscricaoMunicipal: el('f_im').value.trim() || null,
-      inscricaoEstadual: el('f_ie').value.trim() || null,
-      codigoMunicipio: el('f_mun').value.trim(),
-      opSimpNac: Number(el('f_simp').value),
-      regEspTrib: Number(el('f_regesp').value),
-      ambiente: el('f_amb').value,
-      cep: digits(el('f_cep').value) || null,
-      logradouro: el('f_lgr').value.trim() || null,
-      numero: el('f_num').value.trim() || null,
-      complemento: el('f_cpl').value.trim() || null,
-      bairro: el('f_bairro').value.trim() || null,
-      uf: el('f_uf').value.trim().toUpperCase() || null,
-      email: el('f_email').value.trim() || null,
-      telefone: el('f_tel').value.trim() || null,
-      responsavelNome: el('f_respnome').value.trim() || null,
-      responsavelCpf: digits(el('f_respcpf').value) || null,
-      contadorDoc: digits(el('f_contador').value) || null,
-      emailTomadorAtivo: el('f_email_tom').value === 'true'
-    };
-  }
-
-  el('btnSave').onclick = function () {
-    var cnpj = digits(el('f_cnpj').value);
-    if (!editando && cnpj.length !== 14) { setTab('identificacao'); return msg('CNPJ deve ter 14 dígitos.', 'err'); }
-    var body = coletar();
-    if (!body.razaoSocial) { setTab('identificacao'); return msg('Razão social é obrigatória.', 'err'); }
-    if (!/^\d{7}$/.test(body.codigoMunicipio)) { setTab('endereco'); return msg('Código do município deve ter 7 dígitos (IBGE).', 'err'); }
-    if (editando) body.ativo = el('f_ativo').value === 'true'; else body.cnpj = cnpj;
-
-    el('btnSave').disabled = true;
-    api(editando ? '/empresas/' + editando : '/empresas', {
-      method: editando ? 'PUT' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }).then(function () {
-      msg(editando ? 'Empresa atualizada.' : 'Empresa cadastrada.');
-      mostrarLista();
-    }).catch(function (e) { msg(e.message, 'err'); })
-      .then(function () { el('btnSave').disabled = false; });
-  };
-
-  Array.prototype.forEach.call(document.querySelectorAll('#pane-fiscais button[data-amb]'), function (btn) {
-    btn.onclick = function () {
-      if (!editando) return;
-      var amb = btn.dataset.amb, h = amb === 'homologacao';
-      var body = {
-        ambiente: amb,
-        serie: (h ? el('f_serie_h') : el('f_serie_p')).value.trim() || '1',
-        proxNumero: Number((h ? el('f_num_h') : el('f_num_p')).value) || 1
-      };
-      btn.disabled = true;
-      api('/empresas/' + editando + '/numeracao', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-      }).then(function (r) {
-        msg('Numeração de ' + (h ? 'homologação' : 'produção') + ' salva: série ' + r.serie + ', próximo ' + r.prox_numero + '.');
-      }).catch(function (e) { msg(e.message, 'err'); })
-        .then(function () { btn.disabled = false; });
-    };
-  });
-
-  el('btnCert').onclick = function () {
-    if (!editando) return;
-    var file = el('f_pfx').files[0];
-    if (!file) return msg('Selecione o arquivo .pfx.', 'err');
-    if (!el('f_senha').value) return msg('Informe a senha do certificado.', 'err');
-    var fd = new FormData();
-    fd.append('certificado', file); fd.append('senha', el('f_senha').value);
-    el('btnCert').disabled = true;
-    api('/empresas/' + editando + '/certificado', { method: 'POST', body: fd })
-      .then(function (r) {
-        var ate = r.validoAte ? new Date(r.validoAte).toLocaleDateString('pt-BR') : '?';
-        el('f_pfx').value = ''; el('f_senha').value = '';
-        el('certAtual').innerHTML = 'Certificado atual: ' + certStatus(r.validoAte) +
-          (r.subject ? '<div class="hint" style="margin-top:6px">' + esc(r.subject) + '</div>' : '');
-        msg('Certificado cadastrado. Titular: ' + (r.cnpjCertificado || '—') + ' · válido até ' + ate);
-      })
-      .catch(function (e) { msg(e.message, 'err'); })
-      .then(function () { el('btnCert').disabled = false; });
-  };
-
-  function askKey() { el('f_key').value = ''; el('dlgKey').showModal(); }
-  el('formKey').onsubmit = function (ev) {
-    ev.preventDefault();
-    sessionStorage.setItem(KEY_STORE, el('f_key').value.trim());
-    el('dlgKey').close(); carregar();
-  };
-
-  el('tabs').onclick = function (ev) {
-    var b = ev.target.closest('button');
-    if (b && !b.disabled) setTab(b.dataset.pane);
-  };
-  // ---------- integração / API ----------
-  function carregarIntegracao(cnpj) {
-    el('intResumo').innerHTML = '<div class="hint">Carregando…</div>';
-    api('/integracao/' + cnpj).then(function (d) {
-      el('intResumo').innerHTML =
-        '<div class="kv">' +
-        '<dt>URL base</dt><dd class="mono">' + esc(d.baseUrl) + '</dd>' +
-        '<dt>Autenticação</dt><dd>header <span class="mono">' + esc(d.autenticacao.header) + '</span></dd>' +
-        '<dt>Certificado</dt><dd>' + (d.empresa.certificadoOk
-          ? '<span class="tag ok">configurado</span>'
-          : '<span class="tag err">ausente — a emissão vai falhar</span>') + '</dd>' +
-        '</div>';
-
-      el('intTokens').innerHTML = '';
-      d.tokens.forEach(function (t) {
-        var box = document.createElement('div');
-        box.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap';
-        var tagKind = t.ambiente === 'producao' ? 'err' : 'ok';
-        box.innerHTML =
-          '<span class="tag ' + tagKind + '" style="min-width:104px;text-align:center">' + esc(t.ambiente) + '</span>' +
-          '<input class="mono" readonly value="' + esc(t.token) + '" style="flex:1;min-width:220px">';
-        var bCopy = document.createElement('button');
-        bCopy.className = 'sm'; bCopy.textContent = 'Copiar';
-        bCopy.onclick = function () {
-          navigator.clipboard.writeText(t.token).then(function () { msg('Token copiado.'); });
-        };
-        var bNovo = document.createElement('button');
-        bNovo.className = 'sm'; bNovo.textContent = 'Gerar novo';
-        bNovo.onclick = function () {
-          if (!confirm('Gerar novo token de ' + t.ambiente + '?\n\nO token atual para de funcionar imediatamente.')) return;
-          api('/integracao/' + cnpj + '/tokens', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ambiente: t.ambiente })
-          }).then(function () { msg('Novo token de ' + t.ambiente + ' gerado.'); carregarIntegracao(cnpj); })
-            .catch(function (e) { msg(e.message, 'err'); });
-        };
-        box.appendChild(bCopy); box.appendChild(bNovo);
-        el('intTokens').appendChild(box);
-      });
-
-      el('intEndpoints').innerHTML = Object.keys(d.endpoints).map(function (k) {
-        var e = d.endpoints[k];
-        return '<div><span class="tag muted">' + e.metodo + '</span> ' + esc(e.url) + '</div>';
-      }).join('');
-
-      el('intExemplo').textContent = d.exemplo.curl;
-
-      el('intWebhooks').innerHTML = d.webhooks.length
-        ? d.webhooks.map(function (w) {
-            return '<div class="mono" style="font-size:12px">' +
-              '<span class="tag ' + (w.ambiente === 'producao' ? 'err' : (w.ambiente ? 'ok' : 'muted')) + '">' +
-              esc(w.ambiente || 'ambos') + '</span> ' + esc(w.url) +
-              (w.tem_chave ? ' <span class="tag ok">autenticado</span>' : '') + '</div>';
-          }).join('')
-        : '<div class="hint">Nenhum webhook configurado — o cliente precisará consultar o status por conta própria.</div>';
-    }).catch(function (e) {
-      el('intResumo').innerHTML = '<div class="msg err" style="display:block">' + esc(e.message) + '</div>';
-    });
-  }
-
-  // ---------- notas ----------
-  var STATUS_TAG = {
-    processando: 'warn', autorizada: 'ok', rejeitada: 'err', cancelada: 'muted',
-    erro: 'err', substituida: 'muted', encerrada: 'muted'
-  };
-  var notaAtual = null;
-
-  function preencherFiltroEmpresas() {
-    var sel = el('nf_empresa');
-    if (sel.options.length > 1) return; // já preenchido
-    empresas.forEach(function (e) {
-      var o = document.createElement('option');
-      o.value = e.cnpj;
-      o.textContent = e.razao_social + ' (' + fmtCnpj(e.cnpj) + ')';
-      sel.appendChild(o);
-    });
-  }
-
-  function carregarNotas() {
-    if (!getKey()) { askKey(); return; }
-    var q = [];
-    if (el('nf_empresa').value) q.push('cnpjEmpresa=' + encodeURIComponent(el('nf_empresa').value));
-    if (el('nf_status').value) q.push('status=' + encodeURIComponent(el('nf_status').value));
-    if (el('nf_ambiente').value) q.push('ambiente=' + encodeURIComponent(el('nf_ambiente').value));
-    if (el('nf_ref').value.trim()) q.push('referencia=' + encodeURIComponent(el('nf_ref').value.trim()));
-    api('/nfse' + (q.length ? '?' + q.join('&') : '')).then(function (rows) {
-      renderNotas(rows || []);
-    }).catch(function (e) { msg(e.message, 'err'); });
-  }
-
-  function renderNotas(rows) {
-    var tb = el('notasBody'); tb.innerHTML = '';
-    el('notasEmpty').hidden = rows.length > 0;
-    rows.forEach(function (n) {
-      var kind = STATUS_TAG[n.status] || 'muted';
-      var tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td class="mono">' + n.id + '</td>' +
-        '<td class="mono">' + fmtCnpj(n.cnpj_empresa) + '</td>' +
-        '<td class="mono">' + esc(n.serie) + '/' + esc(n.numero) + '</td>' +
-        '<td>' + (n.ambiente === 'producao'
-          ? '<span class="tag err">produção</span>' : '<span class="tag ok">homologação</span>') + '</td>' +
-        '<td><span class="tag ' + kind + '">' + esc(n.status) + '</span>' +
-          (n.tentativas > 1 ? ' <span class="hint">' + n.tentativas + 'x</span>' : '') + '</td>' +
-        '<td>' + esc(n.referencia || '—') + '</td>' +
-        '<td class="hint">' + new Date(n.criado_em).toLocaleString('pt-BR') + '</td>' +
-        '<td style="text-align:right"></td>';
-      var b = document.createElement('button');
-      b.className = 'sm'; b.textContent = 'Ver';
-      b.onclick = function () { abrirNota(n.id); };
-      tr.lastChild.appendChild(b);
-      tb.appendChild(tr);
-    });
-  }
-
-  function linhaKv(dt, dd) {
-    return '<dt>' + dt + '</dt><dd>' + dd + '</dd>';
-  }
-
-  function abrirNota(id) {
-    api('/nfse/local/' + id).then(function (n) {
-      notaAtual = n;
-      el('notaTitulo').textContent = 'Nota ' + n.id + ' — DPS ' + esc(n.serie) + '/' + esc(n.numero);
-      el('notaSub').textContent = 'ID DPS: ' + n.id_dps;
-      var kind = STATUS_TAG[n.status] || 'muted';
-      el('notaKv').innerHTML =
-        linhaKv('Status', '<span class="tag ' + kind + '">' + esc(n.status) + '</span>') +
-        linhaKv('Ambiente', esc(n.ambiente || '—')) +
-        linhaKv('Referência', esc(n.referencia || '—')) +
-        linhaKv('Chave de acesso', n.chave_acesso ? '<span class="mono">' + esc(n.chave_acesso) + '</span>' : '—') +
-        linhaKv('Tentativas', esc(String(n.tentativas != null ? n.tentativas : 0))) +
-        linhaKv('Criada em', new Date(n.criado_em).toLocaleString('pt-BR')) +
-        linhaKv('Atualizada em', new Date(n.atualizado_em).toLocaleString('pt-BR'));
-      el('notaErroBox').innerHTML = n.ultimo_erro
-        ? '<div class="msg err" style="display:block">' + esc(n.ultimo_erro) + '</div>' : '';
-      setNotaXml('dps');
-      el('dlgNota').showModal();
-    }).catch(function (e) { msg(e.message, 'err'); });
-  }
-
-  function setNotaXml(qual) {
-    Array.prototype.forEach.call(el('notaTabs').children, function (b) {
-      b.classList.toggle('active', b.dataset.xml === qual);
-    });
-    var n = notaAtual || {};
-    var conteudo = '—';
-    if (qual === 'dps') conteudo = n.dps_xml || '(DPS não disponível)';
-    else if (qual === 'nfse') conteudo = n.nfse_xml || '(NFS-e ainda não autorizada)';
-    else if (qual === 'retorno') conteudo = n.mensagens ? JSON.stringify(n.mensagens, null, 2) : '(sem retorno registrado)';
-    el('notaXml').textContent = conteudo;
-  }
-
-  el('notaTabs').onclick = function (ev) {
-    var b = ev.target.closest('button'); if (b) setNotaXml(b.dataset.xml);
-  };
-  el('notaFechar').onclick = function () { el('dlgNota').close(); };
-  el('btnNotasFiltrar').onclick = carregarNotas;
-  el('btnNotasReload').onclick = carregarNotas;
-
-  // Export: usa fetch para poder enviar o X-API-Key, e aplica os filtros ativos.
-  function exportar(tipo, btn) {
-    var q = ['tipo=' + tipo];
-    if (el('nf_empresa').value) q.push('cnpjEmpresa=' + encodeURIComponent(el('nf_empresa').value));
-    if (el('nf_status').value) q.push('status=' + encodeURIComponent(el('nf_status').value));
-    if (el('nf_ambiente').value) q.push('ambiente=' + encodeURIComponent(el('nf_ambiente').value));
-    btn.disabled = true;
-    fetch('/nfse/export?' + q.join('&'), { headers: { 'X-API-Key': getKey() } })
-      .then(function (res) {
-        if (res.status === 404) throw new Error('Nenhuma nota com XML para os filtros ativos.');
-        if (!res.ok) throw new Error('Falha ao exportar (HTTP ' + res.status + ').');
-        var nome = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
-        var total = res.headers.get('X-Total-Xmls');
-        return res.blob().then(function (blob) {
-          var a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = nome ? nome[1] : (tipo + '.zip');
-          document.body.appendChild(a); a.click(); a.remove();
-          URL.revokeObjectURL(a.href);
-          msg('Exportadas ' + total + ' nota(s) em ' + a.download + '.');
-        });
-      })
-      .catch(function (e) { msg(e.message, 'err'); })
-      .then(function () { btn.disabled = false; });
-  }
-  el('btnExportNfse').onclick = function () { exportar('nfse', el('btnExportNfse')); };
-  el('btnExportDps').onclick = function () { exportar('dps', el('btnExportDps')); };
-
-  el('navEmpresas').onclick = function () { mostrarLista(); };
-  el('navNotas').onclick = function () {
-    mostrarView('notas'); preencherFiltroEmpresas(); carregarNotas();
-  };
-  el('navMunicipios').onclick = function () { mostrarView('municipios'); carregarMunicipios(); };
-
-  // ---------- municípios ----------
-  var MODO_TAG = { nacional: 'ok', proprio: 'err', desconhecido: 'muted' };
-  var MODO_LABEL = { nacional: 'Nacional', proprio: 'Emissor próprio', desconhecido: 'Desconhecido' };
-
-  function carregarMunicipios() {
-    if (!getKey()) { askKey(); return; }
-    api('/municipios').then(function (rows) { renderMunicipios(rows || []); })
-      .catch(function (e) { msg(e.message, 'err'); });
-  }
-
-  function renderMunicipios(rows) {
-    var tb = el('munBody'); tb.innerHTML = '';
-    el('munEmpty').hidden = rows.length > 0;
-    rows.forEach(function (m) {
-      var kind = MODO_TAG[m.modo_emissao] || 'muted';
-      var tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td class="mono">' + esc(m.codigo_municipio) + '</td>' +
-        '<td>' + esc(m.nome || '—') + '</td>' +
-        '<td class="mono">' + esc(m.uf || '—') + '</td>' +
-        '<td><span class="tag ' + kind + '">' + esc(MODO_LABEL[m.modo_emissao] || m.modo_emissao) + '</span></td>' +
-        '<td class="mono">' + (m.aliquota_iss != null ? esc(m.aliquota_iss) : '—') + '</td>' +
-        '<td class="hint">' + esc(m.fonte) + (m.consultado_em ? ' · ' + new Date(m.consultado_em).toLocaleDateString('pt-BR') : '') + '</td>' +
-        '<td style="text-align:right"></td>';
-      var b = document.createElement('button');
-      b.className = 'sm'; b.textContent = 'Editar';
-      b.onclick = function () { abrirMunicipio(m); };
-      tr.lastChild.appendChild(b);
-      tb.appendChild(tr);
-    });
-  }
-
-  function abrirMunicipio(m) {
-    el('m_cod').value = m ? m.codigo_municipio : '';
-    el('m_cod').disabled = !!m;
-    el('m_nome').value = m ? (m.nome || '') : '';
-    el('m_uf').value = m ? (m.uf || '') : '';
-    el('m_modo').value = m ? m.modo_emissao : 'nacional';
-    el('m_iss').value = m && m.aliquota_iss != null ? m.aliquota_iss : '';
-    el('m_cnpj').value = '';
-    el('dlgMun').showModal();
-  }
-
-  el('formMun').onsubmit = function (ev) {
-    ev.preventDefault();
-    var cod = el('m_cod').value.replace(/\D/g, '');
-    if (!/^\d{7}$/.test(cod)) return msg('Código IBGE deve ter 7 dígitos.', 'err');
-    var cnpj = el('m_cnpj').value.replace(/\D/g, '');
-    el('munSave').disabled = true;
-
-    var req = cnpj
-      ? api('/municipios/' + cod + '/classificar', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cnpjEmpresa: cnpj })
-        })
-      : api('/municipios/' + cod, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            modoEmissao: el('m_modo').value,
-            nome: el('m_nome').value.trim() || null,
-            uf: el('m_uf').value.trim().toUpperCase() || null,
-            aliquotaIss: el('m_iss').value !== '' ? Number(el('m_iss').value) : undefined
-          })
-        });
-
-    req.then(function () {
-      el('dlgMun').close();
-      msg(cnpj ? 'Município classificado pelo ADN.' : 'Município salvo.');
-      carregarMunicipios();
-    }).catch(function (e) { msg(e.message, 'err'); })
-      .then(function () { el('munSave').disabled = false; });
-  };
-
-  el('btnMunNovo').onclick = function () { abrirMunicipio(null); };
-  el('btnMunReload').onclick = carregarMunicipios;
-  el('munCancel').onclick = function () { el('dlgMun').close(); };
-
-  // ---------- autopreenchimento (CNPJ e CEP) ----------
-  // Preenche um campo só se estiver vazio, para não sobrescrever o que o
-  // usuário digitou. Exceção: o CNPJ preenche tudo (empresa nova, campos vazios).
-  function preencheSeVazio(id, valor) {
-    if (valor != null && valor !== '' && !el(id).value) el(id).value = valor;
-  }
-
-  el('btnBuscaCnpj').onclick = function () {
-    var cnpj = digits(el('f_cnpj').value);
-    if (cnpj.length !== 14) return msg('Digite o CNPJ (14 dígitos) antes de buscar.', 'err');
-    el('btnBuscaCnpj').disabled = true;
-    el('btnBuscaCnpj').textContent = 'Buscando…';
-    api('/consulta/cnpj/' + cnpj).then(function (d) {
-      // distribui os dados pelas abas a que pertencem
-      preencheSeVazio('f_razao', d.razaoSocial);
-      preencheSeVazio('f_fantasia', d.nomeFantasia);
-      preencheSeVazio('f_mun', d.codigoMunicipio);
-      preencheSeVazio('f_uf', d.uf);
-      preencheSeVazio('f_cep', d.cep);
-      preencheSeVazio('f_lgr', d.logradouro);
-      preencheSeVazio('f_num', d.numero);
-      preencheSeVazio('f_cpl', d.complemento);
-      preencheSeVazio('f_bairro', d.bairro);
-      preencheSeVazio('f_tel', d.telefone);
-      preencheSeVazio('f_email', d.email);
-      msg('Dados de ' + (d.razaoSocial || 'empresa') + ' preenchidos. Confira antes de salvar.');
-    }).catch(function (e) { msg(e.message, 'err'); })
-      .then(function () {
-        el('btnBuscaCnpj').disabled = false;
-        el('btnBuscaCnpj').textContent = 'Buscar';
-      });
-  };
-
-  // CEP: ao sair do campo com 8 dígitos, preenche o endereço.
-  el('f_cep').onblur = function () {
-    var cep = digits(el('f_cep').value);
-    if (cep.length !== 8) return;
-    api('/consulta/cep/' + cep).then(function (d) {
-      // o CEP é a fonte do endereço: sobrescreve logradouro/bairro/UF/município
-      if (d.logradouro) el('f_lgr').value = d.logradouro;
-      if (d.bairro) el('f_bairro').value = d.bairro;
-      if (d.uf) el('f_uf').value = d.uf;
-      if (d.codigoMunicipio) el('f_mun').value = d.codigoMunicipio;
-      msg('Endereço preenchido pelo CEP (' + (d.municipioNome || '') + '/' + (d.uf || '') + ').');
-    }).catch(function (e) { msg(e.message, 'err'); });
-  };
-
-  el('btnKey').onclick = askKey;
-  el('btnNew').onclick = novaEmpresa;
-  el('btnReload').onclick = carregar;
-  el('btnBack').onclick = mostrarLista;
-  el('btnCancel').onclick = mostrarLista;
-
-  carregar();
-})();
-</script>
+<script src="/assets/painel.js"></script>
 </body>
 </html>
