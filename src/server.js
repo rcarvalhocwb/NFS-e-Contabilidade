@@ -1,9 +1,15 @@
 const path = require('path');
 const express = require('express');
 const config = require('./config');
+
+/* Antes de qualquer outra coisa: sem configuração válida o gateway não sobe, e
+   o registro em arquivo precisa estar de pé para capturar o que vier depois. */
+config.validarOuSair();
+require('./services/registro').iniciar();
 const db = require('./db');
 const auth = require('./middleware/auth');
 const { somenteAdmin, fixarEscopoEmpresa } = require('./middleware/escopo');
+const { conferirOrigem, cabecalhosSeguranca } = require('./middleware/protecao');
 const empresasRouter = require('./routes/empresas');
 const nfseRouter = require('./routes/nfse');
 const webhooksRouter = require('./routes/webhooks');
@@ -14,6 +20,7 @@ const painelRouter = require('./routes/painel');
 const emissorRouter = require('./routes/emissor');
 const authRouter = require('./routes/auth');
 const usuariosRouter = require('./routes/usuarios');
+const manutencaoRouter = require('./routes/manutencao');
 const sessoes = require('./services/sessoes');
 const fila = require('./services/filaEmissao');
 const webhooks = require('./services/webhooks');
@@ -27,7 +34,9 @@ const app = express();
 // HTTP local — e o aviso de "sem HTTPS" do painel nunca apareceria.
 if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
 
+app.use(cabecalhosSeguranca);
 app.use(express.json({ limit: '2mb' }));
+app.use(conferirOrigem);
 
 // Arquivos da interface (CSS). Ficam antes da autenticacao: sao estaticos,
 // sem dados nem segredos — as rotas de dados seguem protegidas.
@@ -83,8 +92,11 @@ if (process.env.ADMIN_ATIVO === 'false') {
     res.status(404).json({ erro: 'Painel desativado neste servidor (ADMIN_ATIVO=false)' }));
 } else {
   app.get('/admin', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
-  // Emissor: tela de emissão manual, para operar sem sistema integrado.
+  // Duas formas de emitir sem sistema integrado, para dois jeitos de trabalhar:
+  // a conversa guia quem emite de vez em quando; o formulário mostra tudo de
+  // uma vez, para quem emite em série.
   app.get('/emitir', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'emitir.html')));
+  app.get('/nota', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'nota.html')));
 }
 
 app.use(auth); // daqui para baixo: sessão de usuário ou X-API-Key
@@ -104,6 +116,7 @@ app.use('/consulta', consultaRouter);
 app.use('/emissor', emissorRouter);
 app.use('/painel', painelRouter);
 app.use('/usuarios', usuariosRouter);
+app.use('/manutencao', manutencaoRouter);
 
 // NFS-e: aberta ao token da empresa, restrita ao escopo dele.
 app.use('/nfse', fixarEscopoEmpresa, nfseRouter);

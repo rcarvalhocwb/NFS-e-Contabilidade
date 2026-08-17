@@ -25,6 +25,95 @@ function dec(v) { return Number(v).toFixed(2); }
  * esfera em <pTotTrib>, ou declaram <indTotTrib>0</indTotTrib> quando não há
  * informação de tributos a declarar.
  */
+/**
+ * Bloco do ISSQN.
+ *
+ * `tributacaoIssqn` diz qual é a natureza da operação — e muda o que mais pode
+ * ir no bloco:
+ *   1 operação tributável (padrão)
+ *   2 exportação de serviço      → ISS não incide, exige país de destino
+ *   3 não incidência
+ *   4 imunidade                  → exige o tipo de imunidade
+ *   5 exigibilidade suspensa por decisão judicial → exige o processo
+ *   6 exigibilidade suspensa por processo administrativo
+ *
+ * Sem isso o gateway só emitia operação tributável, o que deixa de fora
+ * entidades imunes, exportação de serviço e quem tem liminar.
+ */
+function tributoMunicipal(v, optanteSN, issRetido) {
+  const tipo = String(v.tributacaoIssqn || '1');
+  const suspensa = ['5', '6'].includes(tipo);
+
+  return `<tribMun>` +
+    tag('tribISSQN', tipo) +
+    // Imunidade exige dizer qual: livro/jornal, templo, partido, entidade...
+    (tipo === '4' ? tag('tpImunidade', v.tipoImunidade) : '') +
+    (suspensa ?
+    `<exigSusp>` +
+      tag('tpSusp', v.tipoSuspensao) +
+      tag('nProcesso', v.numeroProcesso) +
+    `</exigSusp>` : '') +
+    // Benefício municipal (redução de base ou isenção concedida por lei local)
+    (v.beneficioMunicipal ?
+    `<BM>` +
+      tag('tpBM', v.beneficioMunicipal.tipo) +
+      tag('nBM', v.beneficioMunicipal.numero) +
+      (v.beneficioMunicipal.percentualReducao !== undefined
+        ? tag('pRedBCBM', dec(v.beneficioMunicipal.percentualReducao))
+        : (v.beneficioMunicipal.valorReducao !== undefined
+            ? tag('vRedBCBM', dec(v.beneficioMunicipal.valorReducao)) : '')) +
+    `</BM>` : '') +
+    tag('tpRetISSQN', issRetido ? '2' : '1') + // 1=não retido 2=retido pelo tomador
+    // Optante do Simples Nacional não informa alíquota de ISS: o imposto é
+    // recolhido no DAS, pela alíquota efetiva do PGDAS, não pela alíquota
+    // municipal. Enviar pAliq aqui é incorreto para MEI/ME/EPP do SN.
+    // Também não se informa alíquota quando o ISS não incide.
+    (!optanteSN && tipo === '1' && v.aliquotaIss !== undefined
+      ? tag('pAliq', dec(v.aliquotaIss)) : '') +
+  `</tribMun>`;
+}
+
+/**
+ * Retenções federais.
+ *
+ * Rotina em nota de serviço para pessoa jurídica: PIS, COFINS, IRRF, CSLL e a
+ * contribuição previdenciária. Sem este bloco a nota sai sem as retenções, e o
+ * tomador teria de calculá-las por fora — que é justamente o que a nota deveria
+ * documentar.
+ *
+ * Só entra no XML quando algum valor é informado: nota sem retenção continua
+ * saindo exatamente como antes.
+ */
+function tributosFederais(v) {
+  const r = v.retencoesFederais;
+  if (!r) return '';
+
+  const temPisCofins = r.valorPis !== undefined || r.valorCofins !== undefined ||
+                       r.cst !== undefined;
+  const outros = ['valorRetencaoIrrf', 'valorRetencaoCsll', 'valorRetencaoPrevidencia']
+    .some(k => r[k] !== undefined);
+  if (!temPisCofins && !outros) return '';
+
+  return `<tribFed>` +
+    (temPisCofins ?
+    `<piscofins>` +
+      // CST 00 = operação tributável; a Sefin exige o código mesmo quando os
+      // valores são zero.
+      tag('CST', r.cst || '00') +
+      (r.baseCalculo !== undefined ? tag('vBCPisCofins', dec(r.baseCalculo)) : '') +
+      (r.aliquotaPis !== undefined ? tag('pAliqPis', dec(r.aliquotaPis)) : '') +
+      (r.aliquotaCofins !== undefined ? tag('pAliqCofins', dec(r.aliquotaCofins)) : '') +
+      (r.valorPis !== undefined ? tag('vPis', dec(r.valorPis)) : '') +
+      (r.valorCofins !== undefined ? tag('vCofins', dec(r.valorCofins)) : '') +
+      // 1 = não retido, 2 = retido pelo tomador
+      tag('tpRetPisCofins', r.retidoPeloTomador ? '2' : '1') +
+    `</piscofins>` : '') +
+    (r.valorRetencaoPrevidencia !== undefined ? tag('vRetCP', dec(r.valorRetencaoPrevidencia)) : '') +
+    (r.valorRetencaoIrrf !== undefined ? tag('vRetIRRF', dec(r.valorRetencaoIrrf)) : '') +
+    (r.valorRetencaoCsll !== undefined ? tag('vRetCSLL', dec(r.valorRetencaoCsll)) : '') +
+  `</tribFed>`;
+}
+
 function totalTributos(v, optanteSN) {
   if (optanteSN) {
     // Sem o percentual informado, declara ausência de informação em vez de
@@ -152,30 +241,43 @@ function montarDps(empresa, dados, opts) {
   `<serv>` +
     `<locPrest>` +
       tag('cLocPrestacao', s.codigoMunicipioPrestacao || empresa.codigo_municipio) +
+      // Serviço prestado no exterior: o país entra aqui e a tributação do ISS
+      // passa a ser exportação (tribISSQN = 2).
+      tag('cPaisPrestacao', s.codigoPaisPrestacao) +
     `</locPrest>` +
     `<cServ>` +
       tag('cTribNac', s.codigoTributacaoNacional) +
       tag('cTribMun', s.codigoTributacaoMunicipal) +
       tag('xDescServ', s.descricao) +
+      tag('cNBS', s.codigoNbs) +
     `</cServ>` +
+    // Texto livre que sai impresso na nota: número do contrato, da OS, da
+    // medição. O contador costuma precisar disso para amarrar nota e documento.
+    (s.informacoesComplementares ?
+    `<infoCompl>` +
+      tag('xInfComp', s.informacoesComplementares) +
+    `</infoCompl>` : '') +
   `</serv>` +
   `<valores>` +
     `<vServPrest>` +
       tag('vServ', dec(v.valorServico)) +
     `</vServPrest>` +
-    (v.descontoIncondicionado ?
+    (v.descontoIncondicionado !== undefined || v.descontoCondicionado !== undefined ?
     `<vDescCondIncond>` +
-      tag('vDescIncond', dec(v.descontoIncondicionado)) +
+      (v.descontoIncondicionado !== undefined ? tag('vDescIncond', dec(v.descontoIncondicionado)) : '') +
+      (v.descontoCondicionado !== undefined ? tag('vDescCond', dec(v.descontoCondicionado)) : '') +
     `</vDescCondIncond>` : '') +
+    // Dedução da base de cálculo: material aplicado e subempreitada na
+    // construção civil, entre outros casos previstos em lei municipal.
+    (v.valorDeducoes !== undefined || v.percentualDeducoes !== undefined ?
+    `<vDedRed>` +
+      (v.percentualDeducoes !== undefined
+        ? tag('pDR', dec(v.percentualDeducoes))
+        : tag('vDR', dec(v.valorDeducoes))) +
+    `</vDedRed>` : '') +
     `<trib>` +
-      `<tribMun>` +
-        tag('tribISSQN', '1') + // 1 = operação tributável
-        tag('tpRetISSQN', issRetido ? '2' : '1') + // 1=não retido 2=retido pelo tomador
-        // Optante do Simples Nacional não informa alíquota de ISS: o imposto é
-        // recolhido no DAS, pela alíquota efetiva do PGDAS, não pela alíquota
-        // municipal. Enviar pAliq aqui é incorreto para MEI/ME/EPP do SN.
-        (!optanteSN && v.aliquotaIss !== undefined ? tag('pAliq', dec(v.aliquotaIss)) : '') +
-      `</tribMun>` +
+      tributoMunicipal(v, optanteSN, issRetido) +
+      tributosFederais(v) +
       `<totTrib>` +
         totalTributos(v, optanteSN) +
       `</totTrib>` +

@@ -3,6 +3,7 @@ const config = require('../config');
 const db = require('../db');
 const usuarios = require('../services/usuarios');
 const sessoes = require('../services/sessoes');
+const { limitarLogin, registrarFalhaLogin, limparFalhasLogin } = require('../middleware/protecao');
 
 const router = express.Router();
 
@@ -33,7 +34,7 @@ router.get('/estado', async (_req, res) => {
    Autorizado pela GATEWAY_API_KEY: é o único segredo que existe numa instalação
    nova, e quem instalou o gateway o tem à mão no .env. Só funciona enquanto não
    houver nenhum usuário — depois disso, contas novas saem do painel. */
-router.post('/primeiro-acesso', async (req, res, next) => {
+router.post('/primeiro-acesso', limitarLogin, async (req, res, next) => {
   try {
     if (await usuarios.existeAlgum()) {
       return res.status(409).json({
@@ -42,6 +43,7 @@ router.post('/primeiro-acesso', async (req, res, next) => {
     }
     const b = req.body || {};
     if (!config.apiKey || b.chaveInstalacao !== config.apiKey) {
+      registrarFalhaLogin(req);
       return res.status(401).json({
         erro: 'Chave de instalação incorreta. É o valor de GATEWAY_API_KEY no arquivo .env do gateway.'
       });
@@ -59,7 +61,7 @@ router.post('/primeiro-acesso', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', limitarLogin, async (req, res, next) => {
   try {
     const b = req.body || {};
     if (!b.email || !b.senha) {
@@ -78,9 +80,11 @@ router.post('/login', async (req, res, next) => {
     const ok = usuario && usuario.ativo &&
       await usuarios.conferirSenha(b.senha, usuario.senha_hash);
     if (!ok) {
+      registrarFalhaLogin(req);
       return res.status(401).json({ erro: 'E-mail ou senha incorretos' });
     }
 
+    limparFalhasLogin(req);
     const token = await sessoes.criar(usuario.id, req);
     sessoes.definirCookie(res, token, cookieSeguro(req));
     db.query('UPDATE usuarios SET ultimo_acesso = now() WHERE id = $1', [usuario.id])

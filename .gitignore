@@ -15,3 +15,9 @@ backups/
 # Postgres local: binários (300 MB) e os dados do banco.
 instalador/postgres/
 postgres/
+
+# Artefatos do instalador: pacote montado (222 MB) e o .exe compilado.
+instalador/pacote/
+instalador/saida/
+*.nfsepkg
+logs/

@@ -256,6 +256,7 @@
     clientes:    { titulo:'Clientes',      sub:'Tomadores usados nas emissões',         carregar: carregarClientes },
     servicos:    { titulo:'Serviços',      sub:'Modelos para emitir mais rápido',       carregar: carregarServicos },
     usuarios:    { titulo:'Usuários',      sub:'Quem acessa o gateway e o que pode fazer', carregar: carregarUsuarios },
+    manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: carregarManutencao },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
     webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks }
   };
@@ -1007,6 +1008,93 @@
       carregarUsuarios();
     }).catch(function (e) { aviso(e.message, 'erro'); })
       .then(function () { botao.disabled = false; });
+  };
+
+  /* ------------------------------------------------------ backup e migração */
+
+  function fmtTamanho(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function carregarManutencao() {
+    api('/manutencao').then(function (d) {
+      el('mtPasta').textContent = d.pasta;
+      el('mtUltimo').innerHTML = d.ultimoBackup
+        ? fmtDataHora(d.ultimoBackup.criado_em) +
+          ' <span class="ajuda">(' + fmtTamanho(d.ultimoBackup.tamanho) + ')</span>'
+        : '<span class="selo-status s-alerta">nenhuma ainda</span>';
+
+      var arquivos = (d.backups || []).map(function (b) { return { a: b, tipo: 'cópia' }; })
+        .concat((d.pacotesMigracao || []).map(function (p) { return { a: p, tipo: 'migração' }; }))
+        .sort(function (x, y) { return y.a.nome.localeCompare(x.a.nome); });
+
+      var tb = el('corpoManutencao'); tb.innerHTML = '';
+      alternarVazio('corpoManutencao', 'vazioManutencao', arquivos.length);
+
+      arquivos.forEach(function (item) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="mono" style="font-size:12px">' + esc(item.a.nome) + '</td>' +
+          '<td>' + (item.tipo === 'migração'
+            ? '<span class="selo-status s-info sem-ponto">migração</span>'
+            : '<span class="selo-status s-neutro sem-ponto">cópia</span>') + '</td>' +
+          '<td>' + fmtTamanho(item.a.tamanho) + '</td>' +
+          '<td style="color:var(--texto-2)">' + fmtDataHora(item.a.criado_em) + '</td>' +
+          '<td class="acoes"></td>';
+
+        var baixarBtn = document.createElement('button');
+        baixarBtn.className = 'pequeno'; baixarBtn.textContent = 'Baixar';
+        baixarBtn.onclick = function () {
+          baixar('/manutencao/arquivo/' + encodeURIComponent(item.a.nome), item.a.nome);
+        };
+        var apagar = document.createElement('button');
+        apagar.className = 'pequeno perigo'; apagar.textContent = 'Apagar';
+        apagar.style.marginLeft = '6px';
+        apagar.onclick = function () {
+          if (!confirm('Apagar ' + item.a.nome + '?')) return;
+          api('/manutencao/arquivo/' + encodeURIComponent(item.a.nome), { method:'DELETE' })
+            .then(function () { aviso('Arquivo apagado.'); carregarManutencao(); })
+            .catch(function (e) { aviso(e.message, 'erro'); });
+        };
+        tr.lastChild.appendChild(baixarBtn);
+        tr.lastChild.appendChild(apagar);
+        tb.appendChild(tr);
+      });
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('btnAtualizarManutencao').onclick = carregarManutencao;
+
+  el('btnBackupAgora').onclick = function () {
+    var b = el('btnBackupAgora');
+    b.disabled = true; b.textContent = 'Gerando…';
+    api('/manutencao/backup', { method:'POST' })
+      .then(function (r) { aviso(r.resumo || 'Cópia gerada.'); carregarManutencao(); })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; b.textContent = 'Gerar cópia agora'; });
+  };
+
+  el('btnGerarMigracao').onclick = function () {
+    var senha = el('mtSenha').value;
+    if (!senha || senha.length < 8) {
+      return aviso('Escolha uma senha de ao menos 8 caracteres para o arquivo.', 'erro');
+    }
+    if (!confirm('O arquivo vai conter o certificado digital, os tokens e as chaves do sistema.\n\n' +
+                 'Guarde a senha em lugar separado do arquivo — sem ela nada abre.\n\nGerar?')) return;
+
+    var b = el('btnGerarMigracao');
+    b.disabled = true; b.textContent = 'Gerando…';
+    api('/manutencao/migracao', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ senha: senha })
+    }).then(function (r) {
+      el('mtSenha').value = '';
+      aviso('Arquivo de migração gerado. Baixe-o na lista abaixo e leve para o outro computador.');
+      carregarManutencao();
+    }).catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; b.textContent = 'Gerar arquivo de migração'; });
   };
 
   /* ------------------------------------------------------------ municípios */

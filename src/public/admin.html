@@ -128,7 +128,8 @@
       <a href="#inicio" data-tela="inicio"><span class="ico">▤</span> Início</a>
 
       <div class="menu-grupo">Emissão</div>
-      <a href="/emitir"><span class="ico">✎</span> Emitir nota</a>
+      <a href="/nota"><span class="ico">✎</span> Emitir nota</a>
+      <a href="/emitir"><span class="ico">◗</span> Emitir por conversa</a>
       <a href="#notas" data-tela="notas"><span class="ico">▦</span> Notas emitidas</a>
 
       <div class="menu-grupo">Cadastros</div>
@@ -140,6 +141,7 @@
       <a href="#usuarios" data-tela="usuarios" data-admin hidden><span class="ico">◉</span> Usuários</a>
       <a href="#municipios" data-tela="municipios" data-admin hidden><span class="ico">⬡</span> Municípios</a>
       <a href="#webhooks" data-tela="webhooks" data-admin hidden><span class="ico">⇄</span> Webhooks</a>
+      <a href="#manutencao" data-tela="manutencao" data-admin hidden><span class="ico">▤</span> Backup e migração</a>
     </nav>
 
     <div class="rodape-sidebar">
@@ -162,7 +164,7 @@
         <div class="sub" id="subtituloTela"></div>
       </div>
       <span class="espaco"></span>
-      <a class="botao primario pequeno" href="/emitir">✎ Emitir nota</a>
+      <a class="botao primario pequeno" href="/nota">✎ Emitir nota</a>
     </header>
 
     <div class="pagina">
@@ -196,9 +198,9 @@
         </div>
 
         <div class="grade c3" style="margin-bottom:18px">
-          <a class="acao-rapida" href="/emitir">
+          <a class="acao-rapida" href="/nota">
             <span class="ic">✎</span>
-            <span><span class="tit">Emitir nota</span><span class="des">passo a passo guiado</span></span>
+            <span><span class="tit">Emitir nota</span><span class="des">formulário completo</span></span>
           </a>
           <a class="acao-rapida" href="#empresas" data-tela="empresas">
             <span class="ic">▣</span>
@@ -578,6 +580,79 @@
             <div id="vazioUsuarios" class="vazio" hidden>
               <div class="icone">◉</div><div class="titulo">Nenhum usuário</div>
               <div>Cadastre quem vai operar o gateway.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------- BACKUP E MIGRAÇÃO ---------------- -->
+      <section data-tela-conteudo="manutencao" hidden>
+        <div class="grade c2" style="margin-bottom:18px">
+          <div class="cartao" style="margin:0">
+            <div class="cartao-cab"><h2>Cópia de segurança</h2></div>
+            <div class="cartao-corpo">
+              <div class="ajuda" style="margin-bottom:14px">
+                O gateway grava uma cópia por dia sozinho. Use o botão para gerar
+                uma agora, antes de alguma mudança.
+              </div>
+              <dl class="kv" style="margin-bottom:14px">
+                <dt>Última cópia</dt><dd id="mtUltimo">—</dd>
+                <dt>Pasta</dt><dd class="mono" id="mtPasta">—</dd>
+              </dl>
+              <button class="primario" id="btnBackupAgora">Gerar cópia agora</button>
+            </div>
+          </div>
+
+          <div class="cartao" style="margin:0">
+            <div class="cartao-cab"><h2>Mudar de computador</h2></div>
+            <div class="cartao-corpo">
+              <div class="ajuda" style="margin-bottom:14px">
+                Gera um arquivo com <strong>tudo</strong>: empresas, certificados,
+                notas e as chaves do sistema. Escolha uma senha — sem ela o
+                arquivo não abre em lugar nenhum.
+              </div>
+              <label for="mtSenha">Senha do arquivo</label>
+              <input id="mtSenha" type="password" autocomplete="new-password"
+                     placeholder="mínimo 8 caracteres">
+              <div class="ajuda">Anote em lugar separado do arquivo.</div>
+              <div style="margin-top:14px"><button class="primario" id="btnGerarMigracao">Gerar arquivo de migração</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Arquivos</h2><span class="espaco"></span>
+            <button class="pequeno" id="btnAtualizarManutencao">Atualizar</button>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr><th>Arquivo</th><th>Tipo</th><th>Tamanho</th><th>Data</th><th></th></tr></thead>
+                <tbody id="corpoManutencao"></tbody>
+              </table>
+            </div>
+            <div id="vazioManutencao" class="vazio" hidden>
+              <div class="icone">▤</div><div class="titulo">Nenhum arquivo ainda</div>
+              <div>Gere a primeira cópia acima.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cartao">
+          <div class="cartao-cab"><h2>Como instalar em outro computador</h2></div>
+          <div class="cartao-corpo">
+            <ol style="margin:0;padding-left:20px;line-height:1.9;font-size:13.5px">
+              <li>Gere o arquivo de migração acima e guarde a senha.</li>
+              <li>Copie o arquivo <span class="mono">.nfsepkg</span> para um pendrive.</li>
+              <li>No computador novo, execute o instalador do gateway.</li>
+              <li>Quando ele perguntar, escolha <strong>"Trazer de outro computador"</strong>
+                  e aponte o arquivo.</li>
+              <li>Entre com o mesmo e-mail e senha de sempre.</li>
+            </ol>
+            <div class="ajuda" style="margin-top:12px">
+              O certificado digital vai junto e continua funcionando: a chave que o
+              decifra está dentro do arquivo.
             </div>
           </div>
         </div>

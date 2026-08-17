@@ -1,22 +1,43 @@
 const express = require('express');
 const usuarios = require('../services/usuarios');
 const sessoes = require('../services/sessoes');
-const { somenteAdmin, exigirUsuario } = require('../middleware/escopo');
+const db = require('../db');
+const { somenteAdmin, exigirUsuario, empresaVisivel } = require('../middleware/escopo');
 
 const router = express.Router();
 
 /* ------------------------------------------------------------------- conta */
 /* Rotas do próprio usuário: qualquer perfil, sobre si mesmo. */
 
-router.get('/eu', exigirUsuario, (req, res) => {
-  res.json({
-    id: req.auth.usuarioId,
-    nome: req.auth.nome,
-    email: req.auth.email,
-    perfil: req.auth.perfil,
-    trocarSenha: req.auth.trocarSenha,
-    empresasIds: req.auth.empresasIds   // null = todas
-  });
+router.get('/eu', exigirUsuario, async (req, res, next) => {
+  try {
+    const r = await db.query('SELECT empresa_padrao_id FROM usuarios WHERE id = $1',
+      [req.auth.usuarioId]);
+    res.json({
+      id: req.auth.usuarioId,
+      nome: req.auth.nome,
+      email: req.auth.email,
+      perfil: req.auth.perfil,
+      trocarSenha: req.auth.trocarSenha,
+      empresasIds: req.auth.empresasIds,   // null = todas
+      empresaPadraoId: r.rows[0] ? r.rows[0].empresa_padrao_id : null
+    });
+  } catch (e) { next(e); }
+});
+
+/* Empresa que já vem escolhida ao abrir a emissão. Preferência de quem opera,
+   não configuração do sistema: cada pessoa do escritório cuida de clientes
+   diferentes. */
+router.put('/eu/empresa-padrao', exigirUsuario, async (req, res, next) => {
+  try {
+    const id = (req.body || {}).empresaId;
+    if (id !== null && id !== undefined && !empresaVisivel(req, id)) {
+      return res.status(404).json({ erro: 'Empresa não encontrada' });
+    }
+    await db.query('UPDATE usuarios SET empresa_padrao_id = $1 WHERE id = $2',
+      [id || null, req.auth.usuarioId]);
+    res.json({ ok: true, empresaPadraoId: id || null });
+  } catch (e) { next(e); }
 });
 
 router.post('/eu/senha', exigirUsuario, async (req, res, next) => {

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emitir NFS-e</title>
+<link rel="stylesheet" href="/assets/app.css">
+<style>
+  .barra { background:var(--superficie); border-bottom:1px solid var(--linha);
+           padding:11px 20px; display:flex; align-items:center; gap:12px;
+           position:sticky; top:0; z-index:20; }
+  .barra .logo { width:32px; height:32px; border-radius:8px; background:var(--acento);
+                 color:#fff; display:grid; place-items:center; font-weight:700; font-size:13px; }
+  .barra h1 { font-size:16px; margin:0; font-weight:650; letter-spacing:-.2px; }
+  .barra .sub { font-size:12px; color:var(--texto-3); }
+  main { max-width:960px; margin:0 auto; padding:22px 18px 120px; }
+
+  .bloco { background:var(--superficie); border:1px solid var(--linha);
+           border-radius:var(--raio); box-shadow:var(--sombra); margin-bottom:16px; }
+  .bloco-cab { padding:13px 18px; border-bottom:1px solid var(--linha);
+               display:flex; align-items:center; gap:10px; }
+  .bloco-cab h2 { font-size:14px; font-weight:650; margin:0; }
+  .bloco-cab .n { width:22px; height:22px; border-radius:50%; background:var(--acento-suave);
+                  color:var(--acento); display:grid; place-items:center;
+                  font-size:12px; font-weight:700; flex-shrink:0; }
+  .bloco-corpo { padding:18px; }
+
+  /* Blocos avançados: fechados por padrão para a tela não assustar quem só
+     precisa do básico. */
+  details.avancado { border-top:1px solid var(--linha); }
+  details.avancado summary { padding:12px 18px; cursor:pointer; font-size:13.5px;
+                             font-weight:550; color:var(--texto-2); user-select:none; }
+  details.avancado summary:hover { background:var(--superficie-2); }
+  details.avancado[open] summary { border-bottom:1px solid var(--linha); }
+  details.avancado .conteudo { padding:18px; }
+
+  .rodape-fixo { position:fixed; bottom:0; left:0; right:0; background:var(--superficie);
+                 border-top:1px solid var(--linha); padding:13px 18px; z-index:30; }
+  .rodape-inner { max-width:960px; margin:0 auto; display:flex; align-items:center; gap:14px; }
+  .total { font-size:20px; font-weight:680; letter-spacing:-.4px; }
+  .total-rot { font-size:11.5px; color:var(--texto-3); text-transform:uppercase;
+               letter-spacing:.05em; font-weight:600; }
+
+  .faixa-prod { background:var(--erro-bg); color:var(--erro); padding:9px 16px;
+                text-align:center; font-size:13.5px; font-weight:600; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:6px 16px; font-size:13.5px; }
+  .kv dt { color:var(--texto-2); } .kv dd { margin:0; word-break:break-all; }
+  .sugestoes { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
+  .sugestoes button { font-size:12.5px; padding:5px 11px; border-radius:20px; }
+</style>
+</head>
+<body>
+
+<div id="faixaProd" class="faixa-prod" hidden>
+  Ambiente de PRODUÇÃO — a nota emitida aqui tem valor fiscal
+</div>
+
+<div class="barra">
+  <div class="logo">NF</div>
+  <div>
+    <h1>Emitir nota fiscal</h1>
+    <div class="sub">preenchimento direto</div>
+  </div>
+  <span class="espaco"></span>
+  <a class="botao pequeno" href="/emitir">Modo conversa</a>
+  <a class="botao pequeno" href="/admin">Painel</a>
+</div>
+
+<main>
+  <div id="aviso" class="aviso"></div>
+
+  <!-- 1. Empresa emissora -->
+  <div class="bloco">
+    <div class="bloco-cab"><span class="n">1</span><h2>Empresa emissora</h2></div>
+    <div class="bloco-corpo">
+      <div class="grade c2">
+        <div>
+          <label for="fEmpresa">Prestador do serviço</label>
+          <select id="fEmpresa"></select>
+          <div class="ajuda" id="fEmpresaInfo"></div>
+        </div>
+        <div style="align-self:end">
+          <label style="display:flex;align-items:center;gap:9px;font-weight:400;cursor:pointer">
+            <input type="checkbox" id="fPadrao" style="width:auto;margin:0">
+            Usar sempre esta empresa
+          </label>
+          <div class="ajuda">Ela já vem escolhida nas próximas emissões.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Tomador -->
+  <div class="bloco">
+    <div class="bloco-cab"><span class="n">2</span><h2>Cliente (tomador)</h2></div>
+    <div class="bloco-corpo">
+      <div class="grade c2">
+        <div>
+          <label for="fDoc">CNPJ ou CPF</label>
+          <div style="display:flex;gap:8px">
+            <input id="fDoc" inputmode="numeric" placeholder="somente números">
+            <button type="button" class="pequeno" id="btnBuscarDoc" style="white-space:nowrap">Buscar</button>
+          </div>
+          <div class="ajuda">Preenche pelos clientes já usados ou pela Receita.</div>
+          <div class="sugestoes" id="sugTomadores"></div>
+        </div>
+        <div><label for="fNome">Nome / razão social</label><input id="fNome" maxlength="300"></div>
+      </div>
+      <div class="grade c3" style="margin-top:14px">
+        <div><label for="fMunTom">Código do município (IBGE)</label><input id="fMunTom" inputmode="numeric" maxlength="7"></div>
+        <div><label for="fEmailTom">E-mail</label><input id="fEmailTom" type="email"></div>
+        <div><label for="fFoneTom">Telefone</label><input id="fFoneTom"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Serviço -->
+  <div class="bloco">
+    <div class="bloco-cab"><span class="n">3</span><h2>Serviço prestado</h2></div>
+    <div class="bloco-corpo">
+      <div class="sugestoes" id="sugServicos" style="margin:0 0 14px"></div>
+      <div class="grade c3">
+        <div>
+          <label for="fCodTrib">Código de tributação *</label>
+          <input id="fCodTrib" inputmode="numeric" maxlength="6" placeholder="110201">
+          <div class="ajuda">6 dígitos (cTribNac).</div>
+        </div>
+        <div><label for="fCodMun">Código municipal</label><input id="fCodMun" maxlength="20">
+          <div class="ajuda">Opcional.</div></div>
+        <div><label for="fMunPrest">Município da prestação</label><input id="fMunPrest" inputmode="numeric" maxlength="7">
+          <div class="ajuda">Vazio = o da empresa.</div></div>
+      </div>
+      <div style="margin-top:14px">
+        <label for="fDescricao">Descrição do serviço *</label>
+        <textarea id="fDescricao" rows="2" maxlength="2000"></textarea>
+      </div>
+      <div style="margin-top:14px">
+        <label for="fCompl">Informações complementares</label>
+        <input id="fCompl" maxlength="500" placeholder="Contrato, ordem de serviço, medição...">
+        <div class="ajuda">Sai impresso na nota.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Valores e tributação -->
+  <div class="bloco">
+    <div class="bloco-cab"><span class="n">4</span><h2>Valores e tributação</h2></div>
+    <div class="bloco-corpo">
+      <div class="grade c3">
+        <div>
+          <label for="fValor">Valor do serviço *</label>
+          <input id="fValor" type="number" step="0.01" min="0">
+        </div>
+        <div>
+          <label for="fNatureza">Natureza da operação</label>
+          <select id="fNatureza">
+            <option value="1">1 — Tributável</option>
+            <option value="2">2 — Exportação de serviço</option>
+            <option value="3">3 — Não incidência</option>
+            <option value="4">4 — Imunidade</option>
+            <option value="5">5 — Exigibilidade suspensa (judicial)</option>
+            <option value="6">6 — Exigibilidade suspensa (administrativa)</option>
+          </select>
+        </div>
+        <div id="wrapAliquota">
+          <label for="fAliquota">Alíquota ISS (%)</label>
+          <input id="fAliquota" type="number" step="0.0001" min="0">
+          <div class="ajuda" id="ajudaAliquota"></div>
+        </div>
+      </div>
+
+      <div class="grade c3" style="margin-top:14px">
+        <div>
+          <label for="fIssRetido">ISS retido pelo tomador</label>
+          <select id="fIssRetido"><option value="false">Não</option><option value="true">Sim</option></select>
+        </div>
+        <div><label for="fDescIncond">Desconto incondicionado</label><input id="fDescIncond" type="number" step="0.01" min="0"></div>
+        <div><label for="fDeducoes">Deduções da base</label><input id="fDeducoes" type="number" step="0.01" min="0">
+          <div class="ajuda">Material, subempreitada.</div></div>
+      </div>
+
+      <!-- Campos que dependem da natureza escolhida -->
+      <div class="grade c2" style="margin-top:14px" id="wrapImunidade" hidden>
+        <div>
+          <label for="fTipoImunidade">Tipo de imunidade</label>
+          <select id="fTipoImunidade">
+            <option value="1">1 — Patrimônio, renda ou serviços de entes federados</option>
+            <option value="2">2 — Templos de qualquer culto</option>
+            <option value="3">3 — Partidos, sindicatos, instituições de educação/assistência</option>
+            <option value="4">4 — Livros, jornais, periódicos e o papel</option>
+          </select>
+        </div>
+      </div>
+      <div class="grade c2" style="margin-top:14px" id="wrapSuspensao" hidden>
+        <div><label for="fNumProcesso">Número do processo</label><input id="fNumProcesso" maxlength="30"></div>
+        <div><label for="fTipoSusp">Tipo</label>
+          <select id="fTipoSusp">
+            <option value="1">1 — Decisão judicial</option>
+            <option value="2">2 — Processo administrativo</option>
+          </select></div>
+      </div>
+      <div class="grade c2" style="margin-top:14px" id="wrapPais" hidden>
+        <div><label for="fPais">País da prestação</label><input id="fPais" maxlength="2" placeholder="US"
+             style="text-transform:uppercase">
+          <div class="ajuda">Sigla de 2 letras.</div></div>
+      </div>
+    </div>
+
+    <!-- Retenções federais: rotina para PJ, mas nem toda nota tem -->
+    <details class="avancado" id="detRetencoes">
+      <summary>Retenções federais (PIS, COFINS, IRRF, CSLL, INSS)</summary>
+      <div class="conteudo">
+        <div class="ajuda" style="margin-bottom:14px">
+          Preencha só o que for retido nesta nota. Em branco, nada é declarado.
+          <button type="button" class="pequeno" id="btnCalcularRet" style="margin-left:8px">Calcular padrão</button>
+        </div>
+        <div class="grade c3">
+          <div><label for="fRetPis">PIS</label><input id="fRetPis" type="number" step="0.01" min="0"></div>
+          <div><label for="fRetCofins">COFINS</label><input id="fRetCofins" type="number" step="0.01" min="0"></div>
+          <div><label for="fRetIrrf">IRRF</label><input id="fRetIrrf" type="number" step="0.01" min="0"></div>
+        </div>
+        <div class="grade c3" style="margin-top:14px">
+          <div><label for="fRetCsll">CSLL</label><input id="fRetCsll" type="number" step="0.01" min="0"></div>
+          <div><label for="fRetInss">INSS (contribuição previdenciária)</label><input id="fRetInss" type="number" step="0.01" min="0"></div>
+          <div style="align-self:end">
+            <label style="display:flex;align-items:center;gap:9px;font-weight:400;cursor:pointer">
+              <input type="checkbox" id="fRetPeloTomador" style="width:auto;margin:0" checked>
+              Retido pelo tomador
+            </label>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="avancado">
+      <summary>Outros campos</summary>
+      <div class="conteudo">
+        <div class="grade c3">
+          <div><label for="fCompetencia">Competência</label><input id="fCompetencia" type="date">
+            <div class="ajuda">Vazio = hoje.</div></div>
+          <div><label for="fReferencia">Sua referência</label><input id="fReferencia" maxlength="100" placeholder="PEDIDO-123">
+            <div class="ajuda">Evita nota duplicada.</div></div>
+          <div><label for="fTotTrib">% total de tributos</label><input id="fTotTrib" type="number" step="0.0001" min="0">
+            <div class="ajuda">Lei 12.741 (transparência).</div></div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div style="display:flex;gap:9px;justify-content:flex-end;margin-bottom:40px">
+    <button id="btnLimpar">Limpar formulário</button>
+  </div>
+</main>
+
+<div class="rodape-fixo">
+  <div class="rodape-inner">
+    <div>
+      <div class="total-rot">Valor da nota</div>
+      <div class="total" id="totalNota">R$ 0,00</div>
+    </div>
+    <div id="resumoTributos" class="ajuda" style="margin:0"></div>
+    <span class="espaco"></span>
+    <button class="primario" id="btnEmitir" style="padding:11px 26px;font-size:14.5px">Emitir nota</button>
+  </div>
+</div>
+
+<!-- Resultado da emissão -->
+<dialog id="dlgResultado"><div class="interno">
+  <h3 id="resTitulo">Emitindo…</h3>
+  <div class="dsub" id="resSub"></div>
+  <div id="resCorpo"></div>
+  <div class="acoes-form">
+    <button id="resNova" hidden>Emitir outra</button>
+    <button class="primario" id="resFechar">Fechar</button>
+  </div>
+</div></dialog>
+
+<script src="/assets/nota.js"></script>
+</body>
+</html>

@@ -18,7 +18,7 @@ const AMBIENTES = {
   }
 };
 
-module.exports = {
+const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   databaseUrl: process.env.DATABASE_URL,
   apiKey: process.env.GATEWAY_API_KEY,
@@ -27,3 +27,71 @@ module.exports = {
   xmlSigAlg: (process.env.XML_SIG_ALG || 'sha1').toLowerCase(),
   ambientes: AMBIENTES
 };
+
+/**
+ * Confere a configuração antes de o servidor aceitar a primeira requisição.
+ *
+ * Sem isso, um .env incompleto só se manifesta no meio de uma emissão: a
+ * MASTER_KEY ausente falha ao abrir o certificado, com a DPS já assinada e o
+ * número fiscal queimado. Falhar na subida, com o nome do campo que falta, é a
+ * diferença entre um erro que a contabilidade resolve sozinha e uma ligação.
+ */
+function validar() {
+  const erros = [];
+  const avisos = [];
+
+  if (!config.databaseUrl) {
+    erros.push('DATABASE_URL não definida — sem banco o gateway não sobe.');
+  } else if (!/^postgres(ql)?:\/\//.test(config.databaseUrl)) {
+    erros.push('DATABASE_URL deve começar com postgresql://');
+  }
+
+  if (!config.apiKey) {
+    erros.push('GATEWAY_API_KEY não definida — é ela que autoriza o primeiro acesso.');
+  } else if (config.apiKey.length < 24) {
+    avisos.push('GATEWAY_API_KEY é curta; gere 24 bytes em hex.');
+  }
+
+  // 32 bytes em hex. Chave errada não dá erro na hora: só descobre quando o
+  // certificado guardado não abrir mais — e aí não há como recuperá-lo.
+  if (!config.masterKey) {
+    erros.push('MASTER_KEY não definida — é ela que cifra o certificado A1 no banco.');
+  } else if (!/^[0-9a-fA-F]{64}$/.test(config.masterKey)) {
+    erros.push('MASTER_KEY deve ter 64 caracteres hexadecimais (32 bytes). ' +
+               'Gere com: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+  }
+
+  if (!['sha1', 'sha256'].includes(config.xmlSigAlg)) {
+    erros.push(`XML_SIG_ALG inválido (${config.xmlSigAlg}); use sha1 ou sha256.`);
+  }
+
+  if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
+    erros.push(`PORT inválida (${process.env.PORT}).`);
+  }
+
+  if (process.env.NODE_ENV === 'production' && process.env.ADMIN_ATIVO !== 'false'
+      && process.env.TRUST_PROXY === 'true') {
+    avisos.push('Painel ativo atrás de proxy: garanta que o acesso esteja restrito ' +
+                '(VPN ou IP), pois ele cadastra empresas e troca certificados.');
+  }
+
+  return { erros, avisos };
+}
+
+/* Encerra o processo quando falta o essencial. Subir "meio configurado" só adia
+   o erro para o pior momento. */
+function validarOuSair() {
+  const { erros, avisos } = validar();
+
+  avisos.forEach(a => console.warn('[config] aviso:', a));
+
+  if (erros.length) {
+    console.error('\n  O gateway não pode iniciar. Corrija o arquivo .env:\n');
+    erros.forEach(e => console.error('   - ' + e));
+    console.error('\n  O arquivo .env fica na pasta do gateway.');
+    console.error('  Use .env.example como referência.\n');
+    process.exit(1);
+  }
+}
+
+module.exports = Object.assign(config, { validar, validarOuSair });
