@@ -9,6 +9,12 @@
 -- A chave global continua válida como credencial administrativa (painel e
 -- gestão); os tokens por empresa são o que vai para os sistemas clientes.
 
+-- gen_random_bytes() vem do pgcrypto. O Supabase já entregava a extensão
+-- habilitada, então isso passou despercebido até o banco passar a rodar num
+-- PostgreSQL comum, onde a migração parava aqui. O cadastro de empresa também
+-- depende dela (routes/empresas.js gera os tokens no INSERT).
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS empresa_tokens (
   id          SERIAL PRIMARY KEY,
   empresa_id  INTEGER     NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,

@@ -1,5 +1,9 @@
 node_modules/
+# Cobre .env, .env.local, .env.supabase-AAAAMMDD e qualquer copia de
+# seguranca: todos levam MASTER_KEY e GATEWAY_API_KEY.
 .env
+.env.*
+!.env.example
 *.pfx
 .claude/
 

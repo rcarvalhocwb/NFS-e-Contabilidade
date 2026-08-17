@@ -89,26 +89,35 @@ async function principal() {
       console.log(`${tabela.padEnd(18)} ${String(linhas.length).padStart(5)} registro(s)`);
     }
 
-    /* As sequences não acompanham inserts com id explícito. Sem este ajuste, o
-       próximo INSERT tentaria reusar um id existente e falharia. */
-    for (const tabela of ORDEM) {
-      if (!Array.isArray(backup.tabelas[tabela]) || !backup.tabelas[tabela].length) continue;
-      await cliente.query(
-        `SELECT setval(pg_get_serial_sequence('${tabela}', 'id'),
-                       GREATEST((SELECT COALESCE(MAX(id), 1) FROM ${tabela}), 1))
-         WHERE pg_get_serial_sequence('${tabela}', 'id') IS NOT NULL`
-      ).catch(() => { /* tabela sem coluna id serial */ });
-    }
-
     await cliente.query('COMMIT');
-    console.log(`\n${total} registros restaurados.`);
-    console.log('Confira a numeração das DPS antes de emitir em produção.');
   } catch (e) {
     await cliente.query('ROLLBACK');
     throw e;
   } finally {
     cliente.release();
   }
+
+  /* As sequences não acompanham inserts com id explícito: sem este ajuste, o
+     próximo INSERT tentaria reusar um id existente e falharia.
+
+     Fora da transação de propósito. Um setval que falha (tabela sem coluna id
+     serial) aborta a transação inteira no Postgres, e o `.catch` do JS engole o
+     erro sem desfazer isso — o COMMIT seguinte vira um rollback silencioso e a
+     restauração não grava nada, relatando sucesso. */
+  for (const tabela of ORDEM) {
+    if (!Array.isArray(backup.tabelas[tabela]) || !backup.tabelas[tabela].length) continue;
+    try {
+      await db.query(
+        `SELECT setval(pg_get_serial_sequence($1, 'id'),
+                       GREATEST((SELECT COALESCE(MAX(id), 1) FROM ${tabela}), 1))
+         WHERE pg_get_serial_sequence($1, 'id') IS NOT NULL`, [tabela]);
+    } catch (e) {
+      console.warn(`aviso: não ajustei a sequence de ${tabela} (${e.message})`);
+    }
+  }
+
+  console.log(`\n${total} registros restaurados.`);
+  console.log('Confira a numeração das DPS antes de emitir em produção.');
 }
 
 principal()

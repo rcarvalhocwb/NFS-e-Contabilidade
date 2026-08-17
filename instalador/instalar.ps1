@@ -117,7 +117,7 @@ if (Test-Path $envPath) {
             exit 1
         }
 
-        $banco = Get-UrlBancoLocal $senhaBanco
+        $banco = Get-UrlBancoLocal $PSScriptRoot $senhaBanco
         Ok "Banco de dados instalado nesta maquina"
     } else {
         Write-Host "  Se voce nao tem essa informacao, pergunte a quem cuida da TI." -ForegroundColor DarkGray

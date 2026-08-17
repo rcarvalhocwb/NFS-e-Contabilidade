@@ -8,14 +8,40 @@
 # privilegio de administrador: tudo fica dentro da pasta do gateway, e
 # desinstalar e apagar a pasta.
 #
-# Porta 5433 de proposito: se a maquina ja tiver um Postgres em 5432, os dois
-# convivem sem conflito.
+# A porta e escolhida entre as livres a partir da 5433 e gravada em
+# postgres/porta.txt. Nao da para fixar um numero: esta maquina ja tinha um
+# Postgres na 5433, e o cluster novo simplesmente nao subia.
 # ---------------------------------------------------------------------------
 
 $PG_VERSAO   = '16.4-1'
-$PG_PORTA    = 5433
 $PG_BANCO    = 'nfse'
 $PG_USUARIO  = 'nfse'
+
+# Porta descoberta na instalacao e gravada junto com os dados. Fixar um numero
+# nao funciona: a maquina pode ja ter um Postgres (o 5432 de sempre, ou um 5433
+# de alguma outra ferramenta), e o cluster simplesmente nao sobe.
+$PG_PORTA_PADRAO = 5433
+
+function Get-PgPortaLivre {
+    param($inicio = $PG_PORTA_PADRAO)
+    $emUso = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+               ForEach-Object { $_.LocalPort })
+    for ($porta = $inicio; $porta -lt ($inicio + 50); $porta++) {
+        if ($emUso -notcontains $porta) { return $porta }
+    }
+    throw "Nao encontrei porta livre a partir de $inicio"
+}
+
+# A porta escolhida fica ao lado dos dados: o launcher precisa dela para subir
+# o banco, e o .env para se conectar.
+function Get-PgArquivoPorta { param($raiz) Join-Path (Get-PgRaiz $raiz) 'porta.txt' }
+
+function Get-PgPorta {
+    param($raiz)
+    $arq = Get-PgArquivoPorta $raiz
+    if (Test-Path $arq) { return [int](Get-Content $arq -Raw).Trim() }
+    return $PG_PORTA_PADRAO
+}
 
 function Get-PgRaiz    { param($raiz) Join-Path $raiz 'postgres' }
 function Get-PgBin     { param($raiz) Join-Path (Get-PgRaiz $raiz) 'pgsql\bin' }
@@ -109,11 +135,15 @@ function Initialize-PostgresLocal {
         if (Test-Path $arquivoSenha) { Remove-Item $arquivoSenha -Force }
     }
 
+    $porta = Get-PgPortaLivre
+    Set-Content -Path (Get-PgArquivoPorta $raiz) -Value $porta -Encoding ascii -NoNewline
+    Write-Host "  Banco na porta $porta" -ForegroundColor DarkGray
+
     # So aceita conexao da propria maquina. O gateway nao e exposto na rede e
     # o banco tambem nao precisa ser.
     Set-Content -Path (Join-Path $dados 'postgresql.conf') -Encoding ascii -Value @"
 listen_addresses = '127.0.0.1'
-port = $PG_PORTA
+port = $porta
 max_connections = 50
 shared_buffers = 128MB
 log_destination = 'stderr'
@@ -141,8 +171,27 @@ function Start-PostgresLocal {
     if (Test-PgRodando $raiz) { return $true }
 
     $pgCtl = Join-Path (Get-PgBin $raiz) 'pg_ctl.exe'
-    & $pgCtl -D (Get-PgDados $raiz) -l (Get-PgLog $raiz) -w -t 30 start *> $null
-    return (Test-PgRodando $raiz)
+
+    # Start-Process, e nao chamada direta: o servidor herda os handles de saida
+    # do terminal e nunca os fecha, entao um `& pg_ctl start` deixa o PowerShell
+    # esperando para sempre — e travaria o Iniciar Gateway.bat na abertura.
+    # Dispara e confere depois, em vez de esperar o pg_ctl terminar.
+    #
+    # Com -Wait o PowerShell nao espera so o pg_ctl: espera tambem os processos
+    # auxiliares que o servidor deixa rodando (checkpointer, walwriter...), e a
+    # chamada levava mais de dois minutos para voltar mesmo com o banco ja no
+    # ar. Isso travaria o Iniciar Gateway.bat na abertura.
+    Start-Process -FilePath $pgCtl `
+        -ArgumentList @('-D', "`"$(Get-PgDados $raiz)`"", '-l', "`"$(Get-PgLog $raiz)`"", 'start') `
+        -WindowStyle Hidden | Out-Null
+
+    # Sobe em 1-2s numa maquina comum; 30s cobre disco lento e recuperacao
+    # depois de um desligamento sujo.
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Milliseconds 500
+        if (Test-PgRodando $raiz) { return $true }
+    }
+    return $false
 }
 
 function Stop-PostgresLocal {
@@ -159,13 +208,14 @@ function Stop-PostgresLocal {
 function New-BancoNfse {
     param($raiz, $senha)
 
+    $porta = Get-PgPorta $raiz
     $env:PGPASSWORD = $senha
     try {
         $psql = Join-Path (Get-PgBin $raiz) 'psql.exe'
-        $existe = & $psql -h 127.0.0.1 -p $PG_PORTA -U $PG_USUARIO -d postgres -tAc `
+        $existe = & $psql -h 127.0.0.1 -p $porta -U $PG_USUARIO -d postgres -tAc `
                   "SELECT 1 FROM pg_database WHERE datname='$PG_BANCO'" 2>$null
         if ($existe -ne '1') {
-            & $psql -h 127.0.0.1 -p $PG_PORTA -U $PG_USUARIO -d postgres -c `
+            & $psql -h 127.0.0.1 -p $porta -U $PG_USUARIO -d postgres -c `
                     "CREATE DATABASE $PG_BANCO" *> $null
             if ($LASTEXITCODE -ne 0) { return $false }
         }
@@ -176,8 +226,9 @@ function New-BancoNfse {
 }
 
 function Get-UrlBancoLocal {
-    param($senha)
+    param($raiz, $senha)
+    $porta = Get-PgPorta $raiz
     # A senha vai codificada: caracteres como @ e : quebrariam a URL.
     $senhaUrl = [uri]::EscapeDataString($senha)
-    return "postgresql://${PG_USUARIO}:${senhaUrl}@127.0.0.1:${PG_PORTA}/${PG_BANCO}"
+    return "postgresql://${PG_USUARIO}:${senhaUrl}@127.0.0.1:${porta}/${PG_BANCO}"
 }
