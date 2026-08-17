@@ -8,7 +8,8 @@ const { somenteAdmin, empresasVisiveis, empresaVisivel } = require('../middlewar
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
 
-function limparCnpj(v) { return String(v || '').replace(/\D/g, ''); }
+// CNPJ alfanumérico (julho/2026): letras nas 12 primeiras posições.
+const limparCnpj = limparDocumento;
 
 /* Barra o acesso a uma empresa fora do escopo de quem pediu. 404, e não 403:
    para o operador, uma empresa que não é dele simplesmente não existe. */
@@ -52,7 +53,7 @@ router.post('/', somenteAdmin, async (req, res, next) => {
         b.complemento || null, b.bairro || null, (b.uf || '').toUpperCase() || null,
         b.email || null, b.telefone || null,
         b.responsavelNome || null, (b.responsavelCpf || '').replace(/\D/g, '') || null,
-        (b.contadorDoc || '').replace(/\D/g, '') || null,
+        limparDocumento(b.contadorDoc) || null,
         b.emailTomadorAtivo === true
       ]
     );
@@ -168,7 +169,7 @@ router.put('/:cnpj', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) 
         b.email ?? null, b.telefone ?? null,
         b.responsavelNome ?? null,
         b.responsavelCpf ? b.responsavelCpf.replace(/\D/g, '') : null,
-        b.contadorDoc ? b.contadorDoc.replace(/\D/g, '') : null,
+        b.contadorDoc ? limparDocumento(b.contadorDoc) : null,
         typeof b.emailTomadorAtivo === 'boolean' ? b.emailTomadorAtivo : null
       ]
     );

@@ -16,7 +16,7 @@ function novoToken() {
 
 async function empresaPorCnpj(cnpj) {
   const r = await db.query('SELECT * FROM empresas WHERE cnpj = $1',
-    [String(cnpj || '').replace(/\D/g, '')]);
+    [limparDocumento(cnpj)]);
   if (!r.rows.length) throw Object.assign(new Error('Empresa não encontrada'), { status: 404 });
   return r.rows[0];
 }

@@ -13,6 +13,8 @@
     });
   }
   function digitos(v) { return String(v || '').replace(/\D/g, ''); }
+  /* CNPJ aceita letra desde julho/2026 — limpar com /\D/g apagaria o documento. */
+  function docLimpo(v) { return String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, ''); }
   function num(id) {
     var v = el(id).value;
     return v === '' ? undefined : Number(v);
@@ -21,7 +23,7 @@
     return Number(v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   }
   function fmtDoc(v) {
-    v = digitos(v);
+    v = docLimpo(v);
     if (v.length === 14) return v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
     if (v.length === 11) return v.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
     return v;
@@ -213,7 +215,7 @@
   el('fNatureza').onchange = function () { aplicarNatureza(); atualizarTotal(); };
 
   el('btnBuscarDoc').onclick = function () {
-    var doc = digitos(el('fDoc').value);
+    var doc = docLimpo(el('fDoc').value);
     if (doc.length !== 14 && doc.length !== 11) {
       return aviso('Informe um CNPJ (14 dígitos) ou CPF (11 dígitos).', 'erro');
     }
@@ -286,7 +288,7 @@
 
   function montarCorpo() {
     var e = empresaAtual();
-    var doc = digitos(el('fDoc').value);
+    var doc = docLimpo(el('fDoc').value);
     var natureza = el('fNatureza').value;
 
     var valores = {
@@ -355,7 +357,7 @@
     if (!/^\d{6}$/.test(digitos(el('fCodTrib').value))) return 'O código de tributação tem 6 dígitos.';
     if (!el('fDescricao').value.trim()) return 'Descreva o serviço prestado.';
     if (!num('fValor') || num('fValor') <= 0) return 'Informe o valor do serviço.';
-    var doc = digitos(el('fDoc').value);
+    var doc = docLimpo(el('fDoc').value);
     if (doc && doc.length !== 11 && doc.length !== 14) return 'Documento do cliente inválido.';
     if (doc && !el('fNome').value.trim()) return 'Informe o nome do cliente.';
     if (el('fNatureza').value === '2' && !el('fPais').value.trim()) {
@@ -442,7 +444,7 @@
 
   /* Realimenta as sugestões: o que se usa mais aparece primeiro na próxima. */
   function registrarUso() {
-    var doc = digitos(el('fDoc').value);
+    var doc = docLimpo(el('fDoc').value);
     var t = estado.tomadores.filter(function (x) { return x.documento === doc; })[0];
     var cod = digitos(el('fCodTrib').value);
     var s = estado.servicos.filter(function (x) { return x.codigo_tributacao === cod; })[0];

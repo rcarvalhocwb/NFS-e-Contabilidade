@@ -20,8 +20,10 @@
     });
   }
   function digitos(v) { return String(v || '').replace(/\D/g, ''); }
+  /* CNPJ aceita letra desde julho/2026 — limpar com /\D/g apagaria o documento. */
+  function docLimpo(v) { return String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, ''); }
   function fmtDoc(v) {
-    v = digitos(v);
+    v = docLimpo(v);
     if (v.length === 14) return v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
     if (v.length === 11) return v.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
     return v || '—';
@@ -492,13 +494,13 @@
       telefone: el('f_tel').value.trim() || null,
       responsavelNome: el('f_respnome').value.trim() || null,
       responsavelCpf: digitos(el('f_respcpf').value) || null,
-      contadorDoc: digitos(el('f_contador').value) || null,
+      contadorDoc: docLimpo(el('f_contador').value) || null,
       emailTomadorAtivo: el('f_email_tom').value === 'true'
     };
   }
 
   el('btnSalvarEmp').onclick = function () {
-    var cnpj = digitos(el('f_cnpj').value);
+    var cnpj = docLimpo(el('f_cnpj').value);
     if (!estado.editando && cnpj.length !== 14) { aba('identificacao'); return aviso('CNPJ deve ter 14 dígitos.', 'erro'); }
     var corpo = coletarEmpresa();
     if (!corpo.razaoSocial) { aba('identificacao'); return aviso('Razão social é obrigatória.', 'erro'); }
@@ -522,7 +524,7 @@
   };
 
   el('btnBuscaCnpj').onclick = function () {
-    var cnpj = digitos(el('f_cnpj').value);
+    var cnpj = docLimpo(el('f_cnpj').value);
     if (cnpj.length !== 14) return aviso('Digite o CNPJ (14 dígitos) antes de buscar.', 'erro');
     var b = el('btnBuscaCnpj');
     b.disabled = true; b.textContent = 'Buscando…';

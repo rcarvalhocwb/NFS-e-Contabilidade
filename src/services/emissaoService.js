@@ -8,7 +8,7 @@ const { carregarCertificadoAtivo } = require('./certificadoService');
 const municipios = require('./municipiosService');
 
 async function buscarEmpresa(cnpj) {
-  const r = await db.query('SELECT * FROM empresas WHERE cnpj = $1 AND ativo', [cnpj.replace(/\D/g, '')]);
+  const r = await db.query('SELECT * FROM empresas WHERE cnpj = $1 AND ativo', [limparDocumento(cnpj)]);
   if (!r.rows.length) throw Object.assign(new Error('Empresa não encontrada ou inativa'), { status: 404 });
   return r.rows[0];
 }

@@ -6,6 +6,8 @@
    (gov.br/nfse > Documentação técnica) para casos especiais (exportação,
    obra, evento, deduções etc.). */
 
+const { limparDocumento } = require('../util/documento');
+
 function esc(v) {
   return String(v)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -173,7 +175,8 @@ function montarDps(empresa, dados, opts) {
   const v = dados.valores || {};
   const endereco = t.endereco || {};
 
-  const docTomador = (t.cnpj || t.cpf || '').replace(/\D/g, '');
+  // CNPJ pode ser alfanumérico desde julho/2026; CPF continua só dígitos.
+  const docTomador = t.cnpj ? limparDocumento(t.cnpj) : (t.cpf || '').replace(/\D/g, '');
   const tagDocTomador = t.cnpj ? tag('CNPJ', docTomador) : (t.cpf ? tag('CPF', docTomador) : '');
 
   const issRetido = v.issRetido === true;

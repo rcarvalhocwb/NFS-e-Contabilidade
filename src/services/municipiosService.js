@@ -67,7 +67,7 @@ async function classificar(codigoMunicipio, cnpjEmpresa, ambiente = 'homologacao
   if (!/^\d{7}$/.test(cod)) {
     throw Object.assign(new Error('codigoMunicipio deve ter 7 dígitos (IBGE)'), { status: 400 });
   }
-  const emp = await db.query('SELECT id FROM empresas WHERE cnpj = $1', [String(cnpjEmpresa || '').replace(/\D/g, '')]);
+  const emp = await db.query('SELECT id FROM empresas WHERE cnpj = $1', [limparDocumento(cnpjEmpresa)]);
   if (!emp.rows.length) throw Object.assign(new Error('Informe cnpjEmpresa com certificado para a consulta'), { status: 400 });
   const cert = await carregarCertificadoAtivo(emp.rows[0].id);
 

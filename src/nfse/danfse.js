@@ -25,7 +25,7 @@ function extrair(xml, tag, dentroDe) {
 
 function fmtDoc(d) {
   if (!d) return '';
-  const s = String(d).replace(/\D/g, '');
+  const s = String(d || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
   if (s.length === 14) return s.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   if (s.length === 11) return s.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
   return s;
@@ -43,7 +43,7 @@ function fmtChave(c) {
   return String(c || '').replace(/(.{4})/g, '$1 ').trim();
 }
 function fmtTelefone(d) {
-  const s = String(d || '').replace(/\D/g, '');
+  const s = String(d || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
   if (s.length === 11) return `(${s.slice(0,2)}) ${s.slice(2,7)}-${s.slice(7)}`;
   if (s.length === 10) return `(${s.slice(0,2)}) ${s.slice(2,6)}-${s.slice(6)}`;
   return s || '';

@@ -44,7 +44,7 @@ router.post('/', async (req, res, next) => {
     // Escopo: um operador não emite por empresa que não enxerga. A checagem
     // vem antes de emitir() para não reservar número numa empresa alheia.
     const emp = await db.query('SELECT id FROM empresas WHERE cnpj = $1',
-      [String(b.cnpjEmpresa).replace(/\D/g, '')]);
+      [limparDocumento(b.cnpjEmpresa)]);
     if (!emp.rows.length || !empresaVisivel(req, emp.rows[0].id)) {
       return res.status(404).json({ erro: 'Empresa não encontrada' });
     }
@@ -66,7 +66,7 @@ router.get('/', async (req, res, next) => {
     const params = [];
     let where = '1=1';
     if (req.query.cnpjEmpresa) {
-      params.push(String(req.query.cnpjEmpresa).replace(/\D/g, ''));
+      params.push(limparDocumento(req.query.cnpjEmpresa));
       where += ` AND e.cnpj = $${params.length}`;
     }
     if (req.query.status) {
@@ -112,7 +112,7 @@ router.get('/export', async (req, res, next) => {
     const params = [];
     let where = `n.${coluna} IS NOT NULL`;
     if (req.query.cnpjEmpresa) {
-      params.push(String(req.query.cnpjEmpresa).replace(/\D/g, ''));
+      params.push(limparDocumento(req.query.cnpjEmpresa));
       where += ` AND e.cnpj = $${params.length}`;
     }
     if (req.query.status) { params.push(req.query.status); where += ` AND n.status = $${params.length}`; }

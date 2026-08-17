@@ -12,7 +12,7 @@ const CAMPOS = `id, empresa_id, evento, url, ambiente, header_autorizacao,
 async function empresaIdPorCnpj(cnpj) {
   if (!cnpj) return null;
   const r = await db.query('SELECT id FROM empresas WHERE cnpj = $1',
-    [String(cnpj).replace(/\D/g, '')]);
+    [limparDocumento(cnpj)]);
   if (!r.rows.length) throw Object.assign(new Error('Empresa não encontrada'), { status: 404 });
   return r.rows[0].id;
 }
