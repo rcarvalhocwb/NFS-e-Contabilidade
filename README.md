@@ -41,12 +41,43 @@ Em produção, veja [DEPLOY.md](DEPLOY.md).
 
 ## Autenticação
 
-Header `X-API-Key`, em dois níveis:
+Três credenciais, cada uma com um dono claro:
 
 | Credencial | Para quem | Alcance |
 |---|---|---|
-| `GATEWAY_API_KEY` | painel / contabilidade | tudo |
-| **token da empresa** | sistema cliente | uma empresa, um ambiente |
+| **login de usuário** (cookie de sessão) | pessoas que operam o painel | conforme perfil e empresas vinculadas |
+| **token da empresa** (`X-API-Key`) | sistema cliente | uma empresa, um ambiente |
+| `GATEWAY_API_KEY` (`X-API-Key`) | máquina / instalação | tudo |
+
+Pessoas entram com **e-mail e senha**, não com a chave de API. A chave é a mesma
+para todo mundo, não diz quem agiu e revogá-la derrubaria as integrações junto —
+por isso ela ficou restrita a chamadas de sistema e à criação do primeiro acesso.
+
+### Perfis
+
+| Perfil | Pode |
+|---|---|
+| **operador** | emitir, consultar, cancelar; cadastrar cliente e serviço |
+| **administrador** | tudo isso e mais: empresas, certificado, numeração, tokens, webhooks, municípios, usuários |
+
+Cada usuário pode ser vinculado a empresas específicas; sem vínculo, enxerga
+todas. O escopo é aplicado no banco, não só na tela: uma nota de empresa fora do
+escopo responde 404.
+
+A sessão dura 12 horas e se renova a cada uso. Senha guardada com `scrypt`
+(sal por usuário). Trocar a senha ou desativar a conta encerra as sessões abertas.
+
+### Primeiro acesso
+
+O instalador cria o usuário administrador ao final da instalação. Fora dele:
+
+```bash
+node scripts/criar-usuario.js --nome "Maria" --email maria@empresa.com --senha "..."
+```
+
+O mesmo script redefine a senha do administrador com `--redefinir`, caso ninguém
+mais consiga entrar. Alternativamente, com o sistema ainda sem nenhum usuário, o
+painel oferece a tela de primeiro acesso, autorizada pela `GATEWAY_API_KEY`.
 
 O token **define** a empresa e o ambiente: o cliente não precisa (nem consegue)
 informar `cnpjEmpresa` ou `ambiente` — o gateway usa os do token. Isso impede que
@@ -189,7 +220,7 @@ notificação. Configure em `POST /webhooks`, com `headerAutorizacao` e
 
 ## Administração
 
-Exigem a `GATEWAY_API_KEY`:
+Exigem perfil de administrador (ou a `GATEWAY_API_KEY`):
 
 ```bash
 POST   /empresas                        # cadastra e já devolve os tokens
@@ -200,6 +231,17 @@ GET    /integracao/{cnpj}               # pacote de integração do cliente
 POST   /integracao/{cnpj}/tokens        # gera novo token (invalida o anterior)
 GET    /municipios                      # Nacional vs. emissor próprio
 POST   /webhooks                        # cadastra destino de notificação
+GET    /usuarios                        # quem acessa o painel
+POST   /usuarios                        # cadastra usuário
+PUT    /usuarios/{id}                   # perfil, empresas, senha, situação
+POST   /usuarios/{id}/encerrar-sessoes  # derruba as sessões abertas
+```
+
+Qualquer usuário logado acessa a própria conta:
+
+```bash
+GET    /usuarios/eu                     # perfil e empresas do usuário atual
+POST   /usuarios/eu/senha               # troca a própria senha
 ```
 
 ### Numeração por ambiente

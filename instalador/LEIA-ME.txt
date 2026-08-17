@@ -47,7 +47,7 @@ ANTES DA PRIMEIRA NOTA
 E preciso cadastrar a empresa e o certificado digital:
 
 1. Abra http://localhost:3000/admin
-2. Informe a chave de acesso (a que voce anotou)
+2. Entre com o email e a senha criados na instalacao
 3. Clique em "Nova empresa" e digite o CNPJ
 4. Clique em "Buscar" - os dados vem preenchidos
 5. Salve
@@ -59,15 +59,41 @@ fiscal e geram imposto.
 
 
 -----------------------------------------------------------
+QUEM ACESSA O SISTEMA
+-----------------------------------------------------------
+
+Cada pessoa entra com o proprio email e senha. Assim fica
+registrado quem emitiu cada nota.
+
+Para cadastrar mais gente, entre como administrador e va em
+Configuracao > Usuarios.
+
+   Administrador - faz tudo: cadastra empresa, troca o
+                   certificado, mexe na numeracao fiscal e
+                   cria outros usuarios.
+
+   Operador      - emite, consulta e cancela notas.
+
+Voce tambem pode escolher quais empresas cada pessoa enxerga.
+Sem nenhuma marcada, ela enxerga todas.
+
+
+-----------------------------------------------------------
 PROBLEMAS COMUNS
 -----------------------------------------------------------
 
 "O navegador nao abriu"
    Abra manualmente: http://localhost:3000/emitir
 
-"Chave de API invalida"
-   A chave esta no arquivo .env, na pasta do gateway.
-   Abra com o Bloco de Notas e procure GATEWAY_API_KEY.
+"Email ou senha incorretos"
+   Peca a um administrador do sistema para redefinir sua
+   senha em Configuracao > Usuarios.
+
+   Se ninguem mais tem acesso de administrador, quem cuida
+   da TI pode redefinir pelo computador do gateway:
+
+      node scripts/criar-usuario.js --email seu@email.com ^
+           --senha "nova-senha" --redefinir
 
 "Empresa sem certificado ativo"
    Falta anexar o certificado digital A1 no painel.

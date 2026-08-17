@@ -47,7 +47,7 @@ async function buscarPorReferencia(empresaId, referencia) {
  * 3. Persiste como pendente, envia à Sefin Nacional
  * 4. Atualiza status com o resultado (autorizada/rejeitada/erro)
  */
-async function emitir(cnpjEmpresa, dados) {
+async function emitir(cnpjEmpresa, dados, contexto = {}) {
   const empresa = await buscarEmpresa(cnpjEmpresa);
 
   // Idempotência antes de qualquer efeito colateral: se já existe nota com
@@ -110,10 +110,10 @@ async function emitir(cnpjEmpresa, dados) {
     const substituiChave = (dados.substituicao && dados.substituicao.chaveSubstituida) || null;
     nota = await db.query(
       `INSERT INTO notas (empresa_id, id_dps, serie, numero, status, dps_xml, referencia, ambiente,
-                          tomador_email, substitui_chave)
-       VALUES ($1,$2,$3,$4,'processando',$5,$6,$7,$8,$9) RETURNING id`,
+                          tomador_email, substitui_chave, usuario_id)
+       VALUES ($1,$2,$3,$4,'processando',$5,$6,$7,$8,$9,$10) RETURNING id`,
       [empresa.id, idDps, serie, numero, dpsAssinada, dados.referencia || null, empresa.ambiente,
-       emailTomador, substituiChave]
+       emailTomador, substituiChave, contexto.usuarioId || null]
     );
   } catch (e) {
     // 23505 = unique_violation: corrida entre duas requisições com a mesma

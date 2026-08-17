@@ -44,17 +44,73 @@
         <div style="font-size:12px;color:var(--texto-3)">Emissão de notas fiscais de serviço</div>
       </div>
     </div>
-    <p class="desc">Informe a chave de acesso para entrar. Ela fica no arquivo
-       <span class="mono">.env</span> do gateway, no campo <span class="mono">GATEWAY_API_KEY</span>.</p>
-    <form id="formAcesso">
-      <label for="campoChave">Chave de acesso</label>
-      <input id="campoChave" type="password" autocomplete="off" required>
-      <div class="ajuda">Fica guardada apenas nesta aba do navegador.</div>
-      <button type="submit" class="primario" style="width:100%;justify-content:center;margin-top:16px">Entrar</button>
+
+    <!-- Login normal -->
+    <form id="formAcesso" hidden>
+      <p class="desc">Entre com seu e-mail e senha.</p>
+      <label for="acEmail">E-mail</label>
+      <input id="acEmail" type="email" autocomplete="username" required>
+      <div style="margin-top:14px">
+        <label for="acSenha">Senha</label>
+        <input id="acSenha" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="primario"
+              style="width:100%;justify-content:center;margin-top:18px">Entrar</button>
     </form>
+
+    <!-- Primeiro acesso: só aparece enquanto não existe nenhum usuário -->
+    <form id="formPrimeiro" hidden>
+      <p class="desc">Nenhum usuário cadastrado ainda. Crie o acesso do
+        administrador para começar. Depois dele, os demais usuários são
+        cadastrados aqui dentro.</p>
+      <label for="pNome">Seu nome</label>
+      <input id="pNome" autocomplete="name" required>
+      <div style="margin-top:14px">
+        <label for="pEmail">E-mail</label>
+        <input id="pEmail" type="email" autocomplete="username" required>
+      </div>
+      <div style="margin-top:14px">
+        <label for="pSenha">Senha</label>
+        <input id="pSenha" type="password" autocomplete="new-password" required>
+        <div class="ajuda">Ao menos 8 caracteres.</div>
+      </div>
+      <div style="margin-top:14px">
+        <label for="pChave">Chave de instalação</label>
+        <input id="pChave" type="password" autocomplete="off" required>
+        <div class="ajuda">
+          Abra o arquivo <span class="mono">.env</span> na pasta do gateway
+          (<span class="mono">C:\dev\nfse-gateway</span>) com o Bloco de Notas e
+          copie o que vem depois de <span class="mono">GATEWAY_API_KEY=</span>.
+          É pedida uma única vez, só para confirmar que quem cria o primeiro
+          acesso tem o gateway em mãos.
+        </div>
+      </div>
+      <button type="submit" class="primario"
+              style="width:100%;justify-content:center;margin-top:18px">Criar acesso e entrar</button>
+    </form>
+
     <div id="erroAcesso" class="aviso" style="margin-top:14px"></div>
   </div>
 </div>
+
+<!-- Troca obrigatória: senha definida por outra pessoa não continua valendo -->
+<dialog id="dlgTrocarSenha"><div class="interno">
+  <h3>Trocar senha</h3>
+  <div class="dsub" id="trocaMotivo">Escolha uma senha que só você conheça.</div>
+  <form id="formTrocarSenha">
+    <div><label for="tsAtual">Senha atual</label>
+      <input id="tsAtual" type="password" autocomplete="current-password" required></div>
+    <div style="margin-top:14px"><label for="tsNova">Nova senha</label>
+      <input id="tsNova" type="password" autocomplete="new-password" required>
+      <div class="ajuda">Ao menos 8 caracteres, e não só números.</div></div>
+    <div style="margin-top:14px"><label for="tsConfirma">Repita a nova senha</label>
+      <input id="tsConfirma" type="password" autocomplete="new-password" required></div>
+    <div class="acoes-form">
+      <button type="button" id="tsCancelar">Agora não</button>
+      <button type="submit" class="primario">Salvar senha</button>
+    </div>
+  </form>
+</div></dialog>
 
 <!-- ===================== APLICAÇÃO ===================== -->
 <div class="app" id="app" hidden>
@@ -80,13 +136,19 @@
       <a href="#clientes" data-tela="clientes"><span class="ico">◪</span> Clientes</a>
       <a href="#servicos" data-tela="servicos"><span class="ico">◈</span> Serviços</a>
 
-      <div class="menu-grupo">Configuração</div>
-      <a href="#municipios" data-tela="municipios"><span class="ico">⬡</span> Municípios</a>
-      <a href="#webhooks" data-tela="webhooks"><span class="ico">⇄</span> Webhooks</a>
+      <div class="menu-grupo" data-admin hidden>Configuração</div>
+      <a href="#usuarios" data-tela="usuarios" data-admin hidden><span class="ico">◉</span> Usuários</a>
+      <a href="#municipios" data-tela="municipios" data-admin hidden><span class="ico">⬡</span> Municípios</a>
+      <a href="#webhooks" data-tela="webhooks" data-admin hidden><span class="ico">⇄</span> Webhooks</a>
     </nav>
 
     <div class="rodape-sidebar">
-      <span id="rodapeAmbiente">—</span>
+      <div style="min-width:0">
+        <button id="btnMinhaConta" title="Trocar minha senha"
+                style="color:#e8eef7;font-weight:550;text-decoration:none;max-width:130px;
+                       overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block">—</button>
+        <div id="rodapeAmbiente" style="font-size:11px">—</div>
+      </div>
       <span class="espaco"></span>
       <button id="btnSair">Sair</button>
     </div>
@@ -489,6 +551,38 @@
         </div>
       </section>
 
+      <!-- ---------------- USUÁRIOS ---------------- -->
+      <section data-tela-conteudo="usuarios" hidden>
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Usuários</h2><span class="espaco"></span>
+            <button class="pequeno primario" id="btnNovoUsuario">+ Novo usuário</button>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda">
+              <strong>Administrador</strong> faz tudo, inclusive trocar certificado,
+              mexer na numeração e gerar tokens. <strong>Operador</strong> emite,
+              consulta e cancela notas. Quem não tem empresa marcada enxerga todas.
+            </div>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr>
+                  <th>Nome</th><th>E-mail</th><th>Perfil</th><th>Empresas</th>
+                  <th>Situação</th><th>Último acesso</th><th></th>
+                </tr></thead>
+                <tbody id="corpoUsuarios"></tbody>
+              </table>
+            </div>
+            <div id="vazioUsuarios" class="vazio" hidden>
+              <div class="icone">◉</div><div class="titulo">Nenhum usuário</div>
+              <div>Cadastre quem vai operar o gateway.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ---------------- MUNICÍPIOS ---------------- -->
       <section data-tela-conteudo="municipios" hidden>
         <div class="cartao">
@@ -643,6 +737,47 @@
     </div>
     <div class="acoes-form">
       <button type="button" id="servCancelar">Cancelar</button>
+      <button type="submit" class="primario">Salvar</button>
+    </div>
+  </form>
+</div></dialog>
+
+<dialog id="dlgUsuario"><div class="interno">
+  <h3 id="usuTitulo">Usuário</h3>
+  <div class="dsub">Cada pessoa com o próprio acesso — assim fica registrado quem emitiu cada nota.</div>
+  <form id="formUsuario">
+    <div class="grade c2">
+      <div><label for="u_nome">Nome *</label><input id="u_nome" maxlength="150" autocomplete="name"></div>
+      <div><label for="u_email">E-mail *</label><input id="u_email" type="email" maxlength="255" autocomplete="off"></div>
+    </div>
+    <div class="grade c2" style="margin-top:14px">
+      <div>
+        <label for="u_perfil">Perfil</label>
+        <select id="u_perfil">
+          <option value="operador">Operador — emite e consulta</option>
+          <option value="admin">Administrador — acesso total</option>
+        </select>
+      </div>
+      <div>
+        <label for="u_ativo">Situação</label>
+        <select id="u_ativo"><option value="true">Ativo</option><option value="false">Inativo</option></select>
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <label for="u_senha">Senha <span id="u_senhaObs" class="ajuda" style="display:inline">*</span></label>
+      <input id="u_senha" type="password" autocomplete="new-password">
+      <div class="ajuda" id="u_senhaAjuda">Ao menos 8 caracteres. A pessoa troca no primeiro acesso.</div>
+    </div>
+    <div style="margin-top:16px">
+      <label>Empresas que pode acessar</label>
+      <div id="u_empresas" style="border:1px solid var(--linha);border-radius:var(--raio-sm);
+           padding:11px 13px;max-height:170px;overflow-y:auto"></div>
+      <div class="ajuda">Sem nenhuma marcada, o usuário enxerga todas as empresas.</div>
+    </div>
+    <div class="acoes-form">
+      <button type="button" id="usuEncerrar" class="perigo" hidden>Encerrar sessões</button>
+      <span class="espaco"></span>
+      <button type="button" id="usuCancelar">Cancelar</button>
       <button type="submit" class="primario">Salvar</button>
     </div>
   </form>

@@ -28,7 +28,7 @@ Write-Host "  Este assistente prepara o gateway para emitir notas nesta maquina.
 Write-Host "  Leva cerca de 2 minutos."
 
 # --------------------------------------------------------------- 1. Node.js
-Titulo "1 de 5 - Verificando o Node.js"
+Titulo "1 de 6 - Verificando o Node.js"
 
 $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) {
@@ -52,7 +52,7 @@ if ($maior -lt 18) {
 Ok "Node.js $versao encontrado"
 
 # ---------------------------------------------------------- 2. dependencias
-Titulo "2 de 5 - Instalando os componentes"
+Titulo "2 de 6 - Instalando os componentes"
 Write-Host "  Isso pode levar um minuto..."
 
 Push-Location $raiz
@@ -72,7 +72,7 @@ try {
 Pop-Location
 
 # -------------------------------------------------------------- 3. .env
-Titulo "3 de 5 - Configuracao"
+Titulo "3 de 6 - Configuracao"
 
 $envPath = Join-Path $raiz '.env'
 if (Test-Path $envPath) {
@@ -106,18 +106,14 @@ GATEWAY_BASE_URL=http://localhost:3000
 
     Ok "Configuracao criada"
     Write-Host ""
-    Write-Host "  ATENCAO - guarde esta chave em local seguro:" -ForegroundColor Yellow
+    Write-Host "  As chaves tecnicas ficaram no arquivo .env, dentro da pasta"
+    Write-Host "  do gateway. Voce nao precisa decora-las: o acesso ao sistema"
+    Write-Host "  e por email e senha, criados no proximo passo." -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "     $chaveApi" -ForegroundColor White
-    Write-Host ""
-    Write-Host "  E a senha de acesso ao gateway. Sem ela nao da para entrar." -ForegroundColor Yellow
-    Write-Host "  Ela tambem fica no arquivo .env dentro da pasta do gateway."
-    Write-Host ""
-    Read-Host "  Anote a chave e pressione Enter para continuar"
 }
 
 # ---------------------------------------------------------- 4. banco
-Titulo "4 de 5 - Preparando o banco de dados"
+Titulo "4 de 6 - Preparando o banco de dados"
 
 Push-Location $raiz
 try {
@@ -135,8 +131,62 @@ try {
 }
 Pop-Location
 
-# ---------------------------------------------------------- 5. atalhos
-Titulo "5 de 5 - Criando os atalhos"
+# ---------------------------------------------------------- 5. primeiro acesso
+Titulo "5 de 6 - Criando o acesso ao sistema"
+
+Push-Location $raiz
+$temUsuario = $false
+try {
+    $temUsuario = (node -e "require('dotenv').config();require('./src/services/usuarios').existeAlgum().then(t=>{console.log(t?'sim':'nao');process.exit(0)}).catch(()=>{console.log('nao');process.exit(0)})" | Out-String).Trim() -eq 'sim'
+} catch { $temUsuario = $false }
+
+if ($temUsuario) {
+    Ok "Ja existem usuarios cadastrados - nada a fazer aqui"
+} else {
+    Write-Host "  Vamos criar o acesso do responsavel pelo sistema."
+    Write-Host "  E com esse email e senha que se entra no gateway." -ForegroundColor DarkGray
+    Write-Host ""
+
+    $nomeUsuario = Read-Host "  Nome do responsavel"
+    while (-not $nomeUsuario.Trim()) { $nomeUsuario = Read-Host "  Nome do responsavel" }
+
+    $emailUsuario = Read-Host "  Email"
+    while ($emailUsuario -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
+        Write-Host "  Email invalido." -ForegroundColor Yellow
+        $emailUsuario = Read-Host "  Email"
+    }
+
+    $senhaOk = $false
+    while (-not $senhaOk) {
+        $s1 = Read-Host "  Senha (minimo 8 caracteres)" -AsSecureString
+        $s2 = Read-Host "  Repita a senha" -AsSecureString
+        $t1 = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s1))
+        $t2 = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s2))
+        if ($t1 -ne $t2) { Write-Host "  As senhas nao sao iguais." -ForegroundColor Yellow; continue }
+        if ($t1.Length -lt 8) { Write-Host "  A senha precisa ter ao menos 8 caracteres." -ForegroundColor Yellow; continue }
+        if ($t1 -match '^\d+$') { Write-Host "  A senha nao pode ser so numeros." -ForegroundColor Yellow; continue }
+        $senhaUsuario = $t1
+        $senhaOk = $true
+    }
+
+    try {
+        # Senha por variavel de ambiente: como argumento apareceria na
+        # lista de processos da maquina.
+        $env:NFSE_SENHA = $senhaUsuario
+        $saida = node scripts/criar-usuario.js --nome $nomeUsuario --email $emailUsuario 2>&1 | Out-String
+        $env:NFSE_SENHA = $null
+        if ($LASTEXITCODE -ne 0) { throw $saida }
+        Ok "Acesso criado para $emailUsuario"
+    } catch {
+        Erro "Nao consegui criar o acesso."
+        Write-Host $_ -ForegroundColor DarkGray
+        Write-Host "  Voce ainda pode criar o acesso na primeira vez que abrir o painel."
+    }
+}
+Pop-Location
+
+# ---------------------------------------------------------- 6. atalhos
+Titulo "6 de 6 - Criando os atalhos"
 
 $iniciar = Join-Path $PSScriptRoot 'Iniciar Gateway.bat'
 $shell = New-Object -ComObject WScript.Shell
@@ -160,6 +210,8 @@ Write-Host ""
 Write-Host "  Para emitir notas: clique no atalho " -NoNewline
 Write-Host "'Emitir NFS-e'" -ForegroundColor White -NoNewline
 Write-Host " na area de trabalho."
+Write-Host ""
+Write-Host "  Entre com o email e a senha que voce acabou de criar."
 Write-Host ""
 Write-Host "  Antes da primeira emissao, cadastre a empresa e o certificado"
 Write-Host "  digital no painel (o atalho abre nele)."

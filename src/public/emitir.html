@@ -91,6 +91,7 @@
     <div class="sub">NFS-e Gateway</div>
   </div>
   <span class="spacer"></span>
+  <span id="quemSou" style="font-size:13px;color:var(--muted)"></span>
   <a class="link" href="/admin">‹ Voltar ao painel</a>
 </header>
 
@@ -107,7 +108,6 @@
 <script>
 (function () {
   'use strict';
-  var KEY_STORE = 'nfse_gateway_api_key';
   var el = function (id) { return document.getElementById(id); };
   var conversa = el('conversa');
 
@@ -116,7 +116,6 @@
   var nota = {};
   var etapa = null;
 
-  function getKey() { return sessionStorage.getItem(KEY_STORE) || ''; }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
@@ -180,10 +179,13 @@
 
   function api(path, opts) {
     opts = opts || {};
-    var headers = opts.headers || {};
-    headers['X-API-Key'] = getKey();
-    return fetch(path, { method: opts.method || 'GET', headers: headers, body: opts.body })
-      .then(function (res) {
+    // Mesma sessao do painel: o cookie vai sozinho, sem chave nenhuma na pagina
+    return fetch(path, {
+      method: opts.method || 'GET',
+      headers: opts.headers || {},
+      body: opts.body,
+      credentials: 'same-origin'
+    }).then(function (res) {
         return res.text().then(function (t) {
           var data = null;
           try { data = t ? JSON.parse(t) : null; } catch (e) { data = { erro: t }; }
@@ -196,14 +198,14 @@
   // ------------------------------------------------------------- etapas
 
   function iniciar() {
-    if (!getKey()) {
-      bot('Antes de começar, preciso da <strong>chave de acesso</strong> do gateway.',
-          'É a mesma usada no painel. Fica guardada só nesta aba.');
-      etapa = 'chave';
-      pedir('Cole a chave de acesso', '', 'password');
-      return;
-    }
-    carregarContexto();
+    // O emissor nao tem tela de login propria: quem nao esta logado volta para
+    // o painel, entra la e cai de volta aqui.
+    api('/usuarios/eu').then(function (u) {
+      el('quemSou').textContent = u.nome;
+      carregarContexto();
+    }).catch(function () {
+      location.href = '/admin';
+    });
   }
 
   function carregarContexto() {
@@ -236,10 +238,7 @@
       }
     }).catch(function (e) {
       bot('Não consegui carregar os dados: ' + esc(e.message));
-      if (/API key|401/i.test(e.message)) {
-        sessionStorage.removeItem(KEY_STORE);
-        etapa = 'chave'; pedir('Cole a chave de acesso', '', 'password');
-      }
+      if (/sess|401|logado/i.test(e.message)) location.href = '/admin';
     });
   }
 
@@ -468,7 +467,7 @@
       a.onclick = function (ev) {
         ev.preventDefault();
         var url = '/nfse/' + a.dataset.id + '/' + a.dataset.doc;
-        fetch(url, { headers: { 'X-API-Key': getKey() } })
+        fetch(url, { credentials: 'same-origin' })
           .then(function (r) { if (!r.ok) throw new Error('Documento indisponível'); return r.blob(); })
           .then(function (b) {
             var link = document.createElement('a');
@@ -489,14 +488,6 @@
     texto = (texto || '').trim();
     if (!texto) return;
 
-    if (etapa === 'chave') {
-      sessionStorage.setItem(KEY_STORE, texto);
-      usuario('••••••••');
-      el('campo').type = 'text';
-      conversa.innerHTML = '';
-      carregarContexto();
-      return;
-    }
     if (etapa === 'tomador') {
       var doc = digits(texto);
       if (doc.length !== 11 && doc.length !== 14) {

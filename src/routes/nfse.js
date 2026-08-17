@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { emitir, consultar, cancelar } = require('../services/emissaoService');
 const { criarZip } = require('../util/zip');
-const { notaNoEscopo } = require('../middleware/escopo');
+const { notaNoEscopo, filtroSqlEmpresas, empresaVisivel } = require('../middleware/escopo');
 const { validarDocumento } = require('../util/documento');
 const { gerarDanfse } = require('../nfse/danfse');
 
@@ -41,7 +41,19 @@ router.post('/', async (req, res, next) => {
         return res.status(400).json({ erro: 'substituicao.motivo é obrigatório quando codigoMotivo = 99 (Outros)' });
       }
     }
-    const resultado = await emitir(b.cnpjEmpresa, b);
+    // Escopo: um operador não emite por empresa que não enxerga. A checagem
+    // vem antes de emitir() para não reservar número numa empresa alheia.
+    const emp = await db.query('SELECT id FROM empresas WHERE cnpj = $1',
+      [String(b.cnpjEmpresa).replace(/\D/g, '')]);
+    if (!emp.rows.length || !empresaVisivel(req, emp.rows[0].id)) {
+      return res.status(404).json({ erro: 'Empresa não encontrada' });
+    }
+
+    const resultado = await emitir(b.cnpjEmpresa, b, {
+      // Quem emitiu: fica registrado só quando foi uma pessoa. Emissão por
+      // integração responde pelo token da empresa, não por um usuário.
+      usuarioId: req.auth.tipo === 'usuario' ? req.auth.usuarioId : null
+    });
     // 200 quando a referência já existia (nada foi criado agora);
     // 202 quando a nota entrou na fila e será transmitida pelo worker.
     res.status(resultado.idempotente ? 200 : 202).json(resultado);
@@ -69,6 +81,12 @@ router.get('/', async (req, res, next) => {
       params.push(req.query.referencia);
       where += ` AND n.referencia = $${params.length}`;
     }
+    // Escopo do usuário/token: não basta filtrar no painel, a consulta não pode
+    // trazer nota de empresa que quem pediu não enxerga.
+    const escopo = filtroSqlEmpresas(req, 'n.empresa_id', params.length);
+    where += escopo.sql;
+    params.push(...escopo.params);
+
     params.push(Math.min(parseInt(req.query.limite || '50', 10), 500));
     const r = await db.query(
       `SELECT n.id, e.cnpj AS cnpj_empresa, n.id_dps, n.chave_acesso, n.serie, n.numero,
@@ -108,6 +126,10 @@ router.get('/export', async (req, res, next) => {
       // < fim+1 dia para incluir o dia inteiro do "fim"
       params.push(req.query.fim); where += ` AND n.criado_em < ($${params.length}::date + interval '1 day')`;
     }
+    const escopo = filtroSqlEmpresas(req, 'n.empresa_id', params.length);
+    where += escopo.sql;
+    params.push(...escopo.params);
+
     params.push(Math.min(parseInt(req.query.limite || '1000', 10), 5000));
 
     const r = await db.query(

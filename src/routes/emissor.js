@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { validarDocumento, soDigitos } = require('../util/documento');
 const { consultarCnpj } = require('../services/consultaExterna');
+const { empresasVisiveis, empresaVisivel } = require('../middleware/escopo');
 
 const router = express.Router();
 
@@ -19,13 +20,15 @@ router.get('/contexto', async (req, res, next) => {
            SELECT id, valido_ate FROM certificados
             WHERE empresa_id = e.id AND ativo ORDER BY criado_em DESC LIMIT 1
          ) c ON TRUE
-        WHERE e.ativo
-        ORDER BY e.razao_social`);
+        WHERE e.ativo AND ($1::int[] IS NULL OR e.id = ANY($1::int[]))
+        ORDER BY e.razao_social`, [empresasVisiveis(req)]);
 
     const empresaId = req.query.empresaId ? Number(req.query.empresaId) : null;
     let tomadores = { rows: [] };
     let servicos = { rows: [] };
-    if (empresaId) {
+    // Sem o guard, bastaria trocar o empresaId na URL para ler a carteira de
+    // clientes de outra empresa do grupo.
+    if (empresaId && empresaVisivel(req, empresaId)) {
       tomadores = await db.query(
         `SELECT * FROM tomadores WHERE empresa_id = $1
           ORDER BY vezes_usado DESC, ultimo_uso DESC NULLS LAST LIMIT 50`, [empresaId]);
@@ -47,7 +50,7 @@ router.get('/tomador/:documento', async (req, res, next) => {
       return res.status(400).json({ erro: 'Documento inválido (verifique os dígitos)' });
     }
     const empresaId = Number(req.query.empresaId);
-    if (empresaId) {
+    if (empresaId && empresaVisivel(req, empresaId)) {
       const salvo = await db.query(
         'SELECT * FROM tomadores WHERE empresa_id = $1 AND documento = $2', [empresaId, doc]);
       if (salvo.rows.length) return res.json({ origem: 'cadastro', tomador: salvo.rows[0] });
@@ -80,6 +83,9 @@ router.post('/tomador', async (req, res, next) => {
     const doc = soDigitos(b.documento);
     if (!validarDocumento(doc)) return res.status(400).json({ erro: 'Documento inválido' });
     if (!b.empresaId) return res.status(400).json({ erro: 'empresaId é obrigatório' });
+    if (!empresaVisivel(req, b.empresaId)) {
+      return res.status(404).json({ erro: 'Empresa não encontrada' });
+    }
     if (!b.razaoSocial) return res.status(400).json({ erro: 'razaoSocial é obrigatória' });
 
     const r = await db.query(
@@ -105,6 +111,9 @@ router.post('/servico', async (req, res, next) => {
   try {
     const b = req.body || {};
     if (!b.empresaId) return res.status(400).json({ erro: 'empresaId é obrigatório' });
+    if (!empresaVisivel(req, b.empresaId)) {
+      return res.status(404).json({ erro: 'Empresa não encontrada' });
+    }
     if (!b.apelido) return res.status(400).json({ erro: 'apelido é obrigatório' });
     if (!/^\d{6}$/.test(String(b.codigoTributacao || ''))) {
       return res.status(400).json({ erro: 'codigoTributacao deve ter 6 dígitos (cTribNac)' });
@@ -128,6 +137,10 @@ router.post('/servico', async (req, res, next) => {
 
 router.delete('/servico/:id', async (req, res, next) => {
   try {
+    const dono = await db.query('SELECT empresa_id FROM servicos WHERE id = $1', [req.params.id]);
+    if (!dono.rows.length || !empresaVisivel(req, dono.rows[0].empresa_id)) {
+      return res.status(404).json({ erro: 'Serviço não encontrado' });
+    }
     const r = await db.query(
       'UPDATE servicos SET ativo = FALSE WHERE id = $1 RETURNING id', [req.params.id]);
     if (!r.rows.length) return res.status(404).json({ erro: 'Serviço não encontrado' });
@@ -139,15 +152,20 @@ router.delete('/servico/:id', async (req, res, next) => {
 router.post('/registrar-uso', async (req, res, next) => {
   try {
     const b = req.body || {};
+    // O `empresa_id = ANY(...)` no WHERE resolve o escopo sem uma consulta a
+    // mais: fora dele, o UPDATE simplesmente não acha linha.
+    const ids = empresasVisiveis(req);
     if (b.tomadorId) {
       await db.query(
-        'UPDATE tomadores SET vezes_usado = vezes_usado + 1, ultimo_uso = now() WHERE id = $1',
-        [b.tomadorId]);
+        `UPDATE tomadores SET vezes_usado = vezes_usado + 1, ultimo_uso = now()
+          WHERE id = $1 AND ($2::int[] IS NULL OR empresa_id = ANY($2::int[]))`,
+        [b.tomadorId, ids]);
     }
     if (b.servicoId) {
       await db.query(
-        'UPDATE servicos SET vezes_usado = vezes_usado + 1, ultimo_uso = now() WHERE id = $1',
-        [b.servicoId]);
+        `UPDATE servicos SET vezes_usado = vezes_usado + 1, ultimo_uso = now()
+          WHERE id = $1 AND ($2::int[] IS NULL OR empresa_id = ANY($2::int[]))`,
+        [b.servicoId, ids]);
     }
     res.status(204).end();
   } catch (e) { next(e); }

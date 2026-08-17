@@ -4,15 +4,16 @@
 (function () {
   'use strict';
 
-  var CHAVE_STORE = 'nfse_gateway_api_key';
   var el = function (id) { return document.getElementById(id); };
   var $$ = function (sel, raiz) { return Array.prototype.slice.call((raiz || document).querySelectorAll(sel)); };
 
-  var estado = { empresas: [], editando: null, notaAtual: null, resumoInicial: null };
+  var estado = {
+    empresas: [], editando: null, notaAtual: null, resumoInicial: null,
+    usuario: null, usuarioEditando: null
+  };
 
   /* ------------------------------------------------------------ utilidades */
 
-  function chave() { return sessionStorage.getItem(CHAVE_STORE) || ''; }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
@@ -63,20 +64,27 @@
     return sefin.mensagem || sefin.motivo || ('Erro HTTP ' + status);
   }
 
+  /* A credencial vai no cookie de sessão, que o navegador envia sozinho — nada
+     de chave em sessionStorage ao alcance de qualquer script da página. */
   function api(caminho, opcoes) {
     opcoes = opcoes || {};
-    var headers = opcoes.headers || {};
-    headers['X-API-Key'] = chave();
-    return fetch(caminho, { method: opcoes.method || 'GET', headers: headers, body: opcoes.body })
-      .then(function (res) {
-        return res.text().then(function (t) {
-          var dados = null;
-          try { dados = t ? JSON.parse(t) : null; } catch (e) { dados = { erro: t }; }
-          if (res.status === 401) { sair(); throw new Error('Sessão expirada'); }
-          if (!res.ok) throw new Error(mensagemErro(dados, res.status));
-          return dados;
-        });
+    return fetch(caminho, {
+      method: opcoes.method || 'GET',
+      headers: opcoes.headers || {},
+      body: opcoes.body,
+      credentials: 'same-origin'
+    }).then(function (res) {
+      return res.text().then(function (t) {
+        var dados = null;
+        try { dados = t ? JSON.parse(t) : null; } catch (e) { dados = { erro: t }; }
+        if (res.status === 401 && !/^\/auth\//.test(caminho)) {
+          mostrarTelaAcesso();
+          throw new Error('Sua sessão expirou. Entre novamente.');
+        }
+        if (!res.ok) throw new Error(mensagemErro(dados, res.status));
+        return dados;
       });
+    });
   }
 
   var NOME_AMBIENTE = { homologacao: 'homologação', producao: 'produção' };
@@ -104,44 +112,139 @@
 
   /* --------------------------------------------------------------- acesso */
 
-  function entrar(valor) {
-    sessionStorage.setItem(CHAVE_STORE, valor);
-    return api('/painel/resumo').then(function (resumo) {
-      // O resumo já veio na validação da chave; a tela inicial reaproveita em
-      // vez de repetir a consulta assim que abre.
-      estado.resumoInicial = resumo;
-      el('rodapeAmbiente').textContent = 'versão ' + resumo.versao;
-      el('telaAcesso').hidden = true;
-      el('app').hidden = false;
-      // Carrega uma vez: os filtros e seletores de várias telas dependem disso
-      api('/empresas').then(function (l) {
-        estado.empresas = l || []; preencherSelectsEmpresa();
-      }).catch(function () {});
-      navegar(location.hash.replace('#','') || 'inicio');
-    }).catch(function (e) {
-      sessionStorage.removeItem(CHAVE_STORE);
-      var box = el('erroAcesso');
-      box.textContent = /Sessão|401|inválida/i.test(e.message)
-        ? 'Chave incorreta. Confira o valor de GATEWAY_API_KEY no arquivo .env.'
-        : e.message;
-      box.className = 'aviso erro';
-      throw e;
-    });
+  function erroAcesso(mensagem) {
+    var box = el('erroAcesso');
+    box.textContent = mensagem;
+    box.className = mensagem ? 'aviso erro' : 'aviso';
   }
-  function sair() {
-    sessionStorage.removeItem(CHAVE_STORE);
+
+  /* Decide entre "entrar" e "criar primeiro acesso". */
+  function mostrarTelaAcesso() {
     el('app').hidden = true;
     el('telaAcesso').hidden = false;
-    el('campoChave').value = '';
+    fetch('/auth/estado').then(function (r) { return r.json(); }).then(function (d) {
+      if (d.bancoIndisponivel) {
+        el('formAcesso').hidden = true;
+        el('formPrimeiro').hidden = true;
+        erroAcesso('O gateway está no ar, mas não conseguiu falar com o banco de dados. ' +
+          'Verifique a conexão com a internet e se o banco está ativo. Detalhe: ' + (d.detalhe || '—'));
+        return;
+      }
+      el('formAcesso').hidden = !d.temUsuarios;
+      el('formPrimeiro').hidden = !!d.temUsuarios;
+      el((d.temUsuarios ? 'acEmail' : 'pNome')).focus();
+    }).catch(function () {
+      // Sem resposta do gateway, o login normal é o palpite mais útil
+      el('formAcesso').hidden = false;
+    });
+  }
+
+  /* Entrou: monta a interface conforme o perfil e o escopo do usuário. */
+  function abrirPainel(usuario) {
+    estado.usuario = usuario;
+    var ehAdmin = usuario.perfil === 'admin';
+
+    el('btnMinhaConta').textContent = usuario.nome;
+    el('btnMinhaConta').title = usuario.email + ' · trocar minha senha';
+
+    // Telas de configuração só existem para administrador. Escondê-las evita
+    // que o operador esbarre em um 403 sem entender o motivo.
+    $$('[data-admin]').forEach(function (n) { n.hidden = !ehAdmin; });
+
+    el('telaAcesso').hidden = true;
+    el('app').hidden = false;
+    erroAcesso('');
+
+    api('/painel/resumo').then(function (resumo) {
+      estado.resumoInicial = resumo;
+      el('rodapeAmbiente').textContent = 'versão ' + resumo.versao;
+      navegar(location.hash.replace('#','') || 'inicio');
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+
+    // Carrega uma vez: os filtros e seletores de várias telas dependem disso
+    api('/empresas').then(function (l) {
+      estado.empresas = l || []; preencherSelectsEmpresa();
+    }).catch(function () {});
+
+    // Senha definida por outra pessoa: trocar antes de operar
+    if (usuario.trocarSenha) {
+      el('trocaMotivo').textContent =
+        'Sua senha foi definida por um administrador. Escolha uma que só você conheça.';
+      el('tsCancelar').hidden = true;
+      el('dlgTrocarSenha').showModal();
+    }
+  }
+
+  function sair() {
+    fetch('/auth/logout', { method: 'POST' }).then(function () {
+      estado.usuario = null;
+      estado.empresas = [];
+      el('acSenha').value = '';
+      mostrarTelaAcesso();
+    });
   }
 
   el('formAcesso').onsubmit = function (ev) {
     ev.preventDefault();
-    el('erroAcesso').className = 'aviso';
-    var v = el('campoChave').value.trim();
-    if (v) entrar(v).catch(function () {});
+    erroAcesso('');
+    var botao = ev.target.querySelector('button[type=submit]');
+    botao.disabled = true;
+    api('/auth/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email: el('acEmail').value.trim(), senha: el('acSenha').value })
+    }).then(function (r) { abrirPainel(r.usuario); })
+      .catch(function (e) { erroAcesso(e.message); })
+      .then(function () { botao.disabled = false; });
   };
+
+  el('formPrimeiro').onsubmit = function (ev) {
+    ev.preventDefault();
+    erroAcesso('');
+    var botao = ev.target.querySelector('button[type=submit]');
+    botao.disabled = true;
+    api('/auth/primeiro-acesso', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        nome: el('pNome').value.trim(),
+        email: el('pEmail').value.trim(),
+        senha: el('pSenha').value,
+        chaveInstalacao: el('pChave').value
+      })
+    }).then(function (r) {
+      abrirPainel(r.usuario);
+      aviso('Acesso criado. Você é o administrador do gateway.');
+    }).catch(function (e) { erroAcesso(e.message); })
+      .then(function () { botao.disabled = false; });
+  };
+
   el('btnSair').onclick = sair;
+
+  /* ---------------------------------------------------------- minha conta */
+
+  el('btnMinhaConta').onclick = function () {
+    el('trocaMotivo').textContent = 'Escolha uma senha que só você conheça.';
+    el('tsCancelar').hidden = false;
+    el('formTrocarSenha').reset();
+    el('dlgTrocarSenha').showModal();
+  };
+  el('tsCancelar').onclick = function () { el('dlgTrocarSenha').close(); };
+  el('formTrocarSenha').onsubmit = function (ev) {
+    ev.preventDefault();
+    if (el('tsNova').value !== el('tsConfirma').value) {
+      return aviso('As duas senhas novas não são iguais.', 'erro');
+    }
+    var botao = ev.target.querySelector('button[type=submit]');
+    botao.disabled = true;
+    api('/usuarios/eu/senha', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ senhaAtual: el('tsAtual').value, senhaNova: el('tsNova').value })
+    }).then(function () {
+      el('dlgTrocarSenha').close();
+      if (estado.usuario) estado.usuario.trocarSenha = false;
+      aviso('Senha alterada. As demais sessões abertas foram encerradas.');
+    }).catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { botao.disabled = false; });
+  };
 
   /* ------------------------------------------------------------ navegação */
 
@@ -152,6 +255,7 @@
     notas:       { titulo:'Notas emitidas',sub:'Consulta, XML, PDF e cancelamento',     carregar: carregarNotas },
     clientes:    { titulo:'Clientes',      sub:'Tomadores usados nas emissões',         carregar: carregarClientes },
     servicos:    { titulo:'Serviços',      sub:'Modelos para emitir mais rápido',       carregar: carregarServicos },
+    usuarios:    { titulo:'Usuários',      sub:'Quem acessa o gateway e o que pode fazer', carregar: carregarUsuarios },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
     webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks }
   };
@@ -613,7 +717,7 @@
   el('notaFechar').onclick = function () { el('dlgNota').close(); };
 
   function baixar(caminho, nomeArquivo) {
-    fetch(caminho, { headers: { 'X-API-Key': chave() } })
+    fetch(caminho, { credentials: 'same-origin' })
       .then(function (r) { if (!r.ok) throw new Error('Documento indisponível'); return r.blob(); })
       .then(function (b) {
         var a = document.createElement('a');
@@ -666,7 +770,7 @@
     if (el('nf_status').value) q.push('status=' + encodeURIComponent(el('nf_status').value));
     if (el('nf_ambiente').value) q.push('ambiente=' + encodeURIComponent(el('nf_ambiente').value));
     btn.disabled = true;
-    fetch('/nfse/export?' + q.join('&'), { headers: { 'X-API-Key': chave() } })
+    fetch('/nfse/export?' + q.join('&'), { credentials: 'same-origin' })
       .then(function (r) {
         if (r.status === 404) throw new Error('Nenhuma nota com XML para os filtros ativos.');
         if (!r.ok) throw new Error('Falha ao exportar.');
@@ -767,6 +871,142 @@
       })
     }).then(function () { el('dlgServico').close(); aviso('Serviço salvo.'); carregarServicos(); })
       .catch(function (e) { aviso(e.message, 'erro'); });
+  };
+
+  /* -------------------------------------------------------------- usuários */
+
+  function nomesEmpresas(ids) {
+    if (!ids || !ids.length) return '<span style="color:var(--texto-3)">todas</span>';
+    var nomes = ids.map(function (id) {
+      var e = estado.empresas.filter(function (x) { return x.id === id; })[0];
+      return e ? (e.nome_fantasia || e.razao_social) : '#' + id;
+    });
+    // Lista inteira só no title: em grupo grande a coluna estouraria a tabela
+    return nomes.length <= 2
+      ? esc(nomes.join(', '))
+      : '<span title="' + esc(nomes.join(', ')) + '">' + nomes.length + ' empresas</span>';
+  }
+
+  function carregarUsuarios() {
+    api('/usuarios').then(function (linhas) {
+      var tb = el('corpoUsuarios'); tb.innerHTML = '';
+      alternarVazio('corpoUsuarios', 'vazioUsuarios', linhas.length);
+      linhas.forEach(function (u) {
+        var euMesmo = estado.usuario && estado.usuario.id === u.id;
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td><strong>' + esc(u.nome) + '</strong>' +
+            (euMesmo ? ' <span class="selo-status s-info sem-ponto">você</span>' : '') + '</td>' +
+          '<td>' + esc(u.email) + '</td>' +
+          '<td>' + (u.perfil === 'admin'
+            ? '<span class="selo-status s-info sem-ponto">administrador</span>'
+            : '<span class="selo-status s-neutro sem-ponto">operador</span>') + '</td>' +
+          '<td>' + nomesEmpresas(u.empresas_ids) + '</td>' +
+          '<td>' + (u.ativo ? '<span class="selo-status s-ok">ativo</span>'
+                            : '<span class="selo-status s-neutro">inativo</span>') +
+            (u.trocar_senha ? ' <span class="selo-status s-alerta sem-ponto">senha provisória</span>' : '') + '</td>' +
+          '<td style="color:var(--texto-2)">' + (u.ultimo_acesso ? fmtDataHora(u.ultimo_acesso) : 'nunca') + '</td>' +
+          '<td class="acoes"></td>';
+
+        var editar = document.createElement('button');
+        editar.className = 'pequeno'; editar.textContent = 'Editar';
+        editar.onclick = function () { abrirUsuario(u); };
+        tr.lastChild.appendChild(editar);
+
+        if (!euMesmo) {
+          var excluir = document.createElement('button');
+          excluir.className = 'pequeno perigo'; excluir.textContent = 'Excluir';
+          excluir.style.marginLeft = '6px';
+          excluir.onclick = function () {
+            if (!confirm('Excluir o usuário ' + u.nome + '?\n\n' +
+                         'As notas que essa pessoa emitiu continuam registradas.')) return;
+            api('/usuarios/' + u.id, { method:'DELETE' })
+              .then(function () { aviso('Usuário excluído.'); carregarUsuarios(); })
+              .catch(function (e) { aviso(e.message, 'erro'); });
+          };
+          tr.lastChild.appendChild(excluir);
+        }
+        tb.appendChild(tr);
+      });
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  function montarCaixasEmpresa(marcadas) {
+    var caixa = el('u_empresas');
+    caixa.innerHTML = '';
+    if (!estado.empresas.length) {
+      caixa.innerHTML = '<div class="ajuda">Nenhuma empresa cadastrada ainda.</div>';
+      return;
+    }
+    estado.empresas.forEach(function (e) {
+      var linha = document.createElement('label');
+      linha.style.cssText = 'display:flex;align-items:center;gap:9px;font-weight:400;margin-bottom:7px';
+      var caixinha = document.createElement('input');
+      caixinha.type = 'checkbox';
+      caixinha.value = e.id;
+      caixinha.style.cssText = 'width:auto;margin:0';
+      caixinha.checked = (marcadas || []).indexOf(e.id) !== -1;
+      linha.appendChild(caixinha);
+      linha.appendChild(document.createTextNode(e.nome_fantasia || e.razao_social));
+      caixa.appendChild(linha);
+    });
+  }
+
+  function abrirUsuario(u) {
+    estado.usuarioEditando = u ? u.id : null;
+    el('usuTitulo').textContent = u ? u.nome : 'Novo usuário';
+    el('formUsuario').reset();
+    el('u_nome').value = u ? u.nome : '';
+    el('u_email').value = u ? u.email : '';
+    el('u_perfil').value = u ? u.perfil : 'operador';
+    el('u_ativo').value = u ? String(u.ativo) : 'true';
+    el('u_senhaObs').textContent = u ? '' : '*';
+    el('u_senhaAjuda').textContent = u
+      ? 'Deixe em branco para manter a senha atual. Ao preencher, a pessoa troca no próximo acesso.'
+      : 'Ao menos 8 caracteres. A pessoa troca no primeiro acesso.';
+    el('usuEncerrar').hidden = !u;
+    montarCaixasEmpresa(u ? u.empresas_ids : []);
+    el('dlgUsuario').showModal();
+  }
+
+  el('btnNovoUsuario').onclick = function () { abrirUsuario(null); };
+  el('usuCancelar').onclick = function () { el('dlgUsuario').close(); };
+
+  el('usuEncerrar').onclick = function () {
+    if (!estado.usuarioEditando) return;
+    if (!confirm('Encerrar as sessões abertas deste usuário?\n\n' +
+                 'Ele precisará entrar de novo em qualquer máquina onde estiver logado.')) return;
+    api('/usuarios/' + estado.usuarioEditando + '/encerrar-sessoes', { method:'POST' })
+      .then(function () { aviso('Sessões encerradas.'); })
+      .catch(function (e) { aviso(e.message, 'erro'); });
+  };
+
+  el('formUsuario').onsubmit = function (ev) {
+    ev.preventDefault();
+    var senha = el('u_senha').value;
+    if (!estado.usuarioEditando && !senha) return aviso('Defina uma senha para o novo usuário.', 'erro');
+
+    var corpo = {
+      nome: el('u_nome').value.trim(),
+      email: el('u_email').value.trim(),
+      perfil: el('u_perfil').value,
+      ativo: el('u_ativo').value === 'true',
+      empresasIds: $$('#u_empresas input:checked').map(function (c) { return Number(c.value); })
+    };
+    if (senha) corpo.senha = senha;
+
+    var botao = ev.target.querySelector('button[type=submit]');
+    botao.disabled = true;
+    api(estado.usuarioEditando ? '/usuarios/' + estado.usuarioEditando : '/usuarios', {
+      method: estado.usuarioEditando ? 'PUT' : 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(corpo)
+    }).then(function () {
+      el('dlgUsuario').close();
+      aviso(estado.usuarioEditando ? 'Usuário atualizado.' : 'Usuário criado.');
+      carregarUsuarios();
+    }).catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { botao.disabled = false; });
   };
 
   /* ------------------------------------------------------------ municípios */
@@ -895,9 +1135,8 @@
     }
   });
 
-  if (chave()) {
-    entrar(chave()).catch(function () {});
-  } else {
-    el('telaAcesso').hidden = false;
-  }
+  /* Retomada: o cookie sobrevive ao F5, então a sessão continua sem novo login. */
+  api('/usuarios/eu')
+    .then(function (u) { abrirPainel(u); })
+    .catch(function () { mostrarTelaAcesso(); });
 })();

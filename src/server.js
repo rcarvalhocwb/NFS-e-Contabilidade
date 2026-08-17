@@ -12,6 +12,9 @@ const consultaRouter = require('./routes/consulta');
 const integracaoRouter = require('./routes/integracao');
 const painelRouter = require('./routes/painel');
 const emissorRouter = require('./routes/emissor');
+const authRouter = require('./routes/auth');
+const usuariosRouter = require('./routes/usuarios');
+const sessoes = require('./services/sessoes');
 const fila = require('./services/filaEmissao');
 const webhooks = require('./services/webhooks');
 const emailTomador = require('./services/emailTomador');
@@ -57,10 +60,14 @@ app.get('/', (req, res) => {
   res.redirect('/admin');
 });
 
+/* Login e primeiro acesso: ficam antes do middleware de auth, porque quem vai
+   entrar ainda não tem credencial. Cada rota se protege por conta própria. */
+app.use('/auth', authRouter);
+
 /* Painel de administração (empresas e certificados).
    A página em si não exige autenticação — é só o shell, sem dados nem segredos:
-   ela pede a chave de API no navegador e a envia nas chamadas às rotas abaixo,
-   que continuam protegidas pelo middleware.
+   quem entra faz login com usuário e senha, e as rotas de dados abaixo seguem
+   protegidas pelo middleware.
 
    Ainda assim, em produção o painel é a porta de entrada para cadastrar
    empresas e trocar certificados. Publicá-lo na internet aberta amplia a
@@ -79,17 +86,23 @@ if (process.env.ADMIN_ATIVO === 'false') {
   app.get('/emitir', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'emitir.html')));
 }
 
-app.use(auth); // todas as rotas abaixo exigem X-API-Key
+app.use(auth); // daqui para baixo: sessão de usuário ou X-API-Key
 
-// Rotas de gestão: só a credencial administrativa. O token entregue ao
-// sistema cliente não cadastra empresa nem troca certificado.
-app.use('/empresas', somenteAdmin, empresasRouter);
+// Gestão do próprio gateway: administrador apenas. Quem só emite nota não
+// troca o certificado A1, não mexe na numeração fiscal e não gera token.
 app.use('/webhooks', somenteAdmin, webhooksRouter);
 app.use('/municipios', somenteAdmin, municipiosRouter);
-app.use('/consulta', somenteAdmin, consultaRouter);
 app.use('/integracao', somenteAdmin, integracaoRouter);
-app.use('/emissor', somenteAdmin, emissorRouter);
-app.use('/painel', somenteAdmin, painelRouter);
+
+// Empresas: a leitura é liberada e filtrada pelas empresas visíveis (o operador
+// precisa escolher a empresa para emitir); a escrita é barrada dentro do router.
+app.use('/empresas', empresasRouter);
+
+// Operação do dia a dia: qualquer usuário logado, sempre dentro do seu escopo.
+app.use('/consulta', consultaRouter);
+app.use('/emissor', emissorRouter);
+app.use('/painel', painelRouter);
+app.use('/usuarios', usuariosRouter);
 
 // NFS-e: aberta ao token da empresa, restrita ao escopo dele.
 app.use('/nfse', fixarEscopoEmpresa, nfseRouter);
@@ -110,6 +123,14 @@ const servidor = app.listen(config.port, () => {
   if (process.env.WEBHOOK_ATIVO !== 'false') webhooks.iniciar();
   if (process.env.EMAIL_ATIVO !== 'false') emailTomador.iniciar();
 });
+
+/* Sessões expiradas se acumulariam para sempre. De hora em hora basta: elas já
+   não autenticam ninguém desde o instante em que venceram. */
+const limpezaSessoes = setInterval(() => {
+  sessoes.limparExpiradas()
+    .catch(e => console.error('[sessoes] falha na limpeza:', e.message));
+}, 3600 * 1000);
+limpezaSessoes.unref();
 
 /* Encerramento limpo. Em deploy, o orquestrador manda SIGTERM e mata o
    processo pouco depois: sem isso, uma nota poderia ficar com o lease preso

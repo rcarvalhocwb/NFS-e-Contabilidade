@@ -3,14 +3,28 @@ const multer = require('multer');
 const db = require('../db');
 const { salvarCertificado } = require('../services/certificadoService');
 const { validarCnpj } = require('../util/documento');
+const { somenteAdmin, empresasVisiveis, empresaVisivel } = require('../middleware/escopo');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
 
 function limparCnpj(v) { return String(v || '').replace(/\D/g, ''); }
 
+/* Barra o acesso a uma empresa fora do escopo de quem pediu. 404, e não 403:
+   para o operador, uma empresa que não é dele simplesmente não existe. */
+async function exigirEmpresaVisivel(req, res, next) {
+  try {
+    const r = await db.query('SELECT id FROM empresas WHERE cnpj = $1',
+      [limparCnpj(req.params.cnpj)]);
+    if (!r.rows.length || !empresaVisivel(req, r.rows[0].id)) {
+      return res.status(404).json({ erro: 'Empresa não encontrada' });
+    }
+    next();
+  } catch (e) { next(e); }
+}
+
 /* Cadastrar empresa */
-router.post('/', async (req, res, next) => {
+router.post('/', somenteAdmin, async (req, res, next) => {
   try {
     const b = req.body || {};
     const cnpj = limparCnpj(b.cnpj);
@@ -77,9 +91,11 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-/* Listar empresas */
-router.get('/', async (_req, res, next) => {
+/* Listar empresas — só as visíveis a quem pediu. O operador precisa da lista
+   para escolher a empresa na emissão, mas não das que não estão no seu escopo. */
+router.get('/', async (req, res, next) => {
   try {
+    const ids = empresasVisiveis(req);
     const r = await db.query(
       `SELECT e.id, e.cnpj, e.razao_social, e.nome_fantasia, e.inscricao_municipal,
               e.codigo_municipio, e.op_simp_nac, e.reg_esp_trib, e.ambiente, e.ativo,
@@ -93,14 +109,16 @@ router.get('/', async (_req, res, next) => {
        ) c ON TRUE
        -- numeração do ambiente em que a empresa está operando
        LEFT JOIN numeracao_dps n ON n.empresa_id = e.id AND n.ambiente = e.ambiente
-       ORDER BY e.razao_social`
+       WHERE $1::int[] IS NULL OR e.id = ANY($1::int[])
+       ORDER BY e.razao_social`,
+      [ids]
     );
     res.json(r.rows);
   } catch (e) { next(e); }
 });
 
 /* Detalhar empresa */
-router.get('/:cnpj', async (req, res, next) => {
+router.get('/:cnpj', exigirEmpresaVisivel, async (req, res, next) => {
   try {
     const r = await db.query('SELECT * FROM empresas WHERE cnpj = $1', [limparCnpj(req.params.cnpj)]);
     if (!r.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });
@@ -109,7 +127,7 @@ router.get('/:cnpj', async (req, res, next) => {
 });
 
 /* Atualizar empresa */
-router.put('/:cnpj', async (req, res, next) => {
+router.put('/:cnpj', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) => {
   try {
     const b = req.body || {};
     const r = await db.query(
@@ -160,7 +178,7 @@ router.put('/:cnpj', async (req, res, next) => {
 });
 
 /* Numeração da DPS por ambiente (homologação e produção são independentes) */
-router.get('/:cnpj/numeracao', async (req, res, next) => {
+router.get('/:cnpj/numeracao', exigirEmpresaVisivel, async (req, res, next) => {
   try {
     const r = await db.query(
       `SELECT n.ambiente, n.serie, n.prox_numero, n.atualizado_em
@@ -174,7 +192,7 @@ router.get('/:cnpj/numeracao', async (req, res, next) => {
 
 /* Ajusta série/próximo número de UM ambiente.
    Body: { ambiente: 'homologacao'|'producao', serie, proxNumero } */
-router.put('/:cnpj/numeracao', async (req, res, next) => {
+router.put('/:cnpj/numeracao', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) => {
   try {
     const b = req.body || {};
     if (!['homologacao', 'producao'].includes(b.ambiente)) {
@@ -202,7 +220,8 @@ router.put('/:cnpj/numeracao', async (req, res, next) => {
 
 /* Upload do certificado A1 (.pfx): multipart/form-data
    campos: certificado (arquivo), senha (texto) */
-router.post('/:cnpj/certificado', upload.single('certificado'), async (req, res, next) => {
+router.post('/:cnpj/certificado', somenteAdmin, exigirEmpresaVisivel,
+  upload.single('certificado'), async (req, res, next) => {
   try {
     const emp = await db.query('SELECT id FROM empresas WHERE cnpj = $1', [limparCnpj(req.params.cnpj)]);
     if (!emp.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });

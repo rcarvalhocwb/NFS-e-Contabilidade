@@ -1,36 +1,61 @@
 const config = require('../config');
 const db = require('../db');
+const sessoes = require('../services/sessoes');
+const { empresasDoUsuario } = require('../services/usuarios');
 
 /**
- * Autenticação por X-API-Key, em dois níveis:
+ * Autenticação em três formas, do mais específico para o mais amplo:
  *
- *  - chave global (GATEWAY_API_KEY): credencial administrativa. Acessa todas as
- *    empresas e as rotas de gestão (cadastro, certificados, municípios, painel).
+ *  - sessão de usuário (cookie): uma PESSOA operando o painel. Traz perfil
+ *    (admin/operador) e a lista de empresas que enxerga. É o caminho normal.
  *
- *  - token de empresa: credencial entregue a cada sistema cliente. Vale para
- *    UMA empresa em UM ambiente. Com ele o cliente emite e consulta apenas as
- *    notas daquele CNPJ — sem isso, um token vazado daria acesso a todo o grupo.
+ *  - token de empresa (X-API-Key): credencial entregue a um sistema cliente.
+ *    Vale para UMA empresa em UM ambiente — um token vazado não abre o grupo.
  *
- * O escopo do token fica em req.auth e é aplicado pelas rotas.
+ *  - chave global GATEWAY_API_KEY (X-API-Key): credencial de MÁQUINA, para
+ *    chamadas de sistema e para criar o primeiro usuário na instalação. Não é
+ *    login de pessoa: é a mesma para todos e não deixa rastro de quem agiu.
+ *
+ * O resultado fica em req.auth e é aplicado pelas rotas via middleware/escopo.
  */
 module.exports = async function auth(req, res, next) {
-  const chave = req.header('X-API-Key');
-
-  if (!config.apiKey) {
-    return res.status(500).json({ erro: 'GATEWAY_API_KEY não configurada no servidor' });
-  }
-  if (!chave) {
-    return res.status(401).json({ erro: 'Informe o header X-API-Key' });
-  }
-
-  // Credencial administrativa: acesso irrestrito.
-  if (chave === config.apiKey) {
-    req.auth = { tipo: 'admin' };
-    return next();
-  }
-
-  // Token de empresa.
   try {
+    // 1. Sessão de usuário
+    const token = sessoes.tokenDoPedido(req);
+    if (token) {
+      const usuario = await sessoes.usuarioDaSessao(token);
+      if (usuario) {
+        req.auth = {
+          tipo: 'usuario',
+          usuarioId: usuario.id,
+          nome: usuario.nome,
+          email: usuario.email,
+          perfil: usuario.perfil,
+          trocarSenha: usuario.trocar_senha,
+          // null = todas as empresas
+          empresasIds: await empresasDoUsuario(usuario.id)
+        };
+        return next();
+      }
+      // Cookie velho ou revogado: some com ele para não insistir a cada pedido
+      sessoes.limparCookie(res);
+    }
+
+    const chave = req.header('X-API-Key');
+    if (!config.apiKey) {
+      return res.status(500).json({ erro: 'GATEWAY_API_KEY não configurada no servidor' });
+    }
+    if (!chave) {
+      return res.status(401).json({ erro: 'Faça login no painel ou informe o header X-API-Key' });
+    }
+
+    // 2. Chave global: credencial de máquina, acesso irrestrito
+    if (chave === config.apiKey) {
+      req.auth = { tipo: 'maquina' };
+      return next();
+    }
+
+    // 3. Token de empresa
     const r = await db.query(
       `SELECT t.id, t.empresa_id, t.ambiente, e.cnpj, e.razao_social
          FROM empresa_tokens t
