@@ -78,16 +78,58 @@ $envPath = Join-Path $raiz '.env'
 if (Test-Path $envPath) {
     Ok "Configuracao ja existe (.env) - mantida como esta"
 } else {
-    Write-Host "  Preciso do endereco do banco de dados."
-    Write-Host "  Se voce nao tem essa informacao, pergunte a quem cuida da TI." -ForegroundColor DarkGray
+    Write-Host "  Onde os dados do gateway vao ficar guardados?"
     Write-Host ""
-    $banco = Read-Host "  Endereco do banco (comeca com postgresql://)"
+    Write-Host "    1. Nesta maquina (recomendado)" -ForegroundColor White
+    Write-Host "       Funciona sem internet e nada depende de servico de fora."
+    Write-Host "       Baixa o banco de dados uma vez, cerca de 300 MB."
+    Write-Host ""
+    Write-Host "    2. Em um servidor que voce ja tem"
+    Write-Host "       Voce informa o endereco de conexao."
+    Write-Host ""
 
-    if ($banco -notmatch '^postgres(ql)?://[^@]+@[^/]+/\w+') {
-        Erro "Esse endereco nao parece valido."
-        Write-Host "  Deve comecar com postgresql:// e conter usuario, senha e servidor."
-        Read-Host "  Pressione Enter para sair"
-        exit 1
+    $escolha = Read-Host "  Digite 1 ou 2"
+    while ($escolha -ne '1' -and $escolha -ne '2') { $escolha = Read-Host "  Digite 1 ou 2" }
+
+    if ($escolha -eq '1') {
+        . (Join-Path $PSScriptRoot 'postgres-local.ps1')
+
+        if (-not (Install-PostgresLocal $PSScriptRoot)) {
+            Erro "Nao consegui instalar o banco nesta maquina."
+            Read-Host "  Pressione Enter para sair"
+            exit 1
+        }
+
+        $senhaBanco = -join ((1..32) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
+        if (-not (Initialize-PostgresLocal $PSScriptRoot $senhaBanco)) {
+            Read-Host "  Pressione Enter para sair"
+            exit 1
+        }
+        if (-not (Start-PostgresLocal $PSScriptRoot)) {
+            Erro "O banco foi instalado mas nao quis iniciar."
+            Write-Host "  Veja o arquivo instalador\postgres\postgres.log" -ForegroundColor DarkGray
+            Read-Host "  Pressione Enter para sair"
+            exit 1
+        }
+        if (-not (New-BancoNfse $PSScriptRoot $senhaBanco)) {
+            Erro "Nao consegui criar o banco de dados do gateway."
+            Read-Host "  Pressione Enter para sair"
+            exit 1
+        }
+
+        $banco = Get-UrlBancoLocal $senhaBanco
+        Ok "Banco de dados instalado nesta maquina"
+    } else {
+        Write-Host "  Se voce nao tem essa informacao, pergunte a quem cuida da TI." -ForegroundColor DarkGray
+        Write-Host ""
+        $banco = Read-Host "  Endereco do banco (comeca com postgresql://)"
+
+        if ($banco -notmatch '^postgres(ql)?://[^@]+@[^/]+/\w+') {
+            Erro "Esse endereco nao parece valido."
+            Write-Host "  Deve comecar com postgresql:// e conter usuario, senha e servidor."
+            Read-Host "  Pressione Enter para sair"
+            exit 1
+        }
     }
 
     # Chaves geradas localmente: nunca reutilizar valores de exemplo.

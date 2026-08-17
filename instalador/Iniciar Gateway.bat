@@ -40,6 +40,21 @@ if not exist ".env" (
 echo   Iniciando... aguarde alguns segundos.
 echo.
 
+REM Banco de dados nesta maquina: sobe antes do gateway. Se o gateway usa um
+REM servidor externo, a pasta abaixo nao existe e este trecho e ignorado.
+set PGCTL=%~dp0postgres\pgsql\bin\pg_ctl.exe
+if exist "%PGCTL%" (
+    echo   Abrindo o banco de dados...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ". '%~dp0postgres-local.ps1'; if (-not (Start-PostgresLocal '%~dp0')) { exit 1 }"
+    if errorlevel 1 (
+        echo   [X] O banco de dados nao quis iniciar.
+        echo       Veja o arquivo instalador\postgres\postgres.log
+        echo.
+        pause
+        exit /b 1
+    )
+)
+
 REM Abre o navegador em paralelo: o servidor leva alguns segundos para
 REM responder, e a espera acontece enquanto ele sobe.
 start "" /b cmd /c "timeout /t 4 /nobreak >nul & start http://localhost:3000/emitir"
@@ -57,6 +72,14 @@ echo   ---------------------------------------------
 echo.
 
 node src/server.js
+
+REM Fecha o banco junto com o gateway. Sem isso ele ficaria rodando em segundo
+REM plano depois que a janela fosse fechada.
+if exist "%PGCTL%" (
+    echo.
+    echo   Fechando o banco de dados...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ". '%~dp0postgres-local.ps1'; Stop-PostgresLocal '%~dp0' | Out-Null"
+)
 
 REM Se chegou aqui, o servidor caiu: mostra o motivo em vez de sumir.
 echo.

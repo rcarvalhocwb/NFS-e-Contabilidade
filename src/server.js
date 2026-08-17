@@ -18,6 +18,7 @@ const sessoes = require('./services/sessoes');
 const fila = require('./services/filaEmissao');
 const webhooks = require('./services/webhooks');
 const emailTomador = require('./services/emailTomador');
+const backupAutomatico = require('./services/backupAutomatico');
 
 const app = express();
 
@@ -122,6 +123,7 @@ const servidor = app.listen(config.port, () => {
   if (process.env.FILA_ATIVA !== 'false') fila.iniciar();
   if (process.env.WEBHOOK_ATIVO !== 'false') webhooks.iniciar();
   if (process.env.EMAIL_ATIVO !== 'false') emailTomador.iniciar();
+  if (process.env.BACKUP_ATIVO !== 'false') backupAutomatico.iniciar();
 });
 
 /* Sessões expiradas se acumulariam para sempre. De hora em hora basta: elas já
@@ -141,6 +143,7 @@ function encerrar(sinal) {
   fila.parar();
   webhooks.parar();
   emailTomador.parar();
+  backupAutomatico.parar();
   servidor.close(() => {
     db.pool.end()
       .then(() => { console.log('[shutdown] concluído'); process.exit(0); })

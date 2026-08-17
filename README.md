@@ -39,6 +39,39 @@ npm test            # testes dos pontos fiscais
 Com Postgres local: `docker compose up -d db` antes do migrate.
 Em produção, veja [DEPLOY.md](DEPLOY.md).
 
+## Banco de dados e backup
+
+O banco pode ficar **na própria máquina** (recomendado) ou num servidor externo.
+O instalador pergunta e, na primeira opção, baixa os binários portáteis do
+PostgreSQL para dentro da pasta do gateway — sem instalador do sistema, sem
+privilégio de administrador, e o `Iniciar Gateway.bat` sobe e desce o banco
+junto com o gateway.
+
+Local é a opção recomendada porque o gateway já roda na máquina da contabilidade
+e não é exposto na internet: um banco remoto era a única peça que exigia conexão
+para emitir uma nota — e que podia sumir sem aviso.
+
+### Backup
+
+O gateway grava uma cópia por dia em `backups/`, sem ninguém precisar lembrar:
+
+```bash
+node scripts/backup.js                 # cópia sob demanda
+node scripts/backup.js --sem-notas     # só cadastro, arquivo pequeno
+node scripts/restaurar-backup.js backups/nfse-backup-....json --conferir
+node scripts/restaurar-backup.js backups/nfse-backup-....json
+```
+
+Desligue com `BACKUP_ATIVO=false`; mude a pasta com `BACKUP_PASTA`.
+
+O certificado A1 sai cifrado no backup, do jeito que está no banco. Sem a
+`MASTER_KEY` do `.env` ele não abre — **guarde as duas coisas separadas**, e nem
+uma nem outra no repositório (`backups/` está no `.gitignore`).
+
+> Em 17/08/2026 o projeto Supabase que hospedava o banco desapareceu e não havia
+> cópia nenhuma: empresa, numeração fiscal, tokens e histórico se foram juntos.
+> Backup automático do provedor não protege contra o provedor sumir.
+
 ## Autenticação
 
 Três credenciais, cada uma com um dono claro:
