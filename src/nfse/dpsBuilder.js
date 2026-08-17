@@ -42,12 +42,25 @@ function dec(v) { return Number(v).toFixed(2); }
  * Sem isso o gateway só emitia operação tributável, o que deixa de fora
  * entidades imunes, exportação de serviço e quem tem liminar.
  */
-function tributoMunicipal(v, optanteSN, issRetido) {
+function tributoMunicipal(v, optanteSN, issRetido, versao) {
   const tipo = String(v.tributacaoIssqn || '1');
   const suspensa = ['5', '6'].includes(tipo);
 
+  /* O XSD publicado aceita tribISSQN de 1 a 4. A exigibilidade suspensa (5 e 6)
+     aparece na planilha do AnexoVI da NT 009, cujo XSD ainda não saiu — mandar
+     agora seria recusado. Falhar aqui evita queimar número de DPS. */
+  if (suspensa) {
+    throw Object.assign(
+      new Error('tributacaoIssqn 5 e 6 (exigibilidade suspensa) constam da NT 009 ' +
+                'mas ainda não são aceitos pelo esquema publicado da Sefin. ' +
+                'Use 1 a 4 até a publicação do XSD correspondente.'),
+      { status: 400 });
+  }
+
   return `<tribMun>` +
     tag('tribISSQN', tipo) +
+    // Exportação: país onde o resultado do serviço se verifica
+    (tipo === '2' ? tag('cPaisResult', v.paisResultado) : '') +
     // Imunidade exige dizer qual: livro/jornal, templo, partido, entidade...
     (tipo === '4' ? tag('tpImunidade', v.tipoImunidade) : '') +
     (suspensa ?
@@ -55,15 +68,16 @@ function tributoMunicipal(v, optanteSN, issRetido) {
       tag('tpSusp', v.tipoSuspensao) +
       tag('nProcesso', v.numeroProcesso) +
     `</exigSusp>` : '') +
-    // Benefício municipal (redução de base ou isenção concedida por lei local)
+    // Benefício municipal: nBM é o número do benefício no cadastro do
+    // município (numérico, 14 posições), acompanhado da redução em valor OU
+    // em percentual.
     (v.beneficioMunicipal ?
     `<BM>` +
-      tag('tpBM', v.beneficioMunicipal.tipo) +
       tag('nBM', v.beneficioMunicipal.numero) +
-      (v.beneficioMunicipal.percentualReducao !== undefined
-        ? tag('pRedBCBM', dec(v.beneficioMunicipal.percentualReducao))
-        : (v.beneficioMunicipal.valorReducao !== undefined
-            ? tag('vRedBCBM', dec(v.beneficioMunicipal.valorReducao)) : '')) +
+      (v.beneficioMunicipal.valorReducao !== undefined
+        ? tag('vRedBCBM', dec(v.beneficioMunicipal.valorReducao))
+        : (v.beneficioMunicipal.percentualReducao !== undefined
+            ? tag('pRedBCBM', dec(v.beneficioMunicipal.percentualReducao)) : '')) +
     `</BM>` : '') +
     tag('tpRetISSQN', issRetido ? '2' : '1') + // 1=não retido 2=retido pelo tomador
     // Optante do Simples Nacional não informa alíquota de ISS: o imposto é
@@ -114,6 +128,128 @@ function tributosFederais(v) {
     (r.valorRetencaoIrrf !== undefined ? tag('vRetIRRF', dec(r.valorRetencaoIrrf)) : '') +
     (r.valorRetencaoCsll !== undefined ? tag('vRetCSLL', dec(r.valorRetencaoCsll)) : '') +
   `</tribFed>`;
+}
+
+/**
+ * Grupo IBSCBS — Reforma Tributária do Consumo (EC 132/2023, LC 214/2025).
+ *
+ * Estrutura conforme AnexoVI-LeiautesRN_RTC_IBSCBS v1.04.00 (NT 009/2026).
+ *
+ * FACULTATIVO no momento: a NT 004 v2.0 suspendeu a regra de obrigatoriedade,
+ * e documentos sem o grupo continuam sendo autorizados. Mas a mesma nota avisa
+ * que, uma vez informado, TODO o conteúdo do grupo passa a ser validado — por
+ * isso ele só é montado quando o chamador pede explicitamente, e nunca por
+ * inferência.
+ *
+ * O mínimo exigido pelo leiaute quando o grupo existe:
+ *   indDest (1-1) e valores/trib/gIBSCBS com CST (1-1) e cClassTrib (1-1).
+ *
+ * CST (3 dígitos) e cClassTrib (6 dígitos) vêm das tabelas da LC 214/2025 —
+ * quem emite informa; o gateway não os deduz, porque errar aqui muda o imposto.
+ */
+/* A NT 009/2026 traz campos que o esquema publicado ainda não aceita —
+   vAjusteBC no lugar de vDedRed, gEstornoCred, exigibilidade suspensa. Emiti-los
+   antes do XSD correspondente faria a Sefin recusar a nota inteira.
+   DPS_LEIAUTE_NT009=true os liga, para testar assim que o esquema sair. */
+function leiauteNT009() {
+  return process.env.DPS_LEIAUTE_NT009 === 'true';
+}
+
+function grupoIbsCbs(dados) {
+  const g = dados.ibsCbs;
+  if (!g) return '';
+
+  // Sequência conforme TCRTCInfoIBSCBS (tiposComplexos_v1.01). Elemento fora de
+  // ordem é recusado pelo esquema, então a ordem aqui não é estética.
+  const trib = g.tributacao || {};
+  const faltando = [];
+  if (g.indicadorOperacao === undefined) faltando.push('indicadorOperacao (cIndOp, tabela do Anexo VII)');
+  if (g.indicadorDestinatario === undefined) faltando.push('indicadorDestinatario (0 = o tomador; 1 = outra pessoa)');
+  if (trib.cst === undefined) faltando.push('tributacao.cst');
+  if (trib.classificacaoTributaria === undefined) faltando.push('tributacao.classificacaoTributaria');
+  if (faltando.length) {
+    throw Object.assign(
+      new Error('Grupo IBS/CBS incompleto. Falta: ' + faltando.join(', ')),
+      { status: 400 });
+  }
+
+  const d = g.destinatario;
+
+  return `<IBSCBS>` +
+    // 0 = NFS-e regular. Os códigos de nota de ajuste chegam com a NT 009.
+    tag('finNFSe', g.finalidade !== undefined ? g.finalidade : 0) +
+    tag('indFinal', g.consumidorFinal) +
+    tag('cIndOp', g.indicadorOperacao) +
+    tag('tpOper', g.tipoOperacao) +
+    (Array.isArray(g.notasReferenciadas) && g.notasReferenciadas.length ?
+    `<gRefNFSe>` +
+      g.notasReferenciadas.map(c => tag('refNFSe', c)).join('') +
+    `</gRefNFSe>` : '') +
+    tag('tpEnteGov', g.tipoEnteGovernamental) +
+    // 0 = destinatário é o próprio tomador; 1 = é outra pessoa, e aí <dest>
+    // identifica quem recebeu o serviço.
+    tag('indDest', g.indicadorDestinatario) +
+    (d ?
+    `<dest>` +
+      (d.cnpj ? tag('CNPJ', limparDocumento(d.cnpj))
+              : (d.cpf ? tag('CPF', String(d.cpf).replace(/\D/g, ''))
+                       : (d.nif ? tag('NIF', d.nif) : tag('cNaoNIF', d.codigoNaoNif)))) +
+      tag('xNome', d.nome) +
+      (d.endereco ?
+      `<end>` +
+        (d.endereco.codigoPais ?
+        `<endExt>` +
+          tag('cPais', d.endereco.codigoPais) +
+          tag('cEndPost', d.endereco.codigoPostal) +
+          tag('xCidade', d.endereco.cidade) +
+          tag('xEstProvReg', d.endereco.estado) +
+        `</endExt>` :
+        `<endNac>` +
+          tag('cMun', d.endereco.codigoMunicipio) +
+          tag('CEP', (d.endereco.cep || '').replace(/\D/g, '')) +
+        `</endNac>`) +
+        tag('xLgr', d.endereco.logradouro) +
+        tag('nro', d.endereco.numero) +
+        tag('xCpl', d.endereco.complemento) +
+        tag('xBairro', d.endereco.bairro) +
+      `</end>` : '') +
+      tag('fone', d.telefone) +
+      tag('email', d.email) +
+    `</dest>` : '') +
+    `<valores>` +
+      `<trib>` +
+        `<gIBSCBS>` +
+          tag('CST', String(trib.cst).padStart(3, '0')) +
+          tag('cClassTrib', String(trib.classificacaoTributaria).padStart(6, '0')) +
+          tag('cCredPres', trib.creditoPresumido) +
+          // Tributação que incidiria sem o benefício, quando há desoneração
+          (trib.tributacaoRegular ?
+          `<gTribRegular>` +
+            tag('CSTReg', String(trib.tributacaoRegular.cst).padStart(3, '0')) +
+            tag('cClassTribReg', String(trib.tributacaoRegular.classificacaoTributaria).padStart(6, '0')) +
+          `</gTribRegular>` : '') +
+          (trib.diferimento ?
+          `<gDif>` +
+            tag('pDifUF', dec(trib.diferimento.percentualUF)) +
+            tag('pDifMun', dec(trib.diferimento.percentualMunicipal)) +
+            tag('pDifCBS', dec(trib.diferimento.percentualCBS)) +
+          `</gDif>` : '') +
+          // gEstornoCred entra com a NT 009; o esquema publicado ainda não o
+          // aceita, e mandá-lo antes faria a Sefin recusar a nota inteira.
+          (trib.estornoCredito && leiauteNT009() ?
+          `<gEstornoCred>` +
+            tag('vIBSEstCred', dec(trib.estornoCredito.valorIBS)) +
+            tag('vCBSEstCred', dec(trib.estornoCredito.valorCBS)) +
+          `</gEstornoCred>` : '') +
+        `</gIBSCBS>` +
+        (g.ajuste ?
+        `<gIBSCBSAjuste>` +
+          tag('vIBS', dec(g.ajuste.valorIBS)) +
+          tag('vCBS', dec(g.ajuste.valorCBS)) +
+        `</gIBSCBSAjuste>` : '') +
+      `</trib>` +
+    `</valores>` +
+  `</IBSCBS>`;
 }
 
 function totalTributos(v, optanteSN) {
@@ -184,9 +320,27 @@ function montarDps(empresa, dados, opts) {
   // declarados (ver totalTributos e o pAliq mais abaixo).
   const optanteSN = [2, 3].includes(Number(empresa.op_simp_nac));
 
+  /* Versão do leiaute.
+     1.00 é o que está autorizado em produção hoje e segue sendo o padrão.
+     1.01 é o leiaute da Reforma Tributária (XSD DPS_v1.01), onde o grupo
+     IBSCBS existe — informá-lo em 1.00 geraria XML inválido, então a versão
+     sobe sozinha nesse caso. DPS_VERSAO força o valor quando a Sefin exigir
+     1.01 para todos. */
+  const versao = process.env.DPS_VERSAO || (dados.ibsCbs ? '1.01' : '1.00');
+
+  /* No leiaute 1.01 o XSD publicado torna cNBS obrigatório (a planilha do
+     AnexoVI da NT 009 diz 0-1, mas quem valida é o XSD). Recusar aqui evita
+     queimar número de DPS numa nota que a Sefin devolveria. */
+  if (versao === '1.01' && !s.codigoNbs) {
+    throw Object.assign(
+      new Error('servico.codigoNbs é obrigatório no leiaute 1.01 (IBS/CBS). ' +
+                'É o código NBS de 9 dígitos do serviço prestado.'),
+      { status: 400 });
+  }
+
   const xml =
 `<?xml version="1.0" encoding="UTF-8"?>` +
-`<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">` +
+`<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="${versao}">` +
 `<infDPS Id="${idDps}">` +
   tag('tpAmb', opts.tpAmb) +
   tag('dhEmi', fmtDataHoraLocal()) +
@@ -243,21 +397,53 @@ function montarDps(empresa, dados, opts) {
   `</toma>` : '') +
   `<serv>` +
     `<locPrest>` +
-      tag('cLocPrestacao', s.codigoMunicipioPrestacao || empresa.codigo_municipio) +
-      // Serviço prestado no exterior: o país entra aqui e a tributação do ISS
-      // passa a ser exportação (tribISSQN = 2).
-      tag('cPaisPrestacao', s.codigoPaisPrestacao) +
+      // cLocPrestacao e cPaisPrestacao sao alternativos no leiaute (CE): o
+      // serviço é prestado num município brasileiro OU no exterior.
+      (s.codigoPaisPrestacao
+        ? tag('cPaisPrestacao', String(s.codigoPaisPrestacao).toUpperCase())
+        : tag('cLocPrestacao', s.codigoMunicipioPrestacao || empresa.codigo_municipio)) +
     `</locPrest>` +
+    // Ordem conforme o XSD publicado (tiposComplexos_v1.01): xDescServ vem
+    // antes de cNBS. A planilha do AnexoVI da NT 009 lista outra ordem, mas o
+    // XSD é o que valida de fato — e um elemento fora de ordem é recusado.
     `<cServ>` +
       tag('cTribNac', s.codigoTributacaoNacional) +
       tag('cTribMun', s.codigoTributacaoMunicipal) +
       tag('xDescServ', s.descricao) +
       tag('cNBS', s.codigoNbs) +
+      tag('cIntContrib', s.codigoInterno) +
     `</cServ>` +
-    // Texto livre que sai impresso na nota: número do contrato, da OS, da
-    // medição. O contador costuma precisar disso para amarrar nota e documento.
-    (s.informacoesComplementares ?
+    // Obra: construção civil informa a obra a que o serviço se refere, o que
+    // define o município de incidência do ISS.
+    (s.obra ?
+    `<obra>` +
+      tag('inscImobFisc', s.obra.inscricaoImobiliaria) +
+      // cObra, cCIB e end são ALTERNATIVOS no XSD (xs:choice): identifica-se a
+      // obra pelo CNO/CEI, pelo CIB, ou pelo endereço — nunca por mais de um.
+      (s.obra.codigoObra ? tag('cObra', s.obra.codigoObra)
+        : (s.obra.codigoCIB ? tag('cCIB', s.obra.codigoCIB)
+        : `<end>` +
+            tag('CEP', (s.obra.cep || '').replace(/\D/g, '')) +
+            tag('xLgr', s.obra.logradouro) +
+            tag('nro', s.obra.numero) +
+            tag('xCpl', s.obra.complemento) +
+            tag('xBairro', s.obra.bairro) +
+          `</end>`)) +
+    `</obra>` : '') +
+    // Evento: shows, feiras e congressos declaram nome e período
+    (s.evento ?
+    `<atvEvento>` +
+      tag('xNome', s.evento.nome) +
+      tag('dtIni', s.evento.dataInicio) +
+      tag('dtFim', s.evento.dataFim) +
+      tag('idAtvEvt', s.evento.identificador) +
+    `</atvEvento>` : '') +
+    // Amarra a nota aos documentos que a originaram: ART/RRT, contrato, pedido.
+    (s.informacoesComplementares || s.documentoTecnico || s.documentoReferencia || s.pedido ?
     `<infoCompl>` +
+      tag('idDocTec', s.documentoTecnico) +
+      tag('docRef', s.documentoReferencia) +
+      tag('xPed', s.pedido) +
       tag('xInfComp', s.informacoesComplementares) +
     `</infoCompl>` : '') +
   `</serv>` +
@@ -272,20 +458,32 @@ function montarDps(empresa, dados, opts) {
     `</vDescCondIncond>` : '') +
     // Dedução da base de cálculo: material aplicado e subempreitada na
     // construção civil, entre outros casos previstos em lei municipal.
+    //
+    // A NT 009/2026 renomeia este grupo para vAjusteBC (unificando-o com
+    // gReeRepRes), mas o XSD publicado ainda espera vDedRed — e é o XSD que
+    // valida. O nome acompanha a versão do leiaute para não quebrar quando o
+    // esquema novo sair.
     (v.valorDeducoes !== undefined || v.percentualDeducoes !== undefined ?
-    `<vDedRed>` +
-      (v.percentualDeducoes !== undefined
-        ? tag('pDR', dec(v.percentualDeducoes))
-        : tag('vDR', dec(v.valorDeducoes))) +
-    `</vDedRed>` : '') +
+      (leiauteNT009()
+        ? `<vAjusteBC>` +
+            (v.percentualDeducoes !== undefined
+              ? tag('pAjusteBCISSQN', dec(v.percentualDeducoes))
+              : tag('vAjusteBCISSQN', dec(v.valorDeducoes))) +
+          `</vAjusteBC>`
+        : `<vDedRed>` +
+            (v.percentualDeducoes !== undefined
+              ? tag('pDR', dec(v.percentualDeducoes))
+              : tag('vDR', dec(v.valorDeducoes))) +
+          `</vDedRed>`) : '') +
     `<trib>` +
-      tributoMunicipal(v, optanteSN, issRetido) +
+      tributoMunicipal(v, optanteSN, issRetido, versao) +
       tributosFederais(v) +
       `<totTrib>` +
         totalTributos(v, optanteSN) +
       `</totTrib>` +
     `</trib>` +
   `</valores>` +
+  grupoIbsCbs(dados) +
 `</infDPS>` +
 `</DPS>`;
 

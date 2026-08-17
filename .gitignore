@@ -21,3 +21,7 @@ instalador/pacote/
 instalador/saida/
 *.nfsepkg
 logs/
+
+# Notas técnicas e esquemas da Sefin: material deles, versionado por eles.
+# Baixe de gov.br/nfse > documentacao-tecnica > RTC quando precisar validar.
+.notas-tecnicas/

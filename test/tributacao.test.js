@@ -43,13 +43,12 @@ test('exportação de serviço leva o país e dispensa alíquota', () => {
   assert.ok(!x.includes('<pAliq>'));
 });
 
-test('exigibilidade suspensa carrega o número do processo', () => {
-  const x = dps({ valores: {
-    valorServico: 1000, tributacaoIssqn: 5, tipoSuspensao: 1, numeroProcesso: '0001234-56.2026.8.16.0001'
-  } });
-  assert.match(x, /<exigSusp>/);
-  assert.match(x, /<tpSusp>1<\/tpSusp>/);
-  assert.match(x, /<nProcesso>0001234-56\.2026\.8\.16\.0001<\/nProcesso>/);
+test('exigibilidade suspensa é recusada até a Sefin publicar o esquema', () => {
+  // tribISSQN 5 e 6 constam da NT 009, mas o XSD publicado só aceita 1 a 4.
+  // Recusar aqui evita queimar número de DPS numa nota que voltaria rejeitada.
+  assert.throws(() => dps({ valores: {
+    valorServico: 1000, tributacaoIssqn: 5, tipoSuspensao: 1, numeroProcesso: '0001234-56.2026'
+  } }), /exigibilidade suspensa/);
 });
 
 /* Retenções federais ----------------------------------------------------- */
@@ -87,7 +86,9 @@ test('só IRRF não arrasta o bloco de PIS/COFINS', () => {
 
 /* Deduções e complementos ------------------------------------------------ */
 
-test('dedução da base entra como valor ou percentual, não os dois', () => {
+test('dedução da base usa o nome que o esquema publicado espera', () => {
+  // A NT 009 renomeia vDedRed para vAjusteBC, mas o XSD publicado ainda pede
+  // vDedRed — e é ele que valida. O nome novo fica atrás de DPS_LEIAUTE_NT009.
   const porValor = dps({ valores: { valorServico: 10000, valorDeducoes: 4000 } });
   assert.match(porValor, /<vDedRed><vDR>4000\.00<\/vDR><\/vDedRed>/);
 
@@ -110,13 +111,46 @@ test('informação complementar sai no bloco do serviço', () => {
   assert.match(x, /<infoCompl><xInfComp>Contrato 123\/2026 - medicao 4<\/xInfComp><\/infoCompl>/);
 });
 
-test('benefício municipal declara tipo, número e redução', () => {
+test('benefício municipal leva número e redução, sem tpBM', () => {
+  // O leiaute oficial (AnexoVI v1.04.00) tem apenas nBM, vRedBCBM e pRedBCBM
   const x = dps({ valores: {
     valorServico: 1000, aliquotaIss: 5,
-    beneficioMunicipal: { tipo: 1, numero: 'LEI-4321', percentualReducao: 50 }
+    beneficioMunicipal: { numero: '12345678901234', percentualReducao: 50 }
   } });
   assert.match(x, /<BM>/);
-  assert.match(x, /<tpBM>1<\/tpBM>/);
-  assert.match(x, /<nBM>LEI-4321<\/nBM>/);
+  assert.match(x, /<nBM>12345678901234<\/nBM>/);
   assert.match(x, /<pRedBCBM>50\.00<\/pRedBCBM>/);
+  assert.ok(!x.includes('tpBM'), 'tpBM não existe no leiaute');
+});
+
+test('exportação declara o país de resultado em cPaisResult', () => {
+  const x = dps({ valores: { valorServico: 1000, tributacaoIssqn: 2, paisResultado: 'US' } });
+  assert.match(x, /<tribISSQN>2<\/tribISSQN><cPaisResult>US<\/cPaisResult>/);
+});
+
+test('serviço no exterior troca cLocPrestacao por cPaisPrestacao', () => {
+  // São alternativos no leiaute (CE): um ou outro, nunca os dois
+  const x = dps({ servico: {
+    codigoTributacaoNacional: '110201', descricao: 'Servico', codigoPaisPrestacao: 'pt'
+  } });
+  assert.match(x, /<cPaisPrestacao>PT<\/cPaisPrestacao>/);
+  assert.ok(!x.includes('cLocPrestacao'));
+});
+
+test('obra identifica-se pelo código OU pelo endereço, nunca por ambos', () => {
+  // cObra, cCIB e end são alternativos no esquema (xs:choice)
+  const porCodigo = dps({ servico: {
+    codigoTributacaoNacional: '070201', descricao: 'Construcao',
+    obra: { codigoObra: 'OBRA-2026-01', cep: '80010000', logradouro: 'Rua XV' },
+    documentoTecnico: 'ART-123456'
+  } });
+  assert.match(porCodigo, /<obra><cObra>OBRA-2026-01<\/cObra><\/obra>/);
+  assert.match(porCodigo, /<idDocTec>ART-123456<\/idDocTec>/);
+
+  const porEndereco = dps({ servico: {
+    codigoTributacaoNacional: '070201', descricao: 'Construcao',
+    obra: { cep: '80010000', logradouro: 'Rua XV', numero: '100', bairro: 'Centro' }
+  } });
+  assert.match(porEndereco, /<obra><end><CEP>80010000<\/CEP>/);
+  assert.ok(!porEndereco.includes('cObra'));
 });
