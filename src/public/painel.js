@@ -255,6 +255,8 @@
     empresas:    { titulo:'Empresas',      sub:'Cadastro, certificados e numeração',    carregar: carregarEmpresas },
     empresaEdit: { titulo:'Empresa',       sub:'',                                       carregar: null },
     notas:       { titulo:'Notas emitidas',sub:'Consulta, XML, PDF e cancelamento',     carregar: carregarNotas },
+    lotes:       { titulo:'Emissão em lote', sub:'Muitas notas a partir de uma planilha', carregar: carregarLotes },
+    relatorios:  { titulo:'Relatórios',    sub:'Fechamento do período e livro de notas', carregar: prepararRelatorios },
     clientes:    { titulo:'Clientes',      sub:'Tomadores usados nas emissões',         carregar: carregarClientes },
     servicos:    { titulo:'Serviços',      sub:'Modelos para emitir mais rápido',       carregar: carregarServicos },
     usuarios:    { titulo:'Usuários',      sub:'Quem acessa o gateway e o que pode fazer', carregar: carregarUsuarios },
@@ -874,6 +876,228 @@
       })
     }).then(function () { el('dlgServico').close(); aviso('Serviço salvo.'); carregarServicos(); })
       .catch(function (e) { aviso(e.message, 'erro'); });
+  };
+
+  /* ------------------------------------------------------------------ lotes */
+
+  function carregarLotes() {
+    preencherSelectEmpresasLote();
+    api('/lote').then(function (linhas) {
+      var tb = el('corpoLotes'); tb.innerHTML = '';
+      alternarVazio('corpoLotes', 'vazioLotes', linhas.length);
+      linhas.forEach(function (l) {
+        var tr = document.createElement('tr');
+        var resumo = '';
+        if (l.autorizadas) resumo += '<span class="selo-status s-ok">' + l.autorizadas + ' autorizada(s)</span> ';
+        if (l.processando) resumo += '<span class="selo-status s-alerta">' + l.processando + ' na fila</span> ';
+        if (l.rejeitadas) resumo += '<span class="selo-status s-erro">' + l.rejeitadas + ' rejeitada(s)</span> ';
+        if (l.com_erro) resumo += '<span class="selo-status s-erro sem-ponto">' + l.com_erro + ' com erro</span>';
+        tr.innerHTML =
+          '<td class="mono">' + l.id + '</td>' +
+          '<td>' + esc(l.descricao || '—') +
+            (l.usuario ? '<div class="ajuda">' + esc(l.usuario) + '</div>' : '') + '</td>' +
+          '<td>' + esc(l.razao_social) + '</td>' +
+          '<td>' + seloAmbiente(l.ambiente) + '</td>' +
+          '<td>' + (resumo || '<span class="ajuda">' + l.total + ' linha(s)</span>') + '</td>' +
+          '<td style="color:var(--texto-2)">' + fmtDataHora(l.criado_em) + '</td>' +
+          '<td class="acoes"></td>';
+        var b = document.createElement('button');
+        b.className = 'pequeno'; b.textContent = 'Abrir';
+        b.onclick = function () { abrirLote(l.id); };
+        tr.lastChild.appendChild(b);
+        tb.appendChild(tr);
+      });
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  function preencherSelectEmpresasLote() {
+    ['lt_empresa', 'rl_empresa'].forEach(function (id) {
+      var sel = el(id); if (!sel) return;
+      var atual = sel.value;
+      sel.innerHTML = id === 'rl_empresa' ? '<option value="">Todas</option>' : '';
+      estado.empresas.forEach(function (e) {
+        var o = document.createElement('option');
+        o.value = e.id;
+        o.textContent = (e.nome_fantasia || e.razao_social) + ' — ' + fmtDoc(e.cnpj);
+        sel.appendChild(o);
+      });
+      if (atual) sel.value = atual;
+    });
+  }
+
+  function enviarPlanilha(caminho) {
+    var arquivo = el('lt_arquivo').files[0];
+    if (!arquivo) { aviso('Escolha a planilha antes.', 'erro'); return null; }
+    var fd = new FormData();
+    fd.append('arquivo', arquivo);
+    fd.append('empresaId', el('lt_empresa').value);
+    fd.append('descricao', arquivo.name);
+    return api(caminho, { method: 'POST', body: fd });
+  }
+
+  el('btnConferirLote').onclick = function () {
+    var b = el('btnConferirLote');
+    b.disabled = true; b.textContent = 'Conferindo…';
+    var p = enviarPlanilha('/lote/conferir');
+    if (!p) { b.disabled = false; b.textContent = 'Conferir'; return; }
+    p.then(mostrarConferencia)
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; b.textContent = 'Conferir'; });
+  };
+
+  /* Conferência antes de emitir: uma vez transmitida, a nota só sai por
+     cancelamento, e cada linha errada custa um número da sequência fiscal. */
+  function mostrarConferencia(d) {
+    var caixa = el('lt_resultado');
+    var linhas = d.itens.map(function (i) {
+      return '<tr>' +
+        '<td class="mono">' + i.linha + '</td>' +
+        '<td>' + esc(i.cliente) + '</td>' +
+        '<td>' + esc((i.descricao || '').slice(0, 50)) + '</td>' +
+        '<td>' + (i.valor ? fmtMoeda(i.valor) : '—') + '</td>' +
+        '<td>' + (i.erro
+          ? '<span class="selo-status s-erro">' + esc(i.erro) + '</span>'
+          : '<span class="selo-status s-ok">ok</span>') + '</td>' +
+      '</tr>';
+    }).join('');
+
+    caixa.innerHTML =
+      '<div class="' + (d.comErro ? 'aviso erro' : 'aviso ok') + '" style="display:block">' +
+        d.validos + ' de ' + d.total + ' linha(s) prontas · total ' + fmtMoeda(d.valorTotal) +
+        (d.comErro ? ' · <strong>' + d.comErro + ' com erro, que não serão emitidas</strong>' : '') +
+      '</div>' +
+      '<div class="tabela-area" style="max-height:340px;overflow-y:auto;margin-top:12px">' +
+        '<table><thead><tr><th>Linha</th><th>Cliente</th><th>Serviço</th><th>Valor</th><th></th></tr></thead>' +
+        '<tbody>' + linhas + '</tbody></table>' +
+      '</div>';
+
+    if (d.validos) {
+      var b = document.createElement('button');
+      b.className = 'primario';
+      b.style.marginTop = '14px';
+      b.textContent = 'Emitir ' + d.validos + ' nota(s) em ' +
+        (d.empresa.ambiente === 'producao' ? 'PRODUÇÃO' : 'homologação');
+      b.onclick = function () { emitirLote(d); };
+      caixa.appendChild(b);
+    }
+  }
+
+  function emitirLote(conferencia) {
+    var producao = conferencia.empresa.ambiente === 'producao';
+    var texto = 'Emitir ' + conferencia.validos + ' nota(s) por ' +
+      conferencia.empresa.razaoSocial + '?\n\nTotal: ' + fmtMoeda(conferencia.valorTotal);
+    if (producao) texto += '\n\nEM PRODUÇÃO: as notas terão valor fiscal e geram imposto.';
+    if (!confirm(texto)) return;
+
+    aviso('Enviando as notas… isso pode levar alguns minutos.');
+    var p = enviarPlanilha('/lote');
+    if (!p) return;
+    p.then(function (r) {
+      el('lt_resultado').innerHTML = '';
+      el('lt_arquivo').value = '';
+      aviso(r.enviados + ' nota(s) enviadas' +
+            (r.comErro ? ', ' + r.comErro + ' com erro' : '') +
+            '. Acompanhe abaixo o resultado de cada uma.');
+      carregarLotes();
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('btnAtualizarLotes').onclick = carregarLotes;
+
+  function abrirLote(id) {
+    api('/lote/' + id).then(function (d) {
+      var linhas = d.itens.map(function (i) {
+        var situacao;
+        if (i.status === 'erro') situacao = '<span class="selo-status s-erro">' + esc(i.erro) + '</span>';
+        else if (i.status_nota) situacao = seloStatus(i.status_nota) +
+          (i.ultimo_erro ? '<div class="ajuda">' + esc(i.ultimo_erro) + '</div>' : '');
+        else situacao = '<span class="selo-status s-alerta">na fila</span>';
+        return '<tr>' +
+          '<td class="mono">' + i.linha + '</td>' +
+          '<td class="mono">' + (i.numero ? esc(i.serie) + '/' + esc(i.numero) : '—') + '</td>' +
+          '<td>' + situacao + '</td>' +
+        '</tr>';
+      }).join('');
+
+      el('loteTitulo').textContent = 'Lote ' + d.lote.id;
+      el('loteSub').textContent = (d.lote.descricao || '') + ' · ' + d.lote.razao_social;
+      el('loteCorpo').innerHTML =
+        '<div class="tabela-area" style="max-height:420px;overflow-y:auto">' +
+        '<table><thead><tr><th>Linha</th><th>Nota</th><th>Situação</th></tr></thead><tbody>' +
+        linhas + '</tbody></table></div>';
+      el('dlgLote').showModal();
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('loteFechar').onclick = function () { el('dlgLote').close(); };
+
+  /* ------------------------------------------------------------- relatórios */
+
+  function prepararRelatorios() {
+    preencherSelectEmpresasLote();
+    if (!el('rl_inicio').value) {
+      // Abre no mês corrente, que é o fechamento em curso
+      var hoje = new Date();
+      el('rl_inicio').value = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+        .toISOString().slice(0, 10);
+      el('rl_fim').value = hoje.toISOString().slice(0, 10);
+    }
+    gerarRelatorio();
+  }
+
+  function filtrosRelatorio() {
+    var q = ['inicio=' + el('rl_inicio').value, 'fim=' + el('rl_fim').value];
+    if (el('rl_empresa').value) q.push('empresaId=' + el('rl_empresa').value);
+    if (el('rl_ambiente').value) q.push('ambiente=' + el('rl_ambiente').value);
+    return q.join('&');
+  }
+
+  function gerarRelatorio() {
+    api('/relatorios/fechamento?' + filtrosRelatorio()).then(function (d) {
+      var t = d.totais;
+      el('rl_metricas').hidden = false;
+      el('rlNotas').textContent = t.notas;
+      el('rlValor').textContent = fmtMoeda(t.valorServico);
+      el('rlIss').textContent = fmtMoeda(t.valorIss);
+      el('rlIssRetido').textContent = t.issRetido
+        ? fmtMoeda(t.issRetido) + ' retido pelo tomador' : '';
+      el('rlRetFed').textContent = fmtMoeda(t.retencoesFederais);
+
+      var tb = el('corpoRelatorio'); tb.innerHTML = '';
+      alternarVazio('corpoRelatorio', 'vazioRelatorio', d.empresas.length);
+      d.empresas.forEach(function (e) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td><strong>' + esc(e.empresa) + '</strong>' +
+            '<div class="ajuda">' + fmtDoc(e.cnpj) +
+            (e.optanteSimples ? ' · Simples Nacional' : '') + '</div></td>' +
+          '<td>' + e.notas + '</td>' +
+          '<td>' + fmtMoeda(e.valorServico) + '</td>' +
+          '<td>' + fmtMoeda(e.baseCalculo) + '</td>' +
+          // Optante do Simples recolhe o ISS no DAS: mostrar valor aqui daria a
+          // entender que há guia municipal a pagar.
+          '<td>' + (e.optanteSimples
+            ? '<span class="ajuda">no DAS</span>'
+            : fmtMoeda(e.valorIss) +
+              (e.issRetido ? '<div class="ajuda">' + fmtMoeda(e.issRetido) + ' retido</div>' : '')) + '</td>' +
+          '<td>' + (e.retencoesFederais ? fmtMoeda(e.retencoesFederais) : '—') + '</td>';
+        tb.appendChild(tr);
+      });
+
+      var pend = d.naoAutorizadas || [];
+      el('cartaoPendencias').hidden = pend.length === 0;
+      el('rl_pendencias').innerHTML = pend.map(function (p) {
+        return '<div class="linha-alerta aviso"><strong>' + esc(p.empresa) + '</strong> — ' +
+          'nota ' + esc(p.serie) + '/' + esc(p.numero) + ' ' + seloStatus(p.status) +
+          (p.referencia ? ' · ' + esc(p.referencia) : '') + '</div>';
+      }).join('');
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('btnGerarRelatorio').onclick = gerarRelatorio;
+  el('btnBaixarCsv').onclick = function () {
+    baixar('/relatorios/notas.csv?' + filtrosRelatorio(),
+           'nfse-' + el('rl_inicio').value + '-a-' + el('rl_fim').value + '.csv');
   };
 
   /* -------------------------------------------------------------- usuários */

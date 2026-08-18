@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const db = require('../db');
+const { limparDocumento } = require('../util/documento');
 
 const router = express.Router();
 

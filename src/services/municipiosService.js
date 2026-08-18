@@ -6,6 +6,7 @@
    - manual: a contabilidade marca direto (definirManual), útil antes de haver
      certificado, ou para municípios que a consulta ainda não cobre. */
 const db = require('../db');
+const { limparDocumento } = require('../util/documento');
 const parametros = require('../nfse/parametrosClient');
 const { carregarCertificadoAtivo } = require('./certificadoService');
 

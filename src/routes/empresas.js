@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const db = require('../db');
 const { salvarCertificado } = require('../services/certificadoService');
-const { validarCnpj } = require('../util/documento');
+const { validarCnpj, limparDocumento } = require('../util/documento');
 const { somenteAdmin, empresasVisiveis, empresaVisivel } = require('../middleware/escopo');
 
 const router = express.Router();

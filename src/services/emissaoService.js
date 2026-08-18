@@ -1,4 +1,5 @@
 const db = require('../db');
+const { limparDocumento } = require('../util/documento');
 const config = require('../config');
 const { montarDps, gerarIdDps } = require('../nfse/dpsBuilder');
 const { montarPedidoCancelamento } = require('../nfse/eventoBuilder');

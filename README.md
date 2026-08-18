@@ -39,6 +39,43 @@ npm test            # testes dos pontos fiscais
 Com Postgres local: `docker compose up -d db` antes do migrate.
 Em produção, veja [DEPLOY.md](DEPLOY.md).
 
+## Para escritórios contábeis
+
+O gateway foi feito para quem emite pelos clientes, não pela própria empresa.
+
+### Emissão em lote
+
+Uma planilha, uma linha por nota:
+
+```bash
+GET  /lote/modelo      # baixa o modelo já preenchido com um exemplo
+POST /lote/conferir    # valida sem emitir nada
+POST /lote             # emite as linhas válidas
+```
+
+**Confira antes de emitir.** Uma nota transmitida só sai por cancelamento, e
+cada linha errada consome um número da sequência fiscal. A conferência mostra,
+linha por linha, o que passou e o que não passou.
+
+As colunas aceitam apelidos: `cnpj`, `documento` e `cnpj_do_cliente` são a mesma
+coisa, e acento, espaço e caixa não importam. Valor pode vir como `1.234,56`.
+Linhas com erro ficam registradas no lote, sem impedir as demais.
+
+### Relatórios
+
+```bash
+GET /relatorios/fechamento    # totais por empresa no período
+GET /relatorios/notas         # uma linha por nota
+GET /relatorios/notas.csv     # o mesmo em CSV, para o sistema contábil
+```
+
+O fechamento separa o que é ISS a recolher do que ficou retido pelo tomador, e
+lista à parte as notas do período que **não** foram autorizadas — elas não
+entram nos totais, e é o tipo de coisa que passa despercebida no fim do mês.
+
+Empresa optante do Simples aparece como "no DAS" em vez de um valor de ISS:
+mostrar número ali faria procurar uma guia municipal que não existe.
+
 ## Banco de dados e backup
 
 O banco pode ficar **na própria máquina** (recomendado) ou num servidor externo.

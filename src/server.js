@@ -21,6 +21,8 @@ const emissorRouter = require('./routes/emissor');
 const authRouter = require('./routes/auth');
 const usuariosRouter = require('./routes/usuarios');
 const manutencaoRouter = require('./routes/manutencao');
+const loteRouter = require('./routes/lote');
+const relatoriosRouter = require('./routes/relatorios');
 const sessoes = require('./services/sessoes');
 const fila = require('./services/filaEmissao');
 const webhooks = require('./services/webhooks');
@@ -117,6 +119,8 @@ app.use('/emissor', emissorRouter);
 app.use('/painel', painelRouter);
 app.use('/usuarios', usuariosRouter);
 app.use('/manutencao', manutencaoRouter);
+app.use('/lote', loteRouter);
+app.use('/relatorios', relatoriosRouter);
 
 // NFS-e: aberta ao token da empresa, restrita ao escopo dele.
 app.use('/nfse', fixarEscopoEmpresa, nfseRouter);

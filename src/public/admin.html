@@ -131,6 +131,8 @@
       <a href="/nota"><span class="ico">✎</span> Emitir nota</a>
       <a href="/emitir"><span class="ico">◗</span> Emitir por conversa</a>
       <a href="#notas" data-tela="notas"><span class="ico">▦</span> Notas emitidas</a>
+      <a href="#lotes" data-tela="lotes"><span class="ico">▤</span> Emissão em lote</a>
+      <a href="#relatorios" data-tela="relatorios"><span class="ico">◲</span> Relatórios</a>
 
       <div class="menu-grupo">Cadastros</div>
       <a href="#empresas" data-tela="empresas"><span class="ico">▣</span> Empresas</a>
@@ -506,6 +508,135 @@
         </div>
       </section>
 
+      <!-- ---------------- EMISSÃO EM LOTE ---------------- -->
+      <section data-tela-conteudo="lotes" hidden>
+        <div class="cartao">
+          <div class="cartao-cab"><h2>Emitir a partir de uma planilha</h2></div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:14px">
+              Para emitir muitas notas de uma vez. Baixe o modelo, preencha uma
+              linha por nota e envie. <strong>Confira antes de emitir</strong> —
+              cada nota consome um número da sequência fiscal.
+            </div>
+            <div class="grade c3" style="align-items:end">
+              <div>
+                <label for="lt_empresa">Empresa emissora</label>
+                <select id="lt_empresa"></select>
+              </div>
+              <div>
+                <label for="lt_arquivo">Planilha (.csv)</label>
+                <input id="lt_arquivo" type="file" accept=".csv,text/csv">
+              </div>
+              <div style="display:flex;gap:8px">
+                <a class="botao pequeno" href="/lote/modelo" download>Baixar modelo</a>
+                <button class="pequeno" id="btnConferirLote">Conferir</button>
+              </div>
+            </div>
+            <div id="lt_resultado" style="margin-top:16px"></div>
+          </div>
+        </div>
+
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Lotes enviados</h2><span class="espaco"></span>
+            <button class="pequeno" id="btnAtualizarLotes">Atualizar</button>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr>
+                  <th>Nº</th><th>Descrição</th><th>Empresa</th><th>Ambiente</th>
+                  <th>Resultado</th><th>Data</th><th></th>
+                </tr></thead>
+                <tbody id="corpoLotes"></tbody>
+              </table>
+            </div>
+            <div id="vazioLotes" class="vazio" hidden>
+              <div class="icone">▤</div><div class="titulo">Nenhum lote enviado</div>
+              <div>Use o formulário acima para emitir a partir de uma planilha.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------- RELATÓRIOS ---------------- -->
+      <section data-tela-conteudo="relatorios" hidden>
+        <div class="cartao">
+          <div class="cartao-cab"><h2>Período</h2></div>
+          <div class="cartao-corpo">
+            <div class="filtros">
+              <div><label for="rl_inicio">De</label><input id="rl_inicio" type="date"></div>
+              <div><label for="rl_fim">Até</label><input id="rl_fim" type="date"></div>
+              <div>
+                <label for="rl_empresa">Empresa</label>
+                <select id="rl_empresa"><option value="">Todas</option></select>
+              </div>
+              <div>
+                <label for="rl_ambiente">Ambiente</label>
+                <select id="rl_ambiente">
+                  <option value="producao">Produção</option>
+                  <option value="">Todos</option>
+                  <option value="homologacao">Homologação</option>
+                </select>
+              </div>
+              <div><button class="primario" id="btnGerarRelatorio" style="width:100%;justify-content:center">Gerar</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grade c4" style="margin-bottom:18px" id="rl_metricas" hidden>
+          <div class="metrica destaque">
+            <div class="rotulo">Notas autorizadas</div>
+            <div class="valor" id="rlNotas">—</div>
+          </div>
+          <div class="metrica">
+            <div class="rotulo">Valor dos serviços</div>
+            <div class="valor" id="rlValor" style="font-size:21px">—</div>
+          </div>
+          <div class="metrica">
+            <div class="rotulo">ISS apurado</div>
+            <div class="valor" id="rlIss" style="font-size:21px">—</div>
+            <div class="nota" id="rlIssRetido"></div>
+          </div>
+          <div class="metrica">
+            <div class="rotulo">Retenções federais</div>
+            <div class="valor" id="rlRetFed" style="font-size:21px">—</div>
+          </div>
+        </div>
+
+        <div class="cartao">
+          <div class="cartao-cab">
+            <h2>Por empresa</h2><span class="espaco"></span>
+            <button class="pequeno" id="btnBaixarCsv">↓ Livro de notas (CSV)</button>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr>
+                  <th>Empresa</th><th>Notas</th><th>Serviços</th>
+                  <th>Base de cálculo</th><th>ISS</th><th>Retenções federais</th>
+                </tr></thead>
+                <tbody id="corpoRelatorio"></tbody>
+              </table>
+            </div>
+            <div id="vazioRelatorio" class="vazio" hidden>
+              <div class="icone">◲</div><div class="titulo">Sem notas no período</div>
+              <div>Ajuste as datas ou o ambiente.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cartao" id="cartaoPendencias" hidden>
+          <div class="cartao-cab"><h2>Fora do fechamento</h2></div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:12px">
+              Notas do período que não foram autorizadas — não entram nos totais.
+            </div>
+            <div id="rl_pendencias"></div>
+          </div>
+        </div>
+      </section>
+
       <!-- ---------------- CLIENTES ---------------- -->
       <section data-tela-conteudo="clientes" hidden>
         <div class="cartao">
@@ -815,6 +946,15 @@
       <button type="submit" class="primario">Salvar</button>
     </div>
   </form>
+</div></dialog>
+
+<dialog id="dlgLote" class="largo"><div class="interno">
+  <h3 id="loteTitulo">Lote</h3>
+  <div class="dsub" id="loteSub"></div>
+  <div id="loteCorpo"></div>
+  <div class="acoes-form">
+    <button class="primario" id="loteFechar">Fechar</button>
+  </div>
 </div></dialog>
 
 <dialog id="dlgUsuario"><div class="interno">
