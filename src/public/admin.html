@@ -943,12 +943,67 @@
   </div>
   <pre class="xml" id="notaXml">—</pre>
   <div class="acoes-form">
+    <button id="notaSubstituir">Substituir</button>
     <button class="perigo" id="notaCancelar">Cancelar nota</button>
     <span class="espaco"></span>
     <button id="notaBaixarXml">Baixar XML</button>
     <button id="notaBaixarPdf">Baixar PDF</button>
     <button class="primario" id="notaFechar">Fechar</button>
   </div>
+</div></dialog>
+
+<dialog id="dlgSubstituir" class="largo"><div class="interno">
+  <h3>Substituir NFS-e</h3>
+  <div class="dsub">
+    A NFS-e não pode ser alterada. Para corrigir, emite-se uma nova em
+    substituição — a Sefin cancela a original automaticamente.
+  </div>
+  <div class="aviso info" style="display:block" id="subOriginal"></div>
+
+  <form id="formSubstituir">
+    <div class="grade c2" style="margin-top:14px">
+      <div>
+        <label for="sb_motivo">Motivo da substituição *</label>
+        <select id="sb_motivo">
+          <option value="1">1 — Desenquadramento de NFS-e</option>
+          <option value="2">2 — Enquadramento de NFS-e</option>
+          <option value="3">3 — Rejeição de NFS-e pelo tomador</option>
+          <option value="4">4 — Rejeição de NFS-e pelo intermediário</option>
+          <option value="99" selected>99 — Outros</option>
+        </select>
+      </div>
+      <div>
+        <label for="sb_descricao">Descrição do motivo *</label>
+        <input id="sb_descricao" maxlength="255" placeholder="Ex.: valor do serviço lançado incorretamente">
+        <div class="ajuda">Obrigatória quando o motivo é "Outros".</div>
+      </div>
+    </div>
+
+    <div class="caixa-amb" style="margin-top:16px">
+      <h4>Dados da nota nova</h4>
+      <div class="ajuda" style="margin-bottom:13px">
+        Vieram da nota original. Corrija o que estava errado — o resto sai igual.
+      </div>
+      <div class="grade c2">
+        <div><label for="sb_doc">CNPJ/CPF do cliente</label><input id="sb_doc" inputmode="numeric"></div>
+        <div><label for="sb_nome">Nome do cliente</label><input id="sb_nome" maxlength="300"></div>
+      </div>
+      <div class="grade c3" style="margin-top:14px">
+        <div><label for="sb_codigo">Código de tributação *</label><input id="sb_codigo" inputmode="numeric" maxlength="6"></div>
+        <div><label for="sb_valor">Valor do serviço *</label><input id="sb_valor" type="number" step="0.01" min="0"></div>
+        <div><label for="sb_aliquota">Alíquota ISS (%)</label><input id="sb_aliquota" type="number" step="0.0001" min="0"></div>
+      </div>
+      <div style="margin-top:14px">
+        <label for="sb_servico">Descrição do serviço *</label>
+        <textarea id="sb_servico" rows="2" maxlength="2000"></textarea>
+      </div>
+    </div>
+
+    <div class="acoes-form">
+      <button type="button" id="subCancelar">Voltar</button>
+      <button type="submit" class="primario">Emitir substituta</button>
+    </div>
+  </form>
 </div></dialog>
 
 <dialog id="dlgCancelar"><div class="interno">

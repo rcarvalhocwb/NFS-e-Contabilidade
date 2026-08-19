@@ -816,7 +816,10 @@
       el('notaBaixarXml').disabled = !temDoc;
       el('notaBaixarPdf').disabled = !temDoc;
       // Só nota autorizada pode ser cancelada; substituída já foi cancelada junto
-      el('notaCancelar').hidden = !(n.status === 'autorizada' && n.chave_acesso);
+      var podeOperar = n.status === 'autorizada' && !!n.chave_acesso;
+      el('notaCancelar').hidden = !podeOperar;
+      // Substituir é o que faz o papel de "alterar": a NFS-e não se altera
+      el('notaSubstituir').hidden = !podeOperar;
       mostrarXml('dps');
       el('dlgNota').showModal();
     }).catch(function (e) { aviso(e.message, 'erro'); });
@@ -865,6 +868,123 @@
   };
   el('notaBaixarPdf').onclick = function () {
     var n = estado.notaAtual; baixar('/nfse/' + n.id + '/danfse', 'DANFSe-' + (n.chave_acesso || n.id) + '.pdf');
+  };
+
+  /* Substituição.
+     A NFS-e não tem "alterar": corrigir é emitir uma nova em substituição, e a
+     Sefin cancela a original sozinha (evento E0840, "cancelamento por
+     substituição"). Por isso a tela parte dos dados da nota original — o
+     comum é mudar um campo e manter o resto. */
+  el('notaSubstituir').onclick = function () {
+    var n = estado.notaAtual;
+    if (!n || !n.chave_acesso) {
+      return aviso('Só é possível substituir nota autorizada.', 'erro');
+    }
+    var v = valoresDoXml(n.dps_xml);
+
+    el('subOriginal').innerHTML =
+      'Substituindo a nota <strong>' + esc(n.serie) + '/' + esc(n.numero) + '</strong>' +
+      ' de ' + fmtDataHora(n.criado_em) +
+      '<div class="mono" style="font-size:11.5px;margin-top:5px">' + esc(n.chave_acesso) + '</div>';
+
+    el('sb_doc').value = v.docTomador || '';
+    el('sb_nome').value = v.tomador || '';
+    el('sb_codigo').value = v.codigoTributacao || '';
+    el('sb_servico').value = v.descricao || '';
+    el('sb_valor').value = v.valorServico != null ? v.valorServico : '';
+    el('sb_aliquota').value = v.aliquota != null ? v.aliquota : '';
+    el('sb_motivo').value = '99';
+    el('sb_descricao').value = '';
+
+    el('dlgNota').close();
+    el('dlgSubstituir').showModal();
+  };
+
+  /* Lê da DPS original os campos que a substituta reaproveita. */
+  function valoresDoXml(xml) {
+    if (!xml) return {};
+    var pega = function (tag) {
+      var m = xml.match(new RegExp('<' + tag + '>([^<]*)</' + tag + '>'));
+      return m ? m[1] : null;
+    };
+    var toma = (xml.match(/<toma>[\s\S]*?<\/toma>/) || [''])[0];
+    var pegaToma = function (tag) {
+      var m = toma.match(new RegExp('<' + tag + '>([^<]*)</' + tag + '>'));
+      return m ? m[1] : null;
+    };
+    return {
+      docTomador: pegaToma('CNPJ') || pegaToma('CPF'),
+      tomador: pegaToma('xNome'),
+      codigoTributacao: pega('cTribNac'),
+      descricao: pega('xDescServ'),
+      valorServico: pega('vServ') ? Number(pega('vServ')) : null,
+      aliquota: pega('pAliq') ? Number(pega('pAliq')) : null,
+      municipioTomador: (toma.match(/<cMun>([^<]*)</) || [])[1] || null
+    };
+  }
+
+  el('subCancelar').onclick = function () { el('dlgSubstituir').close(); };
+
+  el('formSubstituir').onsubmit = function (ev) {
+    ev.preventDefault();
+    var n = estado.notaAtual;
+    var motivo = el('sb_motivo').value;
+    var descricao = el('sb_descricao').value.trim();
+
+    if (motivo === '99' && !descricao) {
+      return aviso('Descreva o motivo quando escolher "Outros".', 'erro');
+    }
+    if (!/^\d{6}$/.test(digitos(el('sb_codigo').value))) {
+      return aviso('O código de tributação tem 6 dígitos.', 'erro');
+    }
+    if (!el('sb_servico').value.trim()) return aviso('Descreva o serviço.', 'erro');
+    var valor = Number(el('sb_valor').value);
+    if (!valor || valor <= 0) return aviso('Informe o valor do serviço.', 'erro');
+
+    var empresa = estado.empresas.filter(function (e) { return e.cnpj === n.cnpj_empresa; })[0];
+    var producao = empresa && empresa.ambiente === 'producao';
+
+    if (!confirm('Substituir a nota ' + n.serie + '/' + n.numero + '?\n\n' +
+                 'A original será CANCELADA pela Sefin e uma nova será emitida ' +
+                 'no lugar, com ' + fmtMoeda(valor) + '.' +
+                 (producao ? '\n\nEM PRODUÇÃO: as duas têm valor fiscal.' : ''))) return;
+
+    var doc = docLimpo(el('sb_doc').value);
+    var corpo = {
+      cnpjEmpresa: n.cnpj_empresa,
+      referencia: 'SUBST-' + n.id + '-' + Date.now().toString().slice(-6),
+      substituicao: {
+        chaveSubstituida: n.chave_acesso,
+        codigoMotivo: Number(motivo),
+        motivo: descricao || undefined
+      },
+      servico: {
+        codigoTributacaoNacional: digitos(el('sb_codigo').value),
+        descricao: el('sb_servico').value.trim()
+      },
+      valores: { valorServico: valor }
+    };
+    if (el('sb_aliquota').value !== '') corpo.valores.aliquotaIss = Number(el('sb_aliquota').value);
+    if (doc) {
+      corpo.tomador = {};
+      if (doc.length === 14) corpo.tomador.cnpj = doc; else corpo.tomador.cpf = doc;
+      corpo.tomador.razaoSocial = el('sb_nome').value.trim();
+      var v = valoresDoXml(n.dps_xml);
+      if (v.municipioTomador) corpo.tomador.endereco = { codigoMunicipio: v.municipioTomador };
+    }
+
+    var botao = ev.target.querySelector('button[type=submit]');
+    botao.disabled = true;
+    api('/nfse', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo)
+    }).then(function (r) {
+      el('dlgSubstituir').close();
+      aviso('Substituta enviada (nota ' + r.serie + '/' + r.numero + '). ' +
+            'A original é cancelada pela Sefin ao autorizar a nova.');
+      carregarNotas();
+    }).catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { botao.disabled = false; });
   };
 
   el('notaCancelar').onclick = function () {
