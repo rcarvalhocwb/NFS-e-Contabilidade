@@ -312,12 +312,24 @@
               </div>
             </div>
             <div class="grade c2" style="margin-top:14px">
-              <div>
+              <div id="wrapAmbienteNovo">
                 <label for="f_amb">Ambiente de operação</label>
                 <select id="f_amb">
                   <option value="homologacao">Homologação (teste)</option>
                   <option value="producao">Produção (valor fiscal)</option>
                 </select>
+              </div>
+              <!-- Empresa já cadastrada: trocar de ambiente é ação própria, com
+                   confirmação, e não um campo salvo junto com o telefone. -->
+              <div class="caixa-amb" id="blocoAmbiente" hidden
+                   style="margin-top:18px;grid-column:1/-1">
+                <h4>Ambiente de operação <span id="seloAmbienteEmpresa"></span></h4>
+                <div class="ajuda" id="textoAmbiente" style="margin-bottom:13px"></div>
+                <dl class="kv" style="margin-bottom:14px">
+                  <dt>Próxima nota</dt><dd id="proximaNota">—</dd>
+                  <dt>Certificado</dt><dd id="certAmbiente">—</dd>
+                </dl>
+                <button type="button" id="btnTrocarAmbiente"></button>
               </div>
               <div id="wrapAtivo" hidden>
                 <label for="f_ativo">Situação</label>

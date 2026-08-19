@@ -374,7 +374,7 @@
     }).catch(function (e) { aviso(e.message, 'erro'); });
   }
 
-  function trocarAmbiente(e) {
+  function trocarAmbiente(e, aoConcluir) {
     var paraProducao = e.ambiente === 'homologacao';
     var nome = e.nome_fantasia || e.razao_social;
 
@@ -408,8 +408,49 @@
       var n = r.numeracao;
       aviso(nome + ' agora emite em ' + nomeAmbiente(r.ambiente) +
         (n ? '. Próxima nota: série ' + n.serie + ', número ' + n.prox_numero + '.' : '.'));
-      carregarEmpresas();
+      if (aoConcluir) aoConcluir(); else carregarEmpresas();
     }).catch(function (err) { aviso(err.message, 'erro'); });
+  }
+
+  /* Bloco de ambiente na tela da empresa.
+     Empresa nova escolhe o ambiente no cadastro (o select); empresa já salva
+     troca por aqui, com confirmação — mudar de teste para produção decide se a
+     próxima nota é documento fiscal, e não pode ser salvo junto com o telefone. */
+  function montarBlocoAmbiente(empresa, numeracoes) {
+    var producao = empresa.ambiente === 'producao';
+    var lista = estado.empresas.filter(function (x) { return x.cnpj === empresa.cnpj; })[0] || {};
+
+    el('seloAmbienteEmpresa').innerHTML = producao
+      ? '<span class="selo-status s-erro">produção</span>'
+      : '<span class="selo-status s-info sem-ponto">homologação</span>';
+
+    el('textoAmbiente').textContent = producao
+      ? 'As notas emitidas por esta empresa têm valor fiscal e geram imposto.'
+      : 'As notas são de teste. Não têm valor fiscal e não geram imposto.';
+
+    var num = (numeracoes || []).filter(function (n) { return n.ambiente === empresa.ambiente; })[0];
+    el('proximaNota').textContent = num
+      ? 'série ' + num.serie + ', número ' + num.prox_numero
+      : 'ainda não numerada';
+
+    // Sem certificado válido a produção não é permitida; dizer isso aqui evita
+    // a recusa depois do clique.
+    el('certAmbiente').innerHTML = seloCertificado(lista.certificado_valido_ate);
+
+    var b = el('btnTrocarAmbiente');
+    b.textContent = producao ? 'Voltar para homologação (teste)' : 'Passar para produção';
+    b.className = producao ? 'perigo' : 'primario';
+    b.onclick = function () {
+      trocarAmbiente({
+        cnpj: empresa.cnpj,
+        ambiente: empresa.ambiente,
+        nome_fantasia: empresa.nome_fantasia,
+        razao_social: empresa.razao_social
+      }, function () { abrirEmpresa(empresa.cnpj); });
+    };
+
+    el('blocoAmbiente').hidden = false;
+    el('wrapAmbienteNovo').hidden = true;   // o select é só para empresa nova
   }
 
   function preencherSelectsEmpresa() {
@@ -467,6 +508,8 @@
   el('btnNovaEmp').onclick = function () {
     limparFormulario(); estado.editando = null;
     el('f_cnpj').disabled = false; el('wrapAtivo').hidden = true;
+    el('blocoAmbiente').hidden = true;
+    el('wrapAmbienteNovo').hidden = false;
     travarAbasNovas(true); aba('identificacao');
     TELAS.empresaEdit.titulo = 'Nova empresa';
     TELAS.empresaEdit.sub = 'Numeração, certificado e integração ficam disponíveis após salvar';
@@ -517,6 +560,8 @@
     }).catch(function (e) { aviso(e.message, 'erro'); });
 
     api('/empresas/' + cnpj + '/numeracao').then(function (linhas) {
+      api('/empresas/' + cnpj).then(function (e) { montarBlocoAmbiente(e, linhas); })
+        .catch(function () {});
       (linhas || []).forEach(function (n) {
         if (n.ambiente === 'homologacao') { el('f_serie_h').value = n.serie; el('f_num_h').value = n.prox_numero; }
         else { el('f_serie_p').value = n.serie; el('f_num_p').value = n.prox_numero; }
@@ -557,7 +602,14 @@
     var corpo = coletarEmpresa();
     if (!corpo.razaoSocial) { aba('identificacao'); return aviso('Razão social é obrigatória.', 'erro'); }
     if (!/^\d{7}$/.test(corpo.codigoMunicipio)) { aba('endereco'); return aviso('Código do município deve ter 7 dígitos (IBGE).', 'erro'); }
-    if (estado.editando) corpo.ativo = el('f_ativo').value === 'true'; else corpo.cnpj = cnpj;
+    if (estado.editando) {
+      corpo.ativo = el('f_ativo').value === 'true';
+      // Ambiente não vai junto: quem edita troca pelo bloco próprio, que exige
+      // confirmação. Mandar aqui permitiria contornar essa proteção.
+      delete corpo.ambiente;
+    } else {
+      corpo.cnpj = cnpj;
+    }
 
     el('btnSalvarEmp').disabled = true;
     api(estado.editando ? '/empresas/' + estado.editando : '/empresas', {
