@@ -72,10 +72,34 @@ test('não optante mantém pAliq', () => {
   assert.match(xml, /<pAliq>5\.00<\/pAliq>/);
 });
 
-test('SN sem percentual informado declara indTotTrib em vez de inventar valor', () => {
+test('SN sem percentual informado omite o grupo de total de tributos', () => {
+  /* Este teste já exigiu o contrário — <indTotTrib>0</indTotTrib>, declarando
+     ausência de informação. A Sefin recusou em produção:
+       "E0712: Para ME/EPP o indicador de informação de valor total de tributos
+        não pode ser informado."
+     Para quem está no Simples a única forma aceita é pTotTribSN; não havendo
+     percentual, o grupo inteiro fica de fora. */
   const xml = montarDps(EMPRESA_SN, DADOS_MIN, OPTS);
-  assert.match(xml, /<indTotTrib>0<\/indTotTrib>/);
-  assert.ok(!/<pTotTribSN>/.test(xml));
+  assert.ok(!/<indTotTrib>/.test(xml), 'ME/EPP não pode declarar indTotTrib');
+  assert.ok(!/<totTrib>/.test(xml), 'grupo vazio seria recusado pelo esquema');
+});
+
+test('SN aceita o percentual como número simples', () => {
+  // O formulário e os padrões da empresa guardam um percentual só: para o
+  // Simples não há repartição por esfera, é a alíquota efetiva do PGDAS
+  const xml = montarDps(EMPRESA_SN, {
+    ...DADOS_MIN, valores: { valorServico: 100, percentualTotalTributos: 6 }
+  }, OPTS);
+  assert.match(xml, /<pTotTribSN>6\.00<\/pTotTribSN>/);
+});
+
+test('não optante segue detalhando por esfera', () => {
+  const xml = montarDps({ ...EMPRESA_SN, op_simp_nac: 1 }, {
+    ...DADOS_MIN,
+    valores: { valorServico: 100, percentualTotalTributos: { federal: 4, municipal: 2 } }
+  }, OPTS);
+  assert.match(xml, /<pTotTribFed>4\.00<\/pTotTribFed>/);
+  assert.match(xml, /<pTotTribMun>2\.00<\/pTotTribMun>/);
 });
 
 test('endereço do prestador não vai na DPS (E0128)', () => {

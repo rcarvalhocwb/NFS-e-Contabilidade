@@ -254,11 +254,18 @@ function grupoIbsCbs(dados) {
 
 function totalTributos(v, optanteSN) {
   if (optanteSN) {
-    // Sem o percentual informado, declara ausência de informação em vez de
-    // inventar um número — o valor tem efeito fiscal.
-    return v.percentualTotalTributosSN !== undefined
-      ? tag('pTotTribSN', dec(v.percentualTotalTributosSN))
-      : tag('indTotTrib', '0');
+    /* ME/EPP não pode declarar indTotTrib:
+       "E0712: Para ME/EPP o indicador de informação de valor total de tributos
+        não pode ser informado."
+       Para quem está no Simples só existe uma resposta válida — a alíquota
+       efetiva do PGDAS-D em pTotTribSN. Sem ela, o bloco não vai; declarar
+       ausência é justamente o que a Sefin recusa.
+       O percentual chega como número: para o optante do Simples não há
+       repartição por esfera, que é a forma dos demais regimes. */
+    const p = v.percentualTotalTributosSN !== undefined
+      ? v.percentualTotalTributosSN
+      : (typeof v.percentualTotalTributos === 'number' ? v.percentualTotalTributos : undefined);
+    return p !== undefined ? tag('pTotTribSN', dec(p)) : '';
   }
   if (v.percentualTotalTributos !== undefined) {
     return `<pTotTrib>` +
@@ -268,6 +275,14 @@ function totalTributos(v, optanteSN) {
     `</pTotTrib>`;
   }
   return tag('indTotTrib', '0');
+}
+
+/* O grupo <totTrib> exige uma das três formas (pTotTrib, pTotTribSN ou
+   indTotTrib). Vazio, seria <totTrib></totTrib> e o esquema recusa — então
+   quando não há nada a declarar, o grupo inteiro fica de fora. */
+function blocoTotalTributos(v, optanteSN) {
+  const conteudo = totalTributos(v, optanteSN);
+  return conteudo ? `<totTrib>${conteudo}</totTrib>` : '';
 }
 
 /* Id da DPS: "DPS" + cMun(7) + tipoInsc(1: 1=CPF 2=CNPJ) + inscrição(14) + série(5) + número(15) = 45 */
@@ -373,7 +388,14 @@ function montarDps(empresa, dados, opts) {
   `</subst>` : '') +
   `<prest>` +
     tag('CNPJ', empresa.cnpj) +
-    tag('IM', empresa.inscricao_municipal) +
+    // A IM só vai quando o município a exige NESTE ambiente. A Sefin valida
+    // contra o CNC do município emissor e recusa nos dois sentidos:
+    //   E0116 "A IM deve ser informada" — quando falta
+    //   E0120 "A IM não deve ser informado, pois não existem informações
+    //          complementares registradas no CNC" — quando sobra
+    // Curitiba exige em produção restrita e proíbe em produção. Quem decide é
+    // a tabela regra_im_dps; sem regra conhecida, envia (comportamento antigo).
+    tag('IM', empresa.omitir_im ? undefined : empresa.inscricao_municipal) +
     // O endereço do prestador NÃO vai na DPS quando o emitente é o próprio
     // prestador (tpEmit=1, nosso caso): a Sefin recusa com
     // "E0128: O endereço nacional do prestador do serviço não deve ser
@@ -490,9 +512,7 @@ function montarDps(empresa, dados, opts) {
     `<trib>` +
       tributoMunicipal(v, optanteSN, issRetido, versao) +
       tributosFederais(v) +
-      `<totTrib>` +
-        totalTributos(v, optanteSN) +
-      `</totTrib>` +
+      blocoTotalTributos(v, optanteSN) +
     `</trib>` +
   `</valores>` +
   grupoIbsCbs(dados) +

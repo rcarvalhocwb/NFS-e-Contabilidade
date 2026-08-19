@@ -160,8 +160,37 @@ async function transmitir(nota) {
     }
   }
 
+  if (!autorizada) await aprenderRegraIm(nota, empresa, resp.json);
+
   console.log(`[fila] nota ${nota.id} ${autorizada ? 'autorizada' : 'rejeitada'} (HTTP ${resp.status})`);
   await notificar(nota.id);
+}
+
+/* A Sefin acabou de dizer se a IM devia ou não estar na DPS. Guardar isso
+   evita queimar um segundo número da sequência fiscal pelo mesmo motivo:
+   E0116 e E0120 são a mesma pergunta respondida nos dois sentidos, e a
+   resposta vale para o par município + ambiente, não para a empresa. */
+async function aprenderRegraIm(nota, empresa, retorno) {
+  var codigos = ((retorno && retorno.erros) || []).map(function (e) {
+    return String(e.Codigo || e.codigo || '');
+  });
+  var exige;
+  if (codigos.indexOf('E0116') >= 0) exige = true;       // faltou a IM
+  else if (codigos.indexOf('E0120') >= 0) exige = false;  // sobrou a IM
+  else return;
+
+  var ambiente = nota.ambiente || empresa.ambiente;
+  await db.query(
+    `INSERT INTO regra_im_dps (codigo_municipio, ambiente, exige_im, origem, observacao)
+     VALUES ($1, $2, $3, 'sefin', $4)
+     ON CONFLICT (codigo_municipio, ambiente) DO UPDATE SET
+       exige_im = EXCLUDED.exige_im, origem = 'sefin',
+       observacao = EXCLUDED.observacao, atualizado_em = now()`,
+    [empresa.codigo_municipio, ambiente, exige,
+     'Aprendido da rejeicao da DPS ' + nota.serie + '/' + nota.numero]);
+
+  console.log('[fila] regra da IM aprendida: municipio ' + empresa.codigo_municipio +
+              ' em ' + ambiente + ' ' + (exige ? 'exige' : 'proibe') + ' a IM');
 }
 
 /* Processa até `limite` notas por rodada. Exportada para permitir

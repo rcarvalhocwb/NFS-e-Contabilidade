@@ -14,6 +14,21 @@ async function buscarEmpresa(cnpj) {
   return r.rows[0];
 }
 
+/* A IM do prestador vai na DPS?
+   A Sefin valida contra o CNC do município emissor e recusa nos dois sentidos:
+   E0116 quando falta, E0120 quando sobra. O padrão observado é enviar em
+   homologação e omitir em produção — foi assim em Curitiba e é o que o CNC
+   costuma responder, já que a produção restrita tem cadastro de teste e a
+   produção só tem os municípios que registraram informações complementares.
+   A tabela existe para o município que fugir disso: regra gravada vence. */
+async function omitirIm(empresa, ambiente) {
+  const r = await db.query(
+    'SELECT exige_im FROM regra_im_dps WHERE codigo_municipio = $1 AND ambiente = $2',
+    [empresa.codigo_municipio, ambiente]);
+  if (r.rows.length) return !r.rows[0].exige_im;
+  return ambiente === 'producao';
+}
+
 /* Reserva o próximo número de DPS da empresa NO AMBIENTE informado (atômico).
    A numeração é independente por ambiente: o contador de homologação não pode
    consumir números da sequência de produção. */
@@ -107,11 +122,10 @@ async function emitir(cnpjEmpresa, dados, contexto = {}) {
     numero
   });
 
-  const dpsXml = montarDps(empresa, dados, {
-    tpAmb: amb.tpAmb,
-    verAplic: config.verAplic,
-    idDps, serie, numero
-  });
+  const dpsXml = montarDps(
+    Object.assign({}, empresa, { omitir_im: await omitirIm(empresa, empresa.ambiente) }),
+    dados,
+    { tpAmb: amb.tpAmb, verAplic: config.verAplic, idDps, serie, numero });
   const dpsAssinada = assinarXml(dpsXml, 'infDPS', cert);
 
   let nota;
