@@ -4,10 +4,14 @@
   "description": "Gateway de comunicação entre sistema emissor e o Portal Nacional NFS-e (Sefin Nacional)",
   "main": "src/server.js",
   "scripts": {
+    "prestart": "node scripts/garantir-banco.js",
     "start": "node src/server.js",
+    "predev": "node scripts/garantir-banco.js",
     "dev": "node --watch src/server.js",
     "migrate": "node scripts/migrate.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "validar-xsd": "node scripts/validar-xsd.js",
+    "backup": "node scripts/backup.js"
   },
   "engines": {
     "node": ">=18"
