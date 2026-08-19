@@ -15,7 +15,15 @@ function dps(dados) {
   }, dados), OPTS);
 }
 
-/* Natureza da operação --------------------------------------------------- */
+/* Natureza da operação ---------------------------------------------------
+ *
+ * Os valores vêm de TSTribISSQN (tiposSimples_v1.01.xsd):
+ *   1 tributável · 2 imunidade · 3 exportação · 4 não incidência
+ *
+ * Estes testes já afirmaram o contrário — 2=exportação, 4=imunidade — porque o
+ * código estava assim. Uma nota de exportação saía declarada como imunidade, e
+ * o teste confirmava o erro em vez de pegá-lo. Se for mexer aqui, confira
+ * contra o XSD, não contra o código. */
 
 test('operação tributável continua sendo o padrão', () => {
   const x = dps({});
@@ -24,31 +32,70 @@ test('operação tributável continua sendo o padrão', () => {
   assert.ok(!x.includes('exigSusp'));
 });
 
-test('imunidade declara o tipo e não envia alíquota', () => {
+test('imunidade é o tipo 2 e declara qual imunidade', () => {
   // Entidade imune não tem ISS a recolher: mandar pAliq seria declarar imposto
   // onde não há.
-  const x = dps({ valores: { valorServico: 1000, aliquotaIss: 5, tributacaoIssqn: 4, tipoImunidade: 1 } });
-  assert.match(x, /<tribISSQN>4<\/tribISSQN>/);
+  const x = dps({ valores: { valorServico: 1000, aliquotaIss: 5, tributacaoIssqn: 2, tipoImunidade: 1 } });
+  assert.match(x, /<tribISSQN>2<\/tribISSQN>/);
   assert.match(x, /<tpImunidade>1<\/tpImunidade>/);
   assert.ok(!x.includes('<pAliq>'), 'imunidade não pode declarar alíquota');
 });
 
-test('exportação de serviço leva o país e dispensa alíquota', () => {
-  const x = dps({
-    servico: { codigoTributacaoNacional: '110201', descricao: 'Servico', codigoPaisPrestacao: 'US' },
-    valores: { valorServico: 1000, aliquotaIss: 5, tributacaoIssqn: 2 }
-  });
-  assert.match(x, /<tribISSQN>2<\/tribISSQN>/);
-  assert.match(x, /<cPaisPrestacao>US<\/cPaisPrestacao>/);
+test('não incidência é o tipo 4, sem campo extra', () => {
+  const x = dps({ valores: { valorServico: 1000, aliquotaIss: 5, tributacaoIssqn: 4 } });
+  assert.match(x, /<tribISSQN>4<\/tribISSQN>/);
+  assert.ok(!x.includes('<tpImunidade>'), 'não incidência não é imunidade');
+  assert.ok(!x.includes('<cPaisResult>'));
   assert.ok(!x.includes('<pAliq>'));
 });
 
-test('exigibilidade suspensa é recusada até a Sefin publicar o esquema', () => {
-  // tribISSQN 5 e 6 constam da NT 009, mas o XSD publicado só aceita 1 a 4.
-  // Recusar aqui evita queimar número de DPS numa nota que voltaria rejeitada.
-  assert.throws(() => dps({ valores: {
-    valorServico: 1000, tributacaoIssqn: 5, tipoSuspensao: 1, numeroProcesso: '0001234-56.2026'
-  } }), /exigibilidade suspensa/);
+test('exportação de serviço é o tipo 3 e leva o país', () => {
+  const x = dps({
+    servico: { codigoTributacaoNacional: '110201', descricao: 'Servico', codigoPaisPrestacao: 'US' },
+    valores: { valorServico: 1000, aliquotaIss: 5, tributacaoIssqn: 3 }
+  });
+  assert.match(x, /<tribISSQN>3<\/tribISSQN>/);
+  assert.match(x, /<cPaisPrestacao>US<\/cPaisPrestacao>/);
+  assert.ok(!x.includes('<tpImunidade>'), 'exportação não é imunidade');
+  assert.ok(!x.includes('<pAliq>'));
+});
+
+test('exigibilidade suspensa é um grupo à parte, não uma natureza', () => {
+  /* O esquema tem exigSusp (tpSusp + nProcesso) dentro de tribMun, ao lado da
+     natureza — não como valor dela. Uma operação tributável com liminar segue
+     sendo tributável; o que muda é a exigibilidade. */
+  const x = dps({ valores: {
+    valorServico: 1000, aliquotaIss: 5, tributacaoIssqn: 1,
+    // 30 dígitos, que é o que o esquema pede em nProcesso
+    exigibilidadeSuspensa: { tipo: 1, numeroProcesso: '000123456202681600010000000000' }
+  } });
+  assert.match(x, /<tribISSQN>1<\/tribISSQN>/);
+  assert.match(x, /<exigSusp><tpSusp>1<\/tpSusp><nProcesso>000123456202681600010000000000<\/nProcesso><\/exigSusp>/);
+});
+
+test('processo com pontuação do padrão CNJ tem os separadores removidos', () => {
+  // O número aparece pontuado na decisão; colar assim é o caminho natural
+  const x = dps({ valores: { valorServico: 1000, tributacaoIssqn: 1,
+    exigibilidadeSuspensa: { tipo: 2, numeroProcesso: '0001.2345.6202.6816.0001.0000.0000.00' } } });
+  assert.match(x, /<nProcesso>000123456202681600010000000000<\/nProcesso>/);
+});
+
+test('processo com quantidade errada de dígitos é recusado', () => {
+  assert.throws(() => dps({ valores: { valorServico: 1000,
+    exigibilidadeSuspensa: { tipo: 1, numeroProcesso: '12345' } } }),
+    /30 dígitos/);
+});
+
+test('tipo de suspensão fora de 1 e 2 é recusado', () => {
+  assert.throws(() => dps({ valores: { valorServico: 1000,
+    exigibilidadeSuspensa: { tipo: 9, numeroProcesso: '000123456202681600010000000000' } } }),
+    /1 \(decisão judicial\)/);
+});
+
+test('natureza fora de 1 a 4 é recusada antes de gastar número', () => {
+  // Recusar aqui evita queimar um número de DPS numa nota que voltaria rejeitada
+  assert.throws(() => dps({ valores: { valorServico: 1000, tributacaoIssqn: 5 } }),
+    /tributacaoIssqn deve ser 1/);
 });
 
 /* Retenções federais ----------------------------------------------------- */
@@ -124,8 +171,15 @@ test('benefício municipal leva número e redução, sem tpBM', () => {
 });
 
 test('exportação declara o país de resultado em cPaisResult', () => {
-  const x = dps({ valores: { valorServico: 1000, tributacaoIssqn: 2, paisResultado: 'US' } });
-  assert.match(x, /<tribISSQN>2<\/tribISSQN><cPaisResult>US<\/cPaisResult>/);
+  // Exportação é o tipo 3, e cPaisResult vem logo depois no esquema
+  const x = dps({ valores: { valorServico: 1000, tributacaoIssqn: 3, paisResultado: 'US' } });
+  assert.match(x, /<tribISSQN>3<\/tribISSQN><cPaisResult>US<\/cPaisResult>/);
+});
+
+test('cPaisResult não sai em natureza que não é exportação', () => {
+  const x = dps({ valores: { valorServico: 1000, tributacaoIssqn: 2,
+                             tipoImunidade: 1, paisResultado: 'US' } });
+  assert.ok(!x.includes('cPaisResult'), 'país de resultado é campo de exportação');
 });
 
 test('serviço no exterior troca cLocPrestacao por cPaisPrestacao', () => {

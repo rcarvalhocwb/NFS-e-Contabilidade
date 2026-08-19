@@ -122,7 +122,25 @@
 
   /* ------------------------------------------------------------- carga */
 
+  /* Indicadores de operação do IBS/CBS: lista da Sefin, carregada uma vez.
+     Sem ela o campo é digitação de seis dígitos sem significado, e um código
+     que não existe na tabela só é recusado depois de gastar o número da DPS. */
+  function carregarIndicadoresOperacao() {
+    api('/emissor/indicadores-operacao').then(function (lista) {
+      var sel = el('fIbsOperacao');
+      sel.innerHTML = '<option value="">Escolha…</option>';
+      lista.forEach(function (i) {
+        var o = document.createElement('option');
+        o.value = i.codigo;
+        o.textContent = i.codigo + ' — ' + i.tipo;
+        o.title = i.caracteristica || '';
+        sel.appendChild(o);
+      });
+    }).catch(function () { /* o grupo IBS/CBS é facultativo; sem lista, sem bloco */ });
+  }
+
   function iniciar() {
+    carregarIndicadoresOperacao();
     api('/usuarios/eu').then(function (u) {
       estado.usuario = u;
       return api('/emissor/contexto');
@@ -315,13 +333,15 @@
 
   /* A natureza da operação decide o que mais precisa ser informado — e o que
      não pode ser: imunidade e não incidência não declaram alíquota de ISS. */
+  /* Naturezas conforme TSTribISSQN do esquema oficial:
+       1 tributável · 2 imunidade · 3 exportação · 4 não incidência
+     A exigibilidade suspensa é marcada à parte, porque no esquema ela é um
+     grupo próprio e não uma natureza — pode acompanhar qualquer uma delas. */
   function aplicarNatureza() {
     var n = el('fNatureza').value;
-    el('wrapImunidade').hidden = n !== '4';
-    el('wrapSuspensao').hidden = !(n === '5' || n === '6');
-    el('wrapPais').hidden = n !== '2';
-    if (n === '5') el('fTipoSusp').value = '1';
-    if (n === '6') el('fTipoSusp').value = '2';
+    el('wrapImunidade').hidden = n !== '2';
+    el('wrapPais').hidden = n !== '3';
+    el('wrapSuspensao').hidden = !el('fSuspensa').checked;
 
     var tributavel = n === '1';
     var e = empresaAtual();
@@ -335,6 +355,7 @@
     }
   }
   el('fNatureza').onchange = function () { aplicarNatureza(); atualizarTotal(); };
+  el('fSuspensa').onchange = aplicarNatureza;
 
   el('btnBuscarDoc').onclick = function () {
     var doc = docLimpo(el('fDoc').value);
@@ -498,10 +519,12 @@
     };
     if (!el('fAliquota').disabled && num('fAliquota') !== undefined) valores.aliquotaIss = num('fAliquota');
     if (natureza !== '1') valores.tributacaoIssqn = Number(natureza);
-    if (natureza === '4') valores.tipoImunidade = Number(el('fTipoImunidade').value);
-    if (natureza === '5' || natureza === '6') {
-      valores.tipoSuspensao = Number(el('fTipoSusp').value);
-      valores.numeroProcesso = el('fNumProcesso').value.trim() || undefined;
+    if (natureza === '2') valores.tipoImunidade = Number(el('fTipoImunidade').value);
+    if (el('fSuspensa').checked) {
+      valores.exigibilidadeSuspensa = {
+        tipo: Number(el('fTipoSusp').value),
+        numeroProcesso: el('fNumProcesso').value.trim() || undefined
+      };
     }
     if (num('fDescIncond') !== undefined) valores.descontoIncondicionado = num('fDescIncond');
     if (num('fDescCond') !== undefined) valores.descontoCondicionado = num('fDescCond');
@@ -543,7 +566,7 @@
         documentoTecnico: el('fDocTec').value.trim() || undefined,
         pedido: el('fPedido').value.trim() || undefined,
         informacoesComplementares: el('fCompl').value.trim() || undefined,
-        codigoPaisPrestacao: natureza === '2' ? (el('fPais').value.trim().toUpperCase() || undefined) : undefined,
+        codigoPaisPrestacao: natureza === '3' ? (el('fPais').value.trim().toUpperCase() || undefined) : undefined,
         obra: montarObra()
       },
       valores: valores
@@ -595,8 +618,11 @@
     if (munTom && munTom.length !== 7) return 'O código do município do cliente tem 7 dígitos (IBGE).';
     var munPrest = digitos(el('fMunPrest').value);
     if (munPrest && munPrest.length !== 7) return 'O código do município da prestação tem 7 dígitos (IBGE).';
-    if (el('fNatureza').value === '2' && !el('fPais').value.trim()) {
+    if (el('fNatureza').value === '3' && !el('fPais').value.trim()) {
       return 'Exportação de serviço exige o país da prestação.';
+    }
+    if (el('fSuspensa').checked && !el('fNumProcesso').value.trim()) {
+      return 'Exigibilidade suspensa exige o número do processo.';
     }
     /* Formato do NBS conferido aqui: a Sefin recusa com E1235 ("falha no
        esquema XML") depois de reservar número e assinar — um dígito a menos
@@ -609,9 +635,9 @@
       if (!nbs) return 'Com IBS/CBS, informe o código NBS do serviço.';
       if (!digitos(el('fIbsCst').value)) return 'Informe o CST do IBS/CBS.';
       if (!digitos(el('fIbsClass').value)) return 'Informe a classificação tributária do IBS/CBS.';
-      if (!digitos(el('fIbsOperacao').value)) return 'Informe o indicador da operação (cIndOp).';
+      if (!el('fIbsOperacao').value) return 'Escolha o indicador da operação (cIndOp).';
       if (digitos(el('fIbsClass').value).length > 6) return 'A classificação tributária tem até 6 dígitos.';
-      if (digitos(el('fIbsOperacao').value).length > 6) return 'O indicador da operação tem até 6 dígitos.';
+
     }
     if (el('fObraCodigo').value.trim() && el('fObraCib').value.trim()) {
       return 'Informe o código da obra OU o CIB, não os dois.';

@@ -236,4 +236,12 @@ router.post('/registrar-uso', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* Tabela de indicadores de operação do IBS/CBS (Anexo VII).
+   Vai para a tela como lista: são seis dígitos sem nada de mnemônico, e um
+   código fora da tabela é recusado pela Sefin mesmo bem formado. */
+router.get('/indicadores-operacao', (_req, res) => {
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.json(require('../nfse/indicadoresOperacao').paraServicos());
+});
+
 module.exports = router;

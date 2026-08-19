@@ -8,6 +8,7 @@
 
 const { limparDocumento } = require('../util/documento');
 const { dataLocalISO } = require('../util/data');
+const indOp = require('./indicadoresOperacao');
 
 function esc(v) {
   return String(v)
@@ -32,43 +33,66 @@ function dec(v) { return Number(v).toFixed(2); }
  * Bloco do ISSQN.
  *
  * `tributacaoIssqn` diz qual é a natureza da operação — e muda o que mais pode
- * ir no bloco:
- *   1 operação tributável (padrão)
- *   2 exportação de serviço      → ISS não incide, exige país de destino
- *   3 não incidência
- *   4 imunidade                  → exige o tipo de imunidade
- *   5 exigibilidade suspensa por decisão judicial → exige o processo
- *   6 exigibilidade suspensa por processo administrativo
+ * ir no bloco. Os valores são os do esquema oficial (TSTribISSQN):
+ *   1 operação tributável  → aceita pAliq
+ *   2 imunidade            → exige tpImunidade (0 a 5)
+ *   3 exportação de serviço → exige cPaisResult
+ *   4 não incidência
  *
- * Sem isso o gateway só emitia operação tributável, o que deixa de fora
- * entidades imunes, exportação de serviço e quem tem liminar.
+ * ATENÇÃO À ORDEM. Até a versão 1.4.0 este código usava 2=exportação,
+ * 3=não incidência e 4=imunidade — três significados trocados em relação ao
+ * XSD. Uma nota de exportação saía declarada como imunidade. Só não causou
+ * dano porque as notas emitidas até aqui eram todas do tipo 1. Se for mexer
+ * nisto, confira contra tiposSimples_v1.01.xsd antes.
+ *
+ * A exigibilidade suspensa NÃO é um valor de tribISSQN: é o grupo exigSusp,
+ * que acompanha qualquer natureza.
  */
+/* Bloco da exigibilidade suspensa.
+ *
+ * nProcesso é [0-9]{30} no esquema: trinta dígitos, sem pontuação. O número no
+ * padrão CNJ que aparece na decisão tem 20 dígitos e vem cheio de pontos e
+ * traços — colar do documento e mandar direto é recusado. A pontuação sai
+ * aqui, e o que não fecha 30 dígitos falha antes de gastar número de DPS. */
+function blocoExigSuspensa(susp) {
+  const tipo = String(susp.tipo || susp.tipoSuspensao || '');
+  if (!['1', '2'].includes(tipo)) {
+    throw Object.assign(new Error(
+      'exigibilidadeSuspensa.tipo deve ser 1 (decisão judicial) ou 2 (processo administrativo).'),
+      { status: 400 });
+  }
+  const numero = String(susp.numeroProcesso || '').replace(/\D/g, '');
+  if (numero.length !== 30) {
+    throw Object.assign(new Error(
+      `O número do processo tem 30 dígitos no leiaute da Sefin (você informou ${numero.length}). ` +
+      'É o número do processo sem pontuação, completado com zeros à esquerda quando necessário.'),
+      { status: 400 });
+  }
+  return `<exigSusp>` + tag('tpSusp', tipo) + tag('nProcesso', numero) + `</exigSusp>`;
+}
+
 function tributoMunicipal(v, optanteSN, issRetido, versao) {
   const tipo = String(v.tributacaoIssqn || '1');
-  const suspensa = ['5', '6'].includes(tipo);
 
-  /* O XSD publicado aceita tribISSQN de 1 a 4. A exigibilidade suspensa (5 e 6)
-     aparece na planilha do AnexoVI da NT 009, cujo XSD ainda não saiu — mandar
-     agora seria recusado. Falhar aqui evita queimar número de DPS. */
-  if (suspensa) {
+  if (!['1', '2', '3', '4'].includes(tipo)) {
     throw Object.assign(
-      new Error('tributacaoIssqn 5 e 6 (exigibilidade suspensa) constam da NT 009 ' +
-                'mas ainda não são aceitos pelo esquema publicado da Sefin. ' +
-                'Use 1 a 4 até a publicação do XSD correspondente.'),
+      new Error(`tributacaoIssqn deve ser 1 (tributável), 2 (imunidade), ` +
+                `3 (exportação) ou 4 (não incidência). Recebido: ${tipo}.`),
       { status: 400 });
   }
 
+  /* Exigibilidade suspensa é um grupo à parte, não um valor de tribISSQN.
+     Uma operação tributável com liminar continua sendo tributável — o que muda
+     é que o imposto não é exigível enquanto o processo correr. */
+  const susp = v.exigibilidadeSuspensa;
+
   return `<tribMun>` +
     tag('tribISSQN', tipo) +
-    // Exportação: país onde o resultado do serviço se verifica
-    (tipo === '2' ? tag('cPaisResult', v.paisResultado) : '') +
-    // Imunidade exige dizer qual: livro/jornal, templo, partido, entidade...
-    (tipo === '4' ? tag('tpImunidade', v.tipoImunidade) : '') +
-    (suspensa ?
-    `<exigSusp>` +
-      tag('tpSusp', v.tipoSuspensao) +
-      tag('nProcesso', v.numeroProcesso) +
-    `</exigSusp>` : '') +
+    // Exportação (3): país onde o resultado do serviço se verifica
+    (tipo === '3' ? tag('cPaisResult', v.paisResultado) : '') +
+    // Imunidade (2) exige dizer qual: templo, partido, entidade, livro...
+    (tipo === '2' ? tag('tpImunidade', v.tipoImunidade) : '') +
+    (susp ? blocoExigSuspensa(susp) : '') +
     // Benefício municipal: nBM é o número do benefício no cadastro do
     // município (numérico, 14 posições), acompanhado da redução em valor OU
     // em percentual.
@@ -172,6 +196,16 @@ function grupoIbsCbs(dados) {
     throw Object.assign(
       new Error('Grupo IBS/CBS incompleto. Falta: ' + faltando.join(', ')),
       { status: 400 });
+  }
+
+  /* O esquema só exige seis dígitos em cIndOp, mas a Sefin valida contra a
+     tabela do Anexo VII. Um código bem formado e inexistente passa no XSD e é
+     recusado depois — com o número de DPS já gasto. */
+  if (!indOp.existe(g.indicadorOperacao)) {
+    throw Object.assign(new Error(
+      `Indicador de operação ${g.indicadorOperacao} não existe na tabela do Anexo VII. ` +
+      'Serviço em geral usa 100301 (demais serviços, operação onerosa); ' +
+      'sobre bem imóvel, 020201; sobre a pessoa, 030101.'), { status: 400 });
   }
 
   const d = g.destinatario;

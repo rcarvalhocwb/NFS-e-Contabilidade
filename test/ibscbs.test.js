@@ -1,3 +1,6 @@
+/* Os cIndOp destes testes são códigos REAIS do Anexo VII (indOp v1.02.00).
+   Antes usavam 000001, que tem os seis dígitos que o esquema pede mas não
+   existe na tabela — passava no XSD e seria recusado pela Sefin. */
 const test = require('node:test');
 const assert = require('node:assert');
 const { montarDps } = require('../src/nfse/dpsBuilder');
@@ -32,10 +35,10 @@ test('sem o grupo informado, a DPS sai como antes', () => {
 
 test('grupo mínimo: indDest, CST e cClassTrib', () => {
   const x = dps({ ibsCbs: {
-    indicadorOperacao: '000001', indicadorDestinatario: 0,
+    indicadorOperacao: '100301', indicadorDestinatario: 0,
     tributacao: { cst: '000', classificacaoTributaria: '000001' }
   } });
-  assert.match(x, /<IBSCBS><finNFSe>0<\/finNFSe><cIndOp>000001<\/cIndOp><indDest>0<\/indDest>/);
+  assert.match(x, /<IBSCBS><finNFSe>0<\/finNFSe><cIndOp>100301<\/cIndOp><indDest>0<\/indDest>/);
   assert.match(x, /<valores><trib><gIBSCBS><CST>000<\/CST><cClassTrib>000001<\/cClassTrib><\/gIBSCBS>/);
   // O grupo entra depois de </valores> da DPS, como manda o leiaute
   assert.match(x, /<\/valores><IBSCBS>/);
@@ -44,7 +47,7 @@ test('grupo mínimo: indDest, CST e cClassTrib', () => {
 test('CST e cClassTrib são preenchidos com zeros à esquerda', () => {
   // O leiaute pede 3 e 6 dígitos; quem digita costuma omitir os zeros
   const x = dps({ ibsCbs: {
-    indicadorOperacao: '000001', indicadorDestinatario: 0,
+    indicadorOperacao: '100301', indicadorDestinatario: 0,
     tributacao: { cst: 0, classificacaoTributaria: 1 }
   } });
   assert.match(x, /<CST>000<\/CST>/);
@@ -54,7 +57,7 @@ test('CST e cClassTrib são preenchidos com zeros à esquerda', () => {
 test('campos obrigatórios do grupo são cobrados antes de assinar', () => {
   // Falhar aqui evita queimar número de DPS numa nota que a Sefin recusaria
   assert.throws(
-    () => dps({ ibsCbs: { indicadorOperacao: '000001',
+    () => dps({ ibsCbs: { indicadorOperacao: '100301',
       tributacao: { cst: '000', classificacaoTributaria: '000001' } } }),
     /indicadorDestinatario/);
   assert.throws(
@@ -65,10 +68,10 @@ test('campos obrigatórios do grupo são cobrados antes de assinar', () => {
 
 test('sem CST ou cClassTrib o grupo é recusado', () => {
   assert.throws(
-    () => dps({ ibsCbs: { indicadorOperacao: '000001', indicadorDestinatario: 0 } }),
+    () => dps({ ibsCbs: { indicadorOperacao: '100301', indicadorDestinatario: 0 } }),
     /cst/);
   assert.throws(
-    () => dps({ ibsCbs: { indicadorOperacao: '000001', indicadorDestinatario: 0,
+    () => dps({ ibsCbs: { indicadorOperacao: '100301', indicadorDestinatario: 0,
       tributacao: { cst: '000' } } }),
     /classificacaoTributaria/);
 });
@@ -77,17 +80,17 @@ test('indicadores opcionais entram na ordem do leiaute', () => {
   const x = dps({ ibsCbs: {
     consumidorFinal: 1,
     tipoOperacao: 1,
-    indicadorOperacao: '000001',
+    indicadorOperacao: '100301',
     indicadorDestinatario: 1,
     tributacao: { cst: '000', classificacaoTributaria: '000001' }
   } });
   assert.match(x,
-    /<IBSCBS><finNFSe>0<\/finNFSe><indFinal>1<\/indFinal><cIndOp>000001<\/cIndOp><tpOper>1<\/tpOper><indDest>1<\/indDest>/);
+    /<IBSCBS><finNFSe>0<\/finNFSe><indFinal>1<\/indFinal><cIndOp>100301<\/cIndOp><tpOper>1<\/tpOper><indDest>1<\/indDest>/);
 });
 
 test('destinatário diferente do tomador entra em dest', () => {
   const x = dps({ ibsCbs: {
-    indicadorOperacao: '000001', indicadorDestinatario: 1,
+    indicadorOperacao: '100301', indicadorDestinatario: 1,
     destinatario: {
       cnpj: '21583854000118', nome: 'DESTINATARIO LTDA',
       endereco: { codigoMunicipio: '4106902', cep: '80010-000', logradouro: 'Rua XV',
@@ -101,7 +104,7 @@ test('destinatário diferente do tomador entra em dest', () => {
 
 test('destinatário no exterior usa endExt', () => {
   const x = dps({ ibsCbs: {
-    indicadorOperacao: '000001', indicadorDestinatario: 1,
+    indicadorOperacao: '100301', indicadorDestinatario: 1,
     destinatario: {
       nif: 'PT123456789', nome: 'CLIENTE EUROPA LDA',
       endereco: { codigoPais: 'PT', codigoPostal: '1000-001', cidade: 'Lisboa',
@@ -116,7 +119,7 @@ test('destinatário no exterior usa endExt', () => {
 
 test('tributação regular acompanha operação desonerada', () => {
   const x = dps({ ibsCbs: {
-    indicadorOperacao: '000001', indicadorDestinatario: 0,
+    indicadorOperacao: '100301', indicadorDestinatario: 0,
     tributacao: {
       cst: '200', classificacaoTributaria: '200001',
       tributacaoRegular: { cst: '000', classificacaoTributaria: '000001' }
@@ -127,7 +130,7 @@ test('tributação regular acompanha operação desonerada', () => {
 
 test('diferimento sai no próprio grupo; estorno espera o XSD da NT 009', () => {
   const x = dps({ ibsCbs: {
-    indicadorOperacao: '000001', indicadorDestinatario: 0,
+    indicadorOperacao: '100301', indicadorDestinatario: 0,
     tributacao: {
       cst: '000', classificacaoTributaria: '000001',
       diferimento: { percentualUF: 10, percentualMunicipal: 5, percentualCBS: 2 },
@@ -141,7 +144,7 @@ test('diferimento sai no próprio grupo; estorno espera o XSD da NT 009', () => 
 
 test('nota de ajuste referencia as NFS-e originais', () => {
   const x = dps({ ibsCbs: {
-    indicadorOperacao: '000001', indicadorDestinatario: 0,
+    indicadorOperacao: '100301', indicadorDestinatario: 0,
     notasReferenciadas: ['1'.repeat(50), '2'.repeat(50)],
     ajuste: { valorIBS: 100, valorCBS: 50 },
     tributacao: { cst: '000', classificacaoTributaria: '000001' }
