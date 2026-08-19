@@ -1,4 +1,18 @@
 const config = require('../config');
+const crypto = require('crypto');
+
+/* O token vive no banco como hash: um dump ou uma cópia de segurança
+   esquecida não entrega credencial pronta para emitir em nome do cliente. */
+function hashToken(t) { return crypto.createHash('sha256').update(String(t)).digest('hex'); }
+
+/* Comparação que não vaza o tamanho do acerto pelo tempo de resposta.
+   Risco pequeno numa rede local, mas a correção é de três linhas e o gateway
+   também roda em máquina compartilhada. */
+function mesmaChave(a, b) {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
 const db = require('../db');
 const sessoes = require('../services/sessoes');
 const { empresasDoUsuario } = require('../services/usuarios');
@@ -50,7 +64,7 @@ module.exports = async function auth(req, res, next) {
     }
 
     // 2. Chave global: credencial de máquina, acesso irrestrito
-    if (chave === config.apiKey) {
+    if (mesmaChave(chave, config.apiKey)) {
       req.auth = { tipo: 'maquina' };
       return next();
     }
@@ -60,8 +74,8 @@ module.exports = async function auth(req, res, next) {
       `SELECT t.id, t.empresa_id, t.ambiente, e.cnpj, e.razao_social
          FROM empresa_tokens t
          JOIN empresas e ON e.id = t.empresa_id
-        WHERE t.token = $1 AND t.ativo AND e.ativo`,
-      [chave]
+        WHERE t.token_hash = $1 AND t.ativo AND e.ativo`,
+      [hashToken(chave)]
     );
     if (!r.rows.length) {
       return res.status(401).json({ erro: 'API key inválida' });

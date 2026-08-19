@@ -127,6 +127,8 @@
     <nav class="menu">
       <a href="#inicio" data-tela="inicio"><span class="ico">▤</span> Início</a>
 
+      <a href="#agenda" data-tela="agenda"><span class="ico">◷</span> Agenda do escritório</a>
+
       <div class="menu-grupo">Emissão</div>
       <a href="/nota"><span class="ico">✎</span> Emitir nota</a>
       <a href="/emitir"><span class="ico">◗</span> Emitir por conversa</a>
@@ -241,6 +243,74 @@
       </section>
 
       <!-- ---------------- EMPRESAS ---------------- -->
+      <section data-tela-conteudo="agenda" hidden>
+        <div class="grade c3" style="margin-bottom:18px">
+          <div class="metrica destaque"><div class="rotulo">Atrasadas</div>
+            <div class="valor" id="agAtrasadas">—</div>
+            <div class="nota">precisam de resposta hoje</div></div>
+          <div class="metrica"><div class="rotulo">Vencem em 7 dias</div>
+            <div class="valor" id="agSemana">—</div></div>
+          <div class="metrica"><div class="rotulo">No horizonte</div>
+            <div class="valor" id="agTotal">—</div>
+            <div class="nota" id="agHorizonte"></div></div>
+        </div>
+
+        <div class="cartao" style="margin:0">
+          <div class="cartao-cab">
+            <h2>O que vence</h2>
+            <div style="display:flex;gap:9px;align-items:center">
+              <select id="agDias" style="width:auto">
+                <option value="15">próximos 15 dias</option>
+                <option value="30" selected>próximos 30 dias</option>
+                <option value="60">próximos 60 dias</option>
+                <option value="90">próximos 90 dias</option>
+              </select>
+              <button id="btnAgAtualizar">Atualizar</button>
+            </div>
+          </div>
+          <div class="cartao-corpo" style="padding:0">
+            <table class="tabela">
+              <thead><tr><th>Vence</th><th>Cliente</th><th>Obrigação</th>
+                         <th>Competência</th><th></th></tr></thead>
+              <tbody id="agLista"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin-top:18px">
+          <div class="cartao-cab"><h2>Obrigações que o escritório acompanha</h2></div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:14px">
+              Cadastre aqui o que a casa controla e depois marque, na ficha de cada
+              cliente, quais valem para ele.
+              <strong>Confira cada prazo antes de usar</strong> — eles mudam por lei e
+              por município, e o sistema não os atualiza sozinho.
+            </div>
+            <div class="grade c4" style="align-items:end;margin-bottom:16px">
+              <div><label for="mdNome">Nome</label>
+                <input id="mdNome" maxlength="80" placeholder="Ex.: ISS de Curitiba"></div>
+              <div><label for="mdPeriodicidade">Repete</label>
+                <select id="mdPeriodicidade">
+                  <option value="mensal">Todo mês</option>
+                  <option value="trimestral">A cada trimestre</option>
+                  <option value="anual">Uma vez por ano</option>
+                </select></div>
+              <div><label for="mdDia">Dia do vencimento</label>
+                <input id="mdDia" type="number" min="1" max="31" value="20"></div>
+              <div><label for="mdDesloca">Vence em</label>
+                <select id="mdDesloca">
+                  <option value="0">no mês da competência</option>
+                  <option value="1" selected>no mês seguinte</option>
+                  <option value="2">dois meses depois</option>
+                </select></div>
+            </div>
+            <button class="primario" id="btnNovoModelo">Adicionar obrigação</button>
+            <button id="btnSugestoes" style="margin-left:8px">Usar lista sugerida</button>
+            <div id="mdLista" style="margin-top:20px"></div>
+          </div>
+        </div>
+      </section>
+
       <section data-tela-conteudo="empresas" hidden>
         <div class="cartao">
           <div class="cartao-cab">
@@ -280,6 +350,8 @@
             <button data-aba="responsavel">Responsável</button>
             <button data-aba="contabilidade">Contabilidade</button>
             <button data-aba="fiscais" data-precisa-salvar="1">Documentos Fiscais</button>
+            <button data-aba="obrigacoes" data-precisa-salvar="1">Obrigações</button>
+            <button data-aba="historico" data-precisa-salvar="1">Histórico</button>
             <button data-aba="certificado" data-precisa-salvar="1">Certificado</button>
             <button data-aba="integracao" data-precisa-salvar="1">Integração / API</button>
           </div>
@@ -545,6 +617,74 @@
               </div>
               <div class="ajuda" style="margin-top:10px">
                 Alterar a numeração de produção afeta a sequência fiscal.
+              </div>
+            </div>
+          </div>
+
+          <div class="painel-aba" id="aba-obrigacoes">
+            <div class="grade c4" style="margin-bottom:18px">
+              <div class="metrica"><div class="rotulo">Atrasadas</div>
+                <div class="valor" id="obAtrasadas">—</div></div>
+              <div class="metrica"><div class="rotulo">Vencem em 7 dias</div>
+                <div class="valor" id="obProximas">—</div></div>
+              <div class="metrica"><div class="rotulo">Pendentes</div>
+                <div class="valor" id="obPendentes">—</div></div>
+              <div class="metrica"><div class="rotulo">Concluídas (30 dias)</div>
+                <div class="valor" id="obConcluidas">—</div></div>
+            </div>
+
+            <div class="cartao" style="margin:0 0 18px">
+              <div class="cartao-cab"><h2>O que este cliente entrega</h2></div>
+              <div class="cartao-corpo">
+                <div class="ajuda" style="margin-bottom:14px">
+                  Marque o que o escritório acompanha para esta empresa. As datas dos
+                  próximos meses aparecem na agenda assim que você marcar.
+                </div>
+                <div id="obModelos"></div>
+              </div>
+            </div>
+
+            <div class="cartao" style="margin:0">
+              <div class="cartao-cab"><h2>Agenda deste cliente</h2></div>
+              <div class="cartao-corpo" style="padding:0">
+                <table class="tabela">
+                  <thead><tr><th>Obrigação</th><th>Competência</th><th>Vence</th>
+                             <th>Situação</th><th></th></tr></thead>
+                  <tbody id="obLista"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="painel-aba" id="aba-historico">
+            <div class="cartao" style="margin:0 0 18px">
+              <div class="cartao-cab"><h2>Baixar notas do período</h2></div>
+              <div class="cartao-corpo">
+                <div class="ajuda" style="margin-bottom:14px">
+                  Um arquivo com os XMLs das notas, as DPS enviadas, os PDFs e uma
+                  planilha de conferência. É o que se manda ao cliente no fechamento.
+                </div>
+                <div class="grade c3">
+                  <div><label for="pkInicio">De</label><input id="pkInicio" type="date"></div>
+                  <div><label for="pkFim">Até</label><input id="pkFim" type="date"></div>
+                  <div style="align-self:end">
+                    <button class="primario" id="btnPacote">Baixar pacote</button>
+                  </div>
+                </div>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:400">
+                  <input type="checkbox" id="pkPdf" checked style="width:auto">
+                  Incluir os PDFs (mais lento em períodos longos)
+                </label>
+              </div>
+            </div>
+
+            <div class="cartao" style="margin:0">
+              <div class="cartao-cab"><h2>Tudo que aconteceu neste cliente</h2></div>
+              <div class="cartao-corpo" style="padding:0">
+                <table class="tabela">
+                  <thead><tr><th>Quando</th><th>Quem</th><th>O quê</th></tr></thead>
+                  <tbody id="histLista"></tbody>
+                </table>
               </div>
             </div>
           </div>

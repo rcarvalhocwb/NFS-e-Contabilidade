@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const multer = require('multer');
 const db = require('../db');
 const { salvarCertificado } = require('../services/certificadoService');
@@ -6,7 +7,12 @@ const { validarCnpj, limparDocumento } = require('../util/documento');
 const { somenteAdmin, empresasVisiveis, empresaVisivel } = require('../middleware/escopo');
 const { extrairValores } = require('../nfse/extrairValores');
 
+const auditoria = require('../services/auditoria');
+
 const router = express.Router();
+
+const NOME_AMBIENTE = { producao: 'produção', homologacao: 'homologação' };
+function nomeAmbiente(a) { return NOME_AMBIENTE[a] || a; }
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
 
 // CNPJ alfanumérico (julho/2026): letras nas 12 primeiras posições.
@@ -71,20 +77,25 @@ router.post('/', somenteAdmin, async (req, res, next) => {
 
     // Gera os tokens de API já no cadastro: a empresa nasce pronta para
     // integrar, sem passo manual de "criar credencial" depois.
-    const tk = await db.query(
-      `INSERT INTO empresa_tokens (empresa_id, ambiente, token, descricao)
-       VALUES ($1,'homologacao',encode(gen_random_bytes(24),'hex'),'Gerado no cadastro'),
-              ($1,'producao',   encode(gen_random_bytes(24),'hex'),'Gerado no cadastro')
-       ON CONFLICT (empresa_id, ambiente) DO NOTHING
-       RETURNING ambiente, token`,
-      [empresa.id]
-    );
+    // Os tokens nascem aqui e são devolvidos UMA vez: o banco guarda só o
+    // hash, então não há como reexibi-los depois. Quem perder, gera outro.
+    const tokens = ['homologacao', 'producao'].map(ambiente => ({
+      ambiente, token: crypto.randomBytes(24).toString('hex')
+    }));
+    for (const t of tokens) {
+      await db.query(
+        `INSERT INTO empresa_tokens (empresa_id, ambiente, token_hash, descricao)
+         VALUES ($1,$2,$3,'Gerado no cadastro')
+         ON CONFLICT (empresa_id, ambiente) DO NOTHING`,
+        [empresa.id, t.ambiente,
+         crypto.createHash('sha256').update(t.token).digest('hex')]);
+    }
 
     // Devolve os tokens no cadastro — é o único momento em que aparecem sem
     // consulta extra, e é o que a contabilidade entrega ao sistema cliente.
     res.status(201).json({
       ...empresa,
-      tokens: tk.rows,
+      tokens,
       integracao: `/integracao/${empresa.cnpj}`
     });
   } catch (e) {
@@ -304,6 +315,11 @@ router.put('/:cnpj/ambiente', somenteAdmin, exigirEmpresaVisivel, async (req, re
       'SELECT serie, prox_numero FROM numeracao_dps WHERE empresa_id = $1 AND ambiente = $2',
       [emp.rows[0].id, b.ambiente]);
 
+    await auditoria.registrar(req, emp.rows[0].id, 'empresa.ambiente',
+      'Mudou o ambiente de ' + nomeAmbiente(emp.rows[0].ambiente) +
+      ' para ' + nomeAmbiente(b.ambiente),
+      { detalhe: { de: emp.rows[0].ambiente, para: b.ambiente } });
+
     console.log(`[empresa] ${cnpj}: ambiente ${emp.rows[0].ambiente} -> ${b.ambiente}` +
                 (req.auth.tipo === 'usuario' ? ` (por ${req.auth.email})` : ''));
 
@@ -391,6 +407,18 @@ router.put('/:cnpj/padroes-fiscais', somenteAdmin, exigirEmpresaVisivel, async (
 
     if (!r.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });
     res.json(r.rows[0]);
+  } catch (e) { next(e); }
+});
+
+/* Histórico do cliente: tudo que aconteceu nele, do mais recente ao mais
+   antigo. É a trilha de auditoria lida do ângulo de quem atende a empresa. */
+router.get('/:cnpj/historico', exigirEmpresaVisivel, async (req, res, next) => {
+  try {
+    const emp = await db.query('SELECT id FROM empresas WHERE cnpj = $1',
+      [limparCnpj(req.params.cnpj)]);
+    res.json(await auditoria.historico(emp.rows[0].id, {
+      limite: req.query.limite, acao: req.query.acao || null
+    }));
   } catch (e) { next(e); }
 });
 

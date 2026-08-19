@@ -3,8 +3,11 @@ const db = require('../db');
 const { emitir, consultar, cancelar } = require('../services/emissaoService');
 const { criarZip } = require('../util/zip');
 const { notaNoEscopo, filtroSqlEmpresas, empresaVisivel } = require('../middleware/escopo');
+const auditoria = require('../services/auditoria');
 const { validarDocumento, limparDocumento } = require('../util/documento');
 const { gerarDanfse } = require('../nfse/danfse');
+const { extrairValores, baseCalculo, valorIss } = require('../nfse/extrairValores');
+const { gerarCsv } = require('../util/csv');
 
 const router = express.Router();
 
@@ -223,6 +226,156 @@ router.get('/export-pdf', async (req, res, next) => {
 });
 
 /* Detalhar nota local (inclui XMLs) */
+
+/* Pacote do período: tudo de um cliente num arquivo só.
+ *
+ * Fechar o mês de um cliente exigia três downloads separados — XMLs das NFS-e,
+ * XMLs das DPS, PDFs — e depois juntar tudo à mão. Quem atende trinta clientes
+ * faz isso trinta vezes.
+ *
+ * O pacote traz, organizado em pastas:
+ *   xml/      as NFS-e autorizadas
+ *   dps/      as DPS enviadas (o que foi declarado, incluindo rejeitadas)
+ *   pdf/      os DANFSe
+ *   notas.csv resumo para conferência e importação
+ *   LEIA-ME.txt  o que tem dentro e de que período
+ *
+ * O CSV vai em ponto e vírgula com BOM: é o que o Excel em português abre com
+ * as colunas separadas, sem passar pelo assistente de importação.
+ */
+router.get('/pacote', async (req, res, next) => {
+  try {
+    const cnpj = req.query.cnpjEmpresa;
+    if (!cnpj) return res.status(400).json({ erro: 'Informe a empresa (cnpjEmpresa).' });
+    if (!req.query.inicio || !req.query.fim) {
+      return res.status(400).json({ erro: 'Informe o período: inicio e fim (AAAA-MM-DD).' });
+    }
+    for (const campo of ['inicio', 'fim']) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query[campo])) {
+        return res.status(400).json({ erro: campo + ' deve ser AAAA-MM-DD' });
+      }
+    }
+
+    const emp = await db.query(
+      'SELECT id, cnpj, razao_social FROM empresas WHERE cnpj = $1',
+      [limparDocumento(cnpj)]);
+    if (!emp.rows.length || !empresaVisivel(req, emp.rows[0].id)) {
+      return res.status(404).json({ erro: 'Empresa não encontrada' });
+    }
+    const empresa = emp.rows[0];
+
+    const comPdf = req.query.pdf !== '0';
+    const params = [empresa.id, req.query.inicio, req.query.fim];
+    if (req.query.ambiente) params.push(req.query.ambiente);
+
+    const r = await db.query(
+      `SELECT n.id, n.chave_acesso, n.id_dps, n.serie, n.numero, n.status, n.ambiente,
+              n.referencia, n.criado_em, n.nfse_xml, n.dps_xml
+         FROM notas n
+        WHERE n.empresa_id = $1
+          AND n.criado_em >= $2::date
+          AND n.criado_em < ($3::date + interval '1 day')
+          ${req.query.ambiente ? 'AND n.ambiente = $4' : ''}
+        ORDER BY n.numero, n.id
+        LIMIT 2000`, params);
+
+    if (!r.rows.length) {
+      return res.status(404).json({
+        erro: 'Nenhuma nota de ' + empresa.razao_social + ' entre ' +
+              req.query.inicio + ' e ' + req.query.fim + '.'
+      });
+    }
+
+    const arquivos = [];
+    const linhas = [];
+    let autorizadas = 0;
+
+    for (const n of r.rows) {
+      const nome = (n.chave_acesso || n.id_dps || String(n.id));
+      if (n.nfse_xml) arquivos.push({ nome: `xml/nfse-${nome}.xml`, conteudo: n.nfse_xml });
+      if (n.dps_xml)  arquivos.push({ nome: `dps/dps-${nome}.xml`,  conteudo: n.dps_xml });
+
+      /* O resumo sai da NFS-e quando ela existe; da DPS quando não. Assim a
+         linha de uma nota rejeitada mostra o que se tentou declarar, em vez de
+         uma linha vazia que não ajuda a entender o que aconteceu. */
+      let valores = {};
+      try { valores = extrairValores(n.nfse_xml || n.dps_xml) || {}; } catch (_) { /* resumo não bloqueia */ }
+
+      if (n.nfse_xml) {
+        autorizadas++;
+        if (comPdf && arquivos.filter(a => a.nome.startsWith('pdf/')).length < 500) {
+          try {
+            arquivos.push({ nome: `pdf/DANFSe-${nome}.pdf`, conteudo: await gerarDanfse(n.nfse_xml) });
+          } catch (e) {
+            // Um XML que não vira PDF não pode derrubar o pacote inteiro
+            console.warn('[pacote] DANFSe da nota', n.id, 'falhou:', e.message);
+          }
+        }
+      }
+
+      linhas.push({
+        serie: n.serie, numero: n.numero, situacao: n.status,
+        emissao: n.criado_em ? new Date(n.criado_em).toLocaleDateString('pt-BR') : '',
+        tomador: valores.tomador || '', documento: valores.docTomador || '',
+        descricao: valores.descricao || '',
+        valor_servico: valores.valorServico ?? '',
+        base: valores.valorServico != null ? baseCalculo(valores) : '',
+        aliquota: valores.aliquota ?? '',
+        iss: valorIss(valores) ?? '',
+        iss_retido: valores.issRetido ? 'sim' : 'nao',
+        ambiente: n.ambiente, referencia: n.referencia || '',
+        chave_acesso: n.chave_acesso || ''
+      });
+    }
+
+    const COLUNAS = [
+      { campo: 'serie', titulo: 'Serie' }, { campo: 'numero', titulo: 'Numero' },
+      { campo: 'emissao', titulo: 'Emissao' }, { campo: 'situacao', titulo: 'Situacao' },
+      { campo: 'tomador', titulo: 'Tomador' }, { campo: 'documento', titulo: 'CNPJ/CPF' },
+      { campo: 'descricao', titulo: 'Servico' },
+      { campo: 'valor_servico', titulo: 'Valor do servico' },
+      { campo: 'base', titulo: 'Base de calculo' },
+      { campo: 'aliquota', titulo: 'Aliquota' }, { campo: 'iss', titulo: 'ISS' },
+      { campo: 'iss_retido', titulo: 'ISS retido' },
+      { campo: 'ambiente', titulo: 'Ambiente' },
+      { campo: 'referencia', titulo: 'Referencia' },
+      { campo: 'chave_acesso', titulo: 'Chave de acesso' }
+    ];
+    arquivos.push({ nome: 'notas.csv', conteudo: gerarCsv(COLUNAS, linhas) });
+    arquivos.push({ nome: 'LEIA-ME.txt', conteudo:
+      `Pacote de notas fiscais de serviço\r\n` +
+      `${'='.repeat(42)}\r\n\r\n` +
+      `Empresa   : ${empresa.razao_social}\r\n` +
+      `CNPJ      : ${empresa.cnpj}\r\n` +
+      `Período   : ${req.query.inicio.split('-').reverse().join('/')} a ` +
+      `${req.query.fim.split('-').reverse().join('/')}\r\n` +
+      `Notas     : ${r.rows.length} (${autorizadas} autorizada(s))\r\n` +
+      `Gerado em : ${new Date().toLocaleString('pt-BR')}\r\n\r\n` +
+      `Pastas\r\n` +
+      `  xml/   NFS-e autorizadas, como a Sefin devolveu\r\n` +
+      `  dps/   declarações enviadas, inclusive as rejeitadas\r\n` +
+      `  pdf/   DANFSe para arquivo e envio ao cliente\r\n` +
+      `  notas.csv  resumo do período, separado por ponto e vírgula\r\n\r\n` +
+      `Os XMLs são o documento fiscal; o PDF é a representação impressa.\r\n` +
+      `Guarde os XMLs pelo prazo exigido pela legislação.\r\n`
+    });
+
+    const zip = criarZip(arquivos);
+    const nomeArquivo = `notas-${empresa.cnpj}-${req.query.inicio}-a-${req.query.fim}.zip`;
+
+    await auditoria.registrar(req, empresa.id, 'nota.pacote',
+      'Baixou o pacote de ' + r.rows.length + ' nota(s) de ' +
+      req.query.inicio.split('-').reverse().join('/') + ' a ' +
+      req.query.fim.split('-').reverse().join('/'),
+      { detalhe: { notas: r.rows.length, autorizadas, comPdf } });
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo}"`);
+    res.setHeader('X-Total-Notas', String(r.rows.length));
+    res.send(zip);
+  } catch (e) { next(e); }
+});
+
 router.get('/local/:id', async (req, res, next) => {
   try {
     const r = await db.query(
@@ -349,6 +502,16 @@ router.post('/:chaveAcesso/cancelamento', async (req, res, next) => {
       return res.status(400).json({ erro: 'motivo é obrigatório quando codigoMotivo = 9 (Outros)' });
     }
     const resultado = await cancelar(b.cnpjEmpresa, req.params.chaveAcesso, b);
+
+    if (resultado.cancelada) {
+      const emp = await db.query('SELECT id FROM empresas WHERE cnpj = $1',
+        [limparDocumento(b.cnpjEmpresa)]);
+      await auditoria.registrar(req, emp.rows[0] && emp.rows[0].id, 'nota.cancelada',
+        'Cancelou a NFS-e ' + req.params.chaveAcesso.slice(-8) +
+        (b.motivo ? ' — ' + b.motivo : ''),
+        { referencia: req.params.chaveAcesso,
+          detalhe: { codigoMotivo: b.codigoMotivo || 1, motivo: b.motivo || null } });
+    }
     res.status(resultado.cancelada ? 200 : 422).json(resultado);
   } catch (e) { next(e); }
 });

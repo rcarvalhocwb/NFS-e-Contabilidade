@@ -14,6 +14,7 @@ function baseUrl(req) {
 function novoToken() {
   return crypto.randomBytes(24).toString('hex');
 }
+function hashToken(t) { return crypto.createHash('sha256').update(String(t)).digest('hex'); }
 
 async function empresaPorCnpj(cnpj) {
   const r = await db.query('SELECT * FROM empresas WHERE cnpj = $1',
@@ -33,7 +34,7 @@ router.get('/:cnpj', async (req, res, next) => {
     const base = baseUrl(req);
 
     const tk = await db.query(
-      `SELECT ambiente, token, ativo, ultimo_uso, criado_em
+      `SELECT ambiente, ativo, ultimo_uso, criado_em
          FROM empresa_tokens WHERE empresa_id = $1 ORDER BY ambiente`,
       [empresa.id]);
 
@@ -104,14 +105,20 @@ router.post('/:cnpj/tokens', async (req, res, next) => {
     const empresa = await empresaPorCnpj(req.params.cnpj);
     const token = novoToken();
     const r = await db.query(
-      `INSERT INTO empresa_tokens (empresa_id, ambiente, token, descricao)
+      `INSERT INTO empresa_tokens (empresa_id, ambiente, token_hash, descricao)
        VALUES ($1,$2,$3,$4)
        ON CONFLICT (empresa_id, ambiente)
-       DO UPDATE SET token = EXCLUDED.token, ativo = TRUE,
+       DO UPDATE SET token_hash = EXCLUDED.token_hash, ativo = TRUE,
                      descricao = EXCLUDED.descricao, criado_em = now(), ultimo_uso = NULL
-       RETURNING ambiente, token, criado_em`,
-      [empresa.id, b.ambiente, token, b.descricao || null]);
-    res.status(201).json(r.rows[0]);
+       RETURNING ambiente, criado_em`,
+      [empresa.id, b.ambiente, hashToken(token), b.descricao || null]);
+
+    /* Única vez em que o token aparece. Guardado só como hash, não há como
+       mostrá-lo de novo — quem perder gera outro, e o anterior morre na hora. */
+    res.status(201).json(Object.assign(r.rows[0], {
+      token,
+      aviso: 'Copie agora: este token não volta a ser exibido. Se perder, gere outro.'
+    }));
   } catch (e) { next(e); }
 });
 

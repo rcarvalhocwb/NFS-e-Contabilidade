@@ -18,6 +18,7 @@ const consultaRouter = require('./routes/consulta');
 const integracaoRouter = require('./routes/integracao');
 const painelRouter = require('./routes/painel');
 const atualizacaoRouter = require('./routes/atualizacao');
+const obrigacoesRouter = require('./routes/obrigacoes');
 const emissorRouter = require('./routes/emissor');
 const authRouter = require('./routes/auth');
 const usuariosRouter = require('./routes/usuarios');
@@ -39,6 +40,20 @@ const app = express();
 if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
 
 app.use(cabecalhosSeguranca);
+/* Cabeçalhos de segurança.
+   O gateway não fica exposto à internet, mas o painel abre num navegador que
+   abre outras páginas — e é daí que vêm clickjacking e sniffing de tipo. */
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  // Sem CDN nem script externo: tudo que a página carrega vem daqui mesmo.
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+    "script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  next();
+});
+
 app.use(express.json({ limit: '2mb' }));
 app.use(conferirOrigem);
 
@@ -120,6 +135,7 @@ app.use('/consulta', consultaRouter);
 app.use('/emissor', emissorRouter);
 app.use('/painel', painelRouter);
 app.use('/atualizacao', atualizacaoRouter);
+app.use('/obrigacoes', obrigacoesRouter);
 app.use('/usuarios', usuariosRouter);
 app.use('/manutencao', manutencaoRouter);
 app.use('/lote', loteRouter);
@@ -145,6 +161,12 @@ const servidor = app.listen(config.port, () => {
   if (process.env.EMAIL_ATIVO !== 'false') emailTomador.iniciar();
   if (process.env.BACKUP_ATIVO !== 'false') backupAutomatico.iniciar();
   atualizacao.iniciarVerificacaoPeriodica();
+
+  /* Gera as ocorrências de obrigações à frente. Idempotente: rodar de novo não
+     duplica nem mexe no que já foi concluído. */
+  require('./services/obrigacoes').gerar({ meses: 3 })
+    .then(r => { if (r.criadas) console.log(`[obrigacoes] ${r.criadas} ocorrência(s) criada(s)`); })
+    .catch(e => console.warn('[obrigacoes] geração falhou:', e.message));
 });
 
 /* Sessões expiradas se acumulariam para sempre. De hora em hora basta: elas já

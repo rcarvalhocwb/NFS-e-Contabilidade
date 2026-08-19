@@ -306,6 +306,7 @@
     clientes:    { titulo:'Clientes',      sub:'Tomadores usados nas emissões',         carregar: carregarClientes },
     servicos:    { titulo:'Serviços',      sub:'Modelos para emitir mais rápido',       carregar: carregarServicos },
     usuarios:    { titulo:'Usuários',      sub:'Quem acessa o gateway e o que pode fazer', carregar: carregarUsuarios },
+    agenda:      { titulo:'Agenda do escritório', sub:'Obrigações e prazos dos clientes', carregar: function () { carregarAgenda(); carregarModelos(); } },
     manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: function () { carregarManutencao(); carregarAtualizacao(); } },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
     webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks }
@@ -692,17 +693,298 @@
       .then(function () { b.disabled = false; });
   };
 
+  /* ============================ Gestão do cliente ============================
+     Obrigações, histórico e o pacote de notas do período. As três coisas que o
+     escritório precisa saber sobre um cliente e que não cabiam na ficha
+     cadastral. */
+
+  function fmtDataCurta(d) {
+    if (!d) return '—';
+    var s = String(d).slice(0, 10).split('-');
+    return s.length === 3 ? s[2] + '/' + s[1] : fmtData(d);
+  }
+
+  /* "vence em 3 dias" diz mais que uma data solta quando o assunto é prazo. */
+  function prazoEmPalavras(dias) {
+    if (dias === null || dias === undefined) return '';
+    var n = Number(dias);
+    if (n < 0)  return 'atrasada há ' + Math.abs(n) + (Math.abs(n) === 1 ? ' dia' : ' dias');
+    if (n === 0) return 'vence hoje';
+    if (n === 1) return 'vence amanhã';
+    return 'em ' + n + ' dias';
+  }
+
+  function seloPrazo(o) {
+    if (o.situacao === 'concluida')  return '<span class="selo-status s-ok">concluída</span>';
+    if (o.situacao === 'dispensada') return '<span class="selo-status s-neutro">dispensada</span>';
+    var dias = Number(o.dias_para_vencer);
+    var classe = o.atrasada ? 's-erro' : (dias <= 7 ? 's-alerta' : 's-neutro');
+    return '<span class="selo-status ' + classe + '">' + esc(prazoEmPalavras(dias)) + '</span>';
+  }
+
+  /* --------------------------------------------- agenda do escritório */
+
+  function carregarAgenda() {
+    var dias = el('agDias').value;
+    api('/obrigacoes/agenda?dias=' + dias).then(function (lista) {
+      var atrasadas = lista.filter(function (o) { return o.atrasada; }).length;
+      var semana = lista.filter(function (o) {
+        return !o.atrasada && Number(o.dias_para_vencer) <= 7;
+      }).length;
+
+      el('agAtrasadas').textContent = atrasadas;
+      el('agAtrasadas').style.color = atrasadas ? 'var(--erro)' : '';
+      el('agSemana').textContent = semana;
+      el('agTotal').textContent = lista.length;
+      el('agHorizonte').textContent = 'nos próximos ' + dias + ' dias';
+
+      var tb = el('agLista');
+      tb.innerHTML = '';
+      if (!lista.length) {
+        tb.innerHTML = '<tr><td colspan="5" style="color:var(--texto-2);padding:22px">' +
+          'Nada a vencer neste período. Se esperava ver algo, confira se as obrigações ' +
+          'estão marcadas na ficha do cliente.</td></tr>';
+        return;
+      }
+      lista.forEach(function (o) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="mono">' + esc(fmtDataCurta(o.vencimento)) + '</td>' +
+          '<td>' + esc(o.razao_social) + '</td>' +
+          '<td>' + esc(o.nome) + '</td>' +
+          '<td class="mono">' + esc(o.competencia) + '</td>' +
+          '<td style="text-align:right">' + seloPrazo(o) +
+            ' <button data-concluir="' + o.id + '">Concluir</button></td>';
+        tb.appendChild(tr);
+      });
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('agDias').onchange = carregarAgenda;
+  el('btnAgAtualizar').onclick = carregarAgenda;
+
+  el('agLista').onclick = function (ev) {
+    var b = ev.target.closest('[data-concluir]');
+    if (!b) return;
+    b.disabled = true;
+    api('/obrigacoes/' + b.dataset.concluir, {
+      method: 'PUT', body: JSON.stringify({ situacao: 'concluida' })
+    }).then(function () { aviso('Concluída.', 'ok'); carregarAgenda(); })
+      .catch(function (e) { aviso(e.message, 'erro'); b.disabled = false; });
+  };
+
+  /* --------------------------------------------- modelos do escritório */
+
+  function carregarModelos() {
+    api('/obrigacoes/modelos').then(function (lista) {
+      var alvo = el('mdLista');
+      if (!lista.length) {
+        alvo.innerHTML = '<div class="ajuda">Nenhuma obrigação cadastrada. Use a lista ' +
+                         'sugerida para começar e ajuste os prazos.</div>';
+        return;
+      }
+      alvo.innerHTML = '<table class="tabela"><thead><tr><th>Obrigação</th>' +
+        '<th>Repete</th><th>Vencimento</th><th>Clientes</th></tr></thead><tbody>' +
+        lista.map(function (m) {
+          var quando = m.desloca_meses === 0 ? 'no mês da competência'
+                     : m.desloca_meses === 1 ? 'no mês seguinte'
+                     : m.desloca_meses + ' meses depois';
+          return '<tr' + (m.ativo ? '' : ' style="opacity:.5"') + '>' +
+            '<td>' + esc(m.nome) + (m.descricao ?
+              '<div class="ajuda">' + esc(m.descricao) + '</div>' : '') + '</td>' +
+            '<td>' + esc(m.periodicidade) + '</td>' +
+            '<td>dia ' + esc(m.dia_vencimento) + ', ' + esc(quando) + '</td>' +
+            '<td class="mono">' + esc(m.clientes) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('btnNovoModelo').onclick = function () {
+    var nome = el('mdNome').value.trim();
+    if (!nome) return aviso('Dê um nome à obrigação.', 'erro');
+    var b = el('btnNovoModelo');
+    b.disabled = true;
+    api('/obrigacoes/modelos', { method: 'POST', body: JSON.stringify({
+      nome: nome,
+      periodicidade: el('mdPeriodicidade').value,
+      diaVencimento: Number(el('mdDia').value),
+      deslocaMeses: Number(el('mdDesloca').value)
+    })}).then(function () {
+      el('mdNome').value = '';
+      aviso('Obrigação criada. Marque-a na ficha dos clientes que a entregam.', 'ok');
+      carregarModelos();
+    }).catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
+
+  el('btnSugestoes').onclick = function () {
+    api('/obrigacoes/modelos/sugestoes', { method: 'POST' }).then(function (r) {
+      if (r.instalados) {
+        aviso(r.instalados + ' obrigações adicionadas. Confira os prazos antes de usar.', 'ok');
+      } else {
+        aviso('Já existem obrigações cadastradas — a lista sugerida só entra numa casa vazia.');
+      }
+      carregarModelos();
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  };
+
+  /* ------------------------------------ obrigações de um cliente */
+
+  function carregarObrigacoesEmpresa(cnpj) {
+    var emp = (estado.empresas || []).filter(function (e) { return e.cnpj === cnpj; })[0];
+    if (!emp) return;
+
+    api('/obrigacoes/empresa/' + emp.id).then(function (d) {
+      el('obAtrasadas').textContent = d.resumo.atrasadas;
+      el('obAtrasadas').style.color = d.resumo.atrasadas ? 'var(--erro)' : '';
+      el('obProximas').textContent  = d.resumo.proximas;
+      el('obPendentes').textContent = d.resumo.pendentes;
+      el('obConcluidas').textContent = d.resumo.concluidas30d;
+
+      el('obModelos').innerHTML = d.modelos.length
+        ? d.modelos.map(function (m) {
+            return '<label style="display:flex;align-items:center;gap:10px;padding:9px 0;' +
+              'border-bottom:1px solid var(--linha);font-weight:400">' +
+              '<input type="checkbox" style="width:auto" data-modelo="' + m.id + '"' +
+              (m.vinculada ? ' checked' : '') + '>' +
+              '<span><strong>' + esc(m.nome) + '</strong>' +
+              '<span class="ajuda" style="display:block">dia ' + esc(m.dia_vencimento) +
+              ', ' + esc(m.periodicidade) + '</span></span></label>';
+          }).join('')
+        : '<div class="ajuda">Nenhuma obrigação cadastrada ainda. Cadastre em ' +
+          '<a href="#agenda">Agenda do escritório</a>.</div>';
+
+      var tb = el('obLista');
+      tb.innerHTML = d.ocorrencias.length
+        ? d.ocorrencias.map(function (o) {
+            return '<tr><td>' + esc(o.nome) + '</td>' +
+              '<td class="mono">' + esc(o.competencia) + '</td>' +
+              '<td class="mono">' + esc(fmtData(o.vencimento)) + '</td>' +
+              '<td>' + (o.situacao === 'concluida'
+                ? '<span class="selo-status s-ok">concluída</span>' +
+                  (o.concluida_por ? '<div class="ajuda">' + esc(o.concluida_por) + '</div>' : '')
+                : '<span class="selo-status s-neutro">' + esc(o.situacao) + '</span>') + '</td>' +
+              '<td style="text-align:right">' +
+                (o.situacao === 'pendente'
+                  ? '<button data-concluir-emp="' + o.id + '">Concluir</button>'
+                  : '<button data-reabrir="' + o.id + '">Reabrir</button>') +
+              '</td></tr>';
+          }).join('')
+        : '<tr><td colspan="5" style="color:var(--texto-2);padding:20px">' +
+          'Marque acima o que este cliente entrega e as datas aparecem aqui.</td></tr>';
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('obModelos').onclick = function (ev) {
+    var c = ev.target.closest('[data-modelo]');
+    if (!c) return;
+    var emp = (estado.empresas || []).filter(function (e) { return e.cnpj === estado.editando; })[0];
+    if (!emp) return;
+    api('/obrigacoes/empresa/' + emp.id + '/modelo/' + c.dataset.modelo, {
+      method: 'PUT', body: JSON.stringify({ ativo: c.checked })
+    }).then(function () {
+      aviso(c.checked ? 'Passou a acompanhar. As próximas datas já entraram na agenda.'
+                      : 'Deixou de acompanhar.', 'ok');
+      carregarObrigacoesEmpresa(estado.editando);
+    }).catch(function (e) { aviso(e.message, 'erro'); c.checked = !c.checked; });
+  };
+
+  el('obLista').onclick = function (ev) {
+    var b = ev.target.closest('[data-concluir-emp], [data-reabrir]');
+    if (!b) return;
+    var id = b.dataset.concluirEmp || b.dataset.reabrir;
+    var situacao = b.dataset.concluirEmp ? 'concluida' : 'pendente';
+    b.disabled = true;
+    api('/obrigacoes/' + id, { method: 'PUT', body: JSON.stringify({ situacao: situacao }) })
+      .then(function () { carregarObrigacoesEmpresa(estado.editando); })
+      .catch(function (e) { aviso(e.message, 'erro'); b.disabled = false; });
+  };
+
+  /* ------------------------------------ histórico e pacote do período */
+
+  function carregarHistorico(cnpj) {
+    var emp = (estado.empresas || []).filter(function (e) { return e.cnpj === cnpj; })[0];
+    if (!emp) return;
+
+    // Período padrão do pacote: o mês corrente, que é o caso comum
+    var hoje = new Date();
+    if (!el('pkInicio').value) {
+      el('pkInicio').value = hoje.getFullYear() + '-' +
+        String(hoje.getMonth() + 1).padStart(2, '0') + '-01';
+      el('pkFim').value = hoje.getFullYear() + '-' +
+        String(hoje.getMonth() + 1).padStart(2, '0') + '-' +
+        String(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate()).padStart(2, '0');
+    }
+
+    api('/empresas/' + cnpj + '/historico').then(function (lista) {
+      var tb = el('histLista');
+      tb.innerHTML = lista.length
+        ? lista.map(function (h) {
+            return '<tr><td class="mono" style="white-space:nowrap">' +
+                esc(fmtDataHora(h.ocorrido_em)) + '</td>' +
+              '<td>' + esc(h.autor) +
+                (h.origem === 'api' ? '<div class="ajuda">por integração</div>' : '') + '</td>' +
+              '<td>' + esc(h.descricao) +
+                (h.referencia ? '<div class="ajuda mono">' + esc(h.referencia) + '</div>' : '') +
+              '</td></tr>';
+          }).join('')
+        : '<tr><td colspan="3" style="color:var(--texto-2);padding:20px">' +
+          'Nada registrado ainda. A partir de agora, emissões, cancelamentos e mudanças ' +
+          'de configuração aparecem aqui.</td></tr>';
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('btnPacote').onclick = function () {
+    var inicio = el('pkInicio').value;
+    var fim = el('pkFim').value;
+    if (!inicio || !fim) return aviso('Escolha o período.', 'erro');
+    if (fim < inicio) return aviso('A data final é anterior à inicial.', 'erro');
+
+    var b = el('btnPacote');
+    b.disabled = true;
+    b.textContent = 'Preparando…';
+
+    var url = '/nfse/pacote?cnpjEmpresa=' + encodeURIComponent(estado.editando) +
+              '&inicio=' + inicio + '&fim=' + fim +
+              (el('pkPdf').checked ? '' : '&pdf=0');
+
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) {
+          return r.json().then(function (d) { throw new Error(d.erro || 'Falhou'); });
+        }
+        var total = r.headers.get('X-Total-Notas');
+        return r.blob().then(function (blob) { return { blob: blob, total: total }; });
+      })
+      .then(function (r) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(r.blob);
+        a.download = 'notas-' + estado.editando + '-' + inicio + '-a-' + fim + '.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        aviso(r.total + ' nota(s) no pacote.', 'ok');
+        carregarHistorico(estado.editando);
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; b.textContent = 'Baixar pacote'; });
+  };
+
   function aba(nome) {
     $$('#abas button').forEach(function (b) { b.classList.toggle('ativo', b.dataset.aba === nome); });
-    ['visao','identificacao','endereco','contato','responsavel','contabilidade','fiscais','certificado','integracao']
+    ['visao','identificacao','endereco','contato','responsavel','contabilidade','fiscais','obrigacoes','historico','certificado','integracao']
       .forEach(function (p) { el('aba-' + p).classList.toggle('ativo', p === nome); });
     // Numeração, certificado e integração gravam por conta própria
     el('acoesEmpresa').style.display =
-      (nome === 'visao' || nome === 'fiscais' || nome === 'certificado' || nome === 'integracao')
+      (nome === 'visao' || nome === 'fiscais' || nome === 'obrigacoes' ||
+       nome === 'historico' || nome === 'certificado' || nome === 'integracao')
         ? 'none' : '';
     if (nome === 'integracao' && estado.editando) carregarIntegracao(estado.editando);
     if (nome === 'visao' && estado.editando) carregarVisaoGeral(estado.editando);
     if (nome === 'fiscais' && estado.editando) carregarPadroesFiscais(estado.editando);
+    if (nome === 'obrigacoes' && estado.editando) carregarObrigacoesEmpresa(estado.editando);
+    if (nome === 'historico' && estado.editando) carregarHistorico(estado.editando);
   }
   el('abas').onclick = function (ev) {
     var b = ev.target.closest('button');
