@@ -7,6 +7,7 @@
    obra, evento, deduções etc.). */
 
 const { limparDocumento } = require('../util/documento');
+const { dataLocalISO } = require('../util/data');
 
 function esc(v) {
   return String(v)
@@ -374,7 +375,7 @@ function montarDps(empresa, dados, opts) {
   tag('verAplic', opts.verAplic) +
   tag('serie', serie) +
   tag('nDPS', numero) +
-  tag('dCompet', dados.dataCompetencia || new Date().toISOString().slice(0, 10)) +
+  tag('dCompet', dados.dataCompetencia || dataLocalISO()) +
   tag('tpEmit', '1') + // 1 = emissão pelo prestador
   tag('cLocEmi', empresa.codigo_municipio) +
   // Substituição: informar a chave da NFS-e a substituir faz a Sefin cancelar

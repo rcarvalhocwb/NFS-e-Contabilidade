@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { validarDocumento, soDigitos } = require('../util/documento');
+const { dataLocalISO } = require('../util/data');
 const { consultarCnpj } = require('../services/consultaExterna');
 const { empresasVisiveis, empresaVisivel } = require('../middleware/escopo');
 
@@ -77,7 +78,7 @@ router.get('/contexto', async (req, res, next) => {
           municipioNome: mun.rows[0] ? mun.rows[0].nome : null,
           // Optante do Simples não declara alíquota: o ISS sai no DAS
           optanteSimples: [2, 3].includes(Number(emp.op_simp_nac)),
-          competencia: new Date().toISOString().slice(0, 10),
+          competencia: dataLocalISO(),
           ultimoServico,
 
           /* Padrões cadastrados na empresa. Vêm antes da alíquota do município

@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { gerarCsv } = require('../util/csv');
+const { dataLocalISO, primeiroDiaDoMes } = require('../util/data');
 const { empresasVisiveis } = require('../middleware/escopo');
 const { extrairValores, baseCalculo, valorIss, totalRetencoesFederais } =
   require('../nfse/extrairValores');
@@ -18,8 +19,8 @@ const router = express.Router();
 function periodo(req) {
   const hoje = new Date();
   const inicio = req.query.inicio ||
-    new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
-  const fim = req.query.fim || hoje.toISOString().slice(0, 10);
+    primeiroDiaDoMes(hoje);
+  const fim = req.query.fim || dataLocalISO(hoje);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fim)) {
     throw Object.assign(new Error('Datas devem estar no formato AAAA-MM-DD'), { status: 400 });
   }

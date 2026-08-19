@@ -15,9 +15,54 @@
   function digitos(v) { return String(v || '').replace(/\D/g, ''); }
   /* CNPJ aceita letra desde julho/2026 — limpar com /\D/g apagaria o documento. */
   function docLimpo(v) { return String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, ''); }
+  /* Lê um valor escrito como se escreve no Brasil.
+   *
+   * O campo era <input type="number">, que só entende ponto decimal. Quem
+   * digitasse "1.234,56" — mil duzentos e trinta e quatro reais, a forma que
+   * todo contador usa — via o campo virar 1.23456, e a nota sairia com R$ 1,23.
+   * Mil vezes menos, sem nenhum erro na tela, virando documento fiscal.
+   *
+   * Regras, na ordem:
+   *   tem vírgula      → ela é o decimal; pontos são separador de milhar
+   *   só tem ponto     → ponto que separa exatamente 3 dígitos finais, havendo
+   *                      outro ponto ou grupo inicial curto, é milhar;
+   *                      caso contrário é decimal (aceita "1234.56" colado de
+   *                      planilha em inglês)
+   */
+  function parseValorBR(texto) {
+    var v = String(texto == null ? '' : texto).trim().replace(/\s|R\$| /g, '');
+    if (v === '') return undefined;
+
+    var negativo = /^-/.test(v);
+    v = v.replace(/^[+-]/, '');
+    if (!/^[\d.,]+$/.test(v)) return NaN;
+
+    if (v.indexOf(',') >= 0) {
+      // Mais de uma vírgula não é número, é engano de digitação
+      if (v.split(',').length > 2) return NaN;
+      v = v.replace(/\./g, '').replace(',', '.');
+    } else if (v.indexOf('.') >= 0) {
+      var grupos = v.split('.');
+      var ultimo = grupos[grupos.length - 1];
+      var milhar = ultimo.length === 3 &&
+                   (grupos.length > 2 || grupos[0].length <= 3);
+      if (milhar) v = grupos.join('');
+    }
+
+    var n = Number(v);
+    if (!isFinite(n)) return NaN;
+    return negativo ? -n : n;
+  }
+
+  /* Escreve de volta no formato brasileiro, para a pessoa conferir o que o
+     sistema entendeu — é o retorno visual que faltava. */
+  function fmtValorBR(n) {
+    return Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2,
+                                               maximumFractionDigits: 2 });
+  }
+
   function num(id) {
-    var v = el(id).value;
-    return v === '' ? undefined : Number(v);
+    return parseValorBR(el(id).value);
   }
   function fmtMoeda(v) {
     return Number(v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
@@ -349,6 +394,20 @@
     el(id).addEventListener('change', atualizarTotal);
   });
 
+  /* Campos de moeda: ao sair, reescreve no formato brasileiro. É o retorno
+     visual de que o sistema entendeu o mesmo número que a pessoa quis dizer —
+     quem digita 1.234,56 vê 1.234,56, e quem erra o formato vê na hora. */
+  Array.prototype.forEach.call(document.querySelectorAll('[data-moeda]'), function (campo) {
+    campo.addEventListener('blur', function () {
+      var n = parseValorBR(campo.value);
+      campo.classList.remove('invalido');
+      if (n === undefined) { campo.value = ''; return; }
+      if (isNaN(n)) { campo.classList.add('invalido'); return; }
+      campo.value = fmtValorBR(n);
+      atualizarTotal();
+    });
+  });
+
   el('btnLimpar').onclick = function () {
     if (!confirm('Limpar todos os campos?')) return;
     ['fDoc','fNome','fMunTom','fEmailTom','fFoneTom','fCodTrib','fCodMun','fMunPrest',
@@ -509,6 +568,23 @@
   function validar() {
     var e = empresaAtual();
     if (!e) return 'Escolha a empresa emissora.';
+
+    /* Valor que não dá para ler não pode virar "campo em branco": desconto ou
+       dedução ilegível seria simplesmente ignorado, e a nota sairia com o
+       valor cheio sem ninguém notar. */
+    var rotulos = {
+      fValor: 'Valor do serviço', fDescIncond: 'Desconto incondicionado',
+      fDeducoes: 'Deduções da base', fDescCond: 'Desconto condicionado',
+      fRetPis: 'PIS', fRetCofins: 'COFINS', fRetIrrf: 'IRRF',
+      fRetCsll: 'CSLL', fRetInss: 'INSS'
+    };
+    for (var id in rotulos) {
+      if (isNaN(num(id))) {
+        return 'O campo "' + rotulos[id] + '" não é um valor válido. ' +
+               'Escreva como 1.234,56.';
+      }
+    }
+
     if (!/^\d{6}$/.test(digitos(el('fCodTrib').value))) return 'O código de tributação tem 6 dígitos.';
     if (!el('fDescricao').value.trim()) return 'Descreva o serviço prestado.';
     if (!num('fValor') || num('fValor') <= 0) return 'Informe o valor do serviço.';

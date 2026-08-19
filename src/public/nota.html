@@ -156,7 +156,7 @@
       <div class="grade c3">
         <div>
           <label for="fValor">Valor do serviço *</label>
-          <input id="fValor" type="number" step="0.01" min="0">
+          <input id="fValor" inputmode="decimal" placeholder="0,00" data-moeda>
         </div>
         <div>
           <label for="fNatureza">Natureza da operação</label>
@@ -181,13 +181,13 @@
           <label for="fIssRetido">ISS retido pelo tomador</label>
           <select id="fIssRetido"><option value="false">Não</option><option value="true">Sim</option></select>
         </div>
-        <div><label for="fDescIncond">Desconto incondicionado</label><input id="fDescIncond" type="number" step="0.01" min="0"></div>
-        <div><label for="fDeducoes">Deduções da base</label><input id="fDeducoes" type="number" step="0.01" min="0">
+        <div><label for="fDescIncond">Desconto incondicionado</label><input id="fDescIncond" inputmode="decimal" placeholder="0,00" data-moeda></div>
+        <div><label for="fDeducoes">Deduções da base</label><input id="fDeducoes" inputmode="decimal" placeholder="0,00" data-moeda>
           <div class="ajuda">Material, subempreitada.</div></div>
       </div>
 
       <div class="grade c3" style="margin-top:14px">
-        <div><label for="fDescCond">Desconto condicionado</label><input id="fDescCond" type="number" step="0.01" min="0">
+        <div><label for="fDescCond">Desconto condicionado</label><input id="fDescCond" inputmode="decimal" placeholder="0,00" data-moeda>
           <div class="ajuda">Não reduz a base de cálculo.</div></div>
         <div><label for="fBmNumero">Nº do benefício municipal</label><input id="fBmNumero" inputmode="numeric" maxlength="14">
           <div class="ajuda">Concedido por lei do município.</div></div>
@@ -230,13 +230,13 @@
           <button type="button" class="pequeno" id="btnCalcularRet" style="margin-left:8px">Calcular padrão</button>
         </div>
         <div class="grade c3">
-          <div><label for="fRetPis">PIS</label><input id="fRetPis" type="number" step="0.01" min="0"></div>
-          <div><label for="fRetCofins">COFINS</label><input id="fRetCofins" type="number" step="0.01" min="0"></div>
-          <div><label for="fRetIrrf">IRRF</label><input id="fRetIrrf" type="number" step="0.01" min="0"></div>
+          <div><label for="fRetPis">PIS</label><input id="fRetPis" inputmode="decimal" placeholder="0,00" data-moeda></div>
+          <div><label for="fRetCofins">COFINS</label><input id="fRetCofins" inputmode="decimal" placeholder="0,00" data-moeda></div>
+          <div><label for="fRetIrrf">IRRF</label><input id="fRetIrrf" inputmode="decimal" placeholder="0,00" data-moeda></div>
         </div>
         <div class="grade c3" style="margin-top:14px">
-          <div><label for="fRetCsll">CSLL</label><input id="fRetCsll" type="number" step="0.01" min="0"></div>
-          <div><label for="fRetInss">INSS (contribuição previdenciária)</label><input id="fRetInss" type="number" step="0.01" min="0"></div>
+          <div><label for="fRetCsll">CSLL</label><input id="fRetCsll" inputmode="decimal" placeholder="0,00" data-moeda></div>
+          <div><label for="fRetInss">INSS (contribuição previdenciária)</label><input id="fRetInss" inputmode="decimal" placeholder="0,00" data-moeda></div>
           <div style="align-self:end">
             <label style="display:flex;align-items:center;gap:9px;font-weight:400;cursor:pointer">
               <input type="checkbox" id="fRetPeloTomador" style="width:auto;margin:0" checked>

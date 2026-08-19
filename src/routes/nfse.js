@@ -304,11 +304,31 @@ router.get('/:idOuChave/danfse', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* Quem chamou pode agir em nome desta empresa?
+ *
+ * As rotas que recebem o CNPJ no corpo/query falam com a Sefin usando o
+ * certificado A1 daquela empresa. Sem esta conferência, bastava informar o
+ * CNPJ de outro cliente do escritório para consultar — ou cancelar — as notas
+ * dele: o gateway assinaria o evento com o certificado alheio, que ele guarda.
+ *
+ * Devolve 404, e não 403: para quem não tem escopo, a empresa não existe.
+ * Responder 403 confirmaria que aquele CNPJ é cliente do escritório. */
+async function exigirEmpresaNoEscopo(req, res, cnpj) {
+  const emp = await db.query('SELECT id FROM empresas WHERE cnpj = $1',
+    [limparDocumento(cnpj)]);
+  if (!emp.rows.length || !empresaVisivel(req, emp.rows[0].id)) {
+    res.status(404).json({ erro: 'Empresa não encontrada' });
+    return false;
+  }
+  return true;
+}
+
 /* Consultar NFS-e na Sefin Nacional pela chave de acesso */
 router.get('/:chaveAcesso', async (req, res, next) => {
   try {
     const cnpjEmpresa = req.query.cnpjEmpresa;
     if (!cnpjEmpresa) return res.status(400).json({ erro: 'Informe ?cnpjEmpresa= (certificado usado na consulta)' });
+    if (!await exigirEmpresaNoEscopo(req, res, cnpjEmpresa)) return;
     res.json(await consultar(cnpjEmpresa, req.params.chaveAcesso));
   } catch (e) { next(e); }
 });
@@ -319,6 +339,9 @@ router.post('/:chaveAcesso/cancelamento', async (req, res, next) => {
   try {
     const b = req.body || {};
     if (!b.cnpjEmpresa) return res.status(400).json({ erro: 'cnpjEmpresa é obrigatório' });
+    // Cancelar é irreversível e assina com o certificado A1 da empresa: o
+    // escopo é conferido antes de qualquer outra coisa
+    if (!await exigirEmpresaNoEscopo(req, res, b.cnpjEmpresa)) return;
     // A Sefin exige xMotivo em qualquer código; o builder preenche um texto
     // padrão quando não vem informado. Para "Outros" o texto próprio é
     // obrigatório — o padrão genérico não descreve nada.
