@@ -356,10 +356,60 @@
         b.className = 'pequeno'; b.textContent = 'Abrir';
         b.onclick = function () { abrirEmpresa(e.cnpj); };
         tr.lastChild.appendChild(b);
+
+        // Trocar de ambiente muda o que a próxima nota significa, então é ação
+        // própria e visível, não um campo perdido dentro do cadastro.
+        var amb = document.createElement('button');
+        amb.className = 'pequeno' + (e.ambiente === 'homologacao' ? ' primario' : ' perigo');
+        amb.style.marginLeft = '6px';
+        amb.textContent = e.ambiente === 'homologacao' ? 'Ir para produção' : 'Voltar a teste';
+        amb.title = e.ambiente === 'homologacao'
+          ? 'Passar a emitir notas com valor fiscal'
+          : 'Voltar a emitir notas de teste';
+        amb.onclick = function () { trocarAmbiente(e); };
+        tr.lastChild.appendChild(amb);
         tb.appendChild(tr);
       });
       preencherSelectsEmpresa();
     }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  function trocarAmbiente(e) {
+    var paraProducao = e.ambiente === 'homologacao';
+    var nome = e.nome_fantasia || e.razao_social;
+
+    if (paraProducao) {
+      var texto = 'Passar ' + nome + ' para PRODUÇÃO?\n\n' +
+        'A partir daí, cada nota emitida por esta empresa:\n' +
+        '  • tem valor fiscal\n' +
+        '  • gera imposto a recolher\n' +
+        '  • só sai por cancelamento\n\n' +
+        'A numeração de produção é independente da de teste.';
+      if (!confirm(texto)) return;
+      // Segunda confirmação digitada: o clique duplo por engano é comum, e
+      // aqui o engano custa uma nota fiscal real.
+      var resposta = prompt('Para confirmar, digite PRODUCAO em maiúsculas:');
+      if (resposta !== 'PRODUCAO') {
+        if (resposta !== null) aviso('Confirmação não conferiu. Nada foi alterado.', 'erro');
+        return;
+      }
+    } else {
+      if (!confirm('Voltar ' + nome + ' para homologação (teste)?\n\n' +
+                   'As notas passam a ser de teste, sem valor fiscal.')) return;
+    }
+
+    api('/empresas/' + e.cnpj + '/ambiente', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ambiente: paraProducao ? 'producao' : 'homologacao',
+        confirmo: paraProducao
+      })
+    }).then(function (r) {
+      var n = r.numeracao;
+      aviso(nome + ' agora emite em ' + nomeAmbiente(r.ambiente) +
+        (n ? '. Próxima nota: série ' + n.serie + ', número ' + n.prox_numero + '.' : '.'));
+      carregarEmpresas();
+    }).catch(function (err) { aviso(err.message, 'erro'); });
   }
 
   function preencherSelectsEmpresa() {

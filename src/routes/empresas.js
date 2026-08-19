@@ -178,6 +178,63 @@ router.put('/:cnpj', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) 
   } catch (e) { next(e); }
 });
 
+/* Troca o ambiente de operação da empresa.
+   Rota própria, e não um campo no meio do cadastro: passar para produção muda
+   o que a próxima nota significa — vira documento fiscal e gera imposto. Ter
+   endereço próprio deixa a ação explícita e permite exigir a confirmação. */
+router.put('/:cnpj/ambiente', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    if (!['homologacao', 'producao'].includes(b.ambiente)) {
+      return res.status(400).json({ erro: "ambiente deve ser 'homologacao' ou 'producao'" });
+    }
+    if (b.ambiente === 'producao' && b.confirmo !== true) {
+      return res.status(400).json({
+        erro: 'Para passar à produção, confirme: as notas emitidas passam a ter ' +
+              'valor fiscal e a gerar imposto.'
+      });
+    }
+
+    const cnpj = limparCnpj(req.params.cnpj);
+    const emp = await db.query('SELECT id, ambiente FROM empresas WHERE cnpj = $1', [cnpj]);
+    if (!emp.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });
+
+    // Sem certificado não adianta trocar: a emissão falharia no primeiro envio
+    if (b.ambiente === 'producao') {
+      const cert = await db.query(
+        'SELECT valido_ate FROM certificados WHERE empresa_id = $1 AND ativo LIMIT 1',
+        [emp.rows[0].id]);
+      if (!cert.rows.length) {
+        return res.status(400).json({
+          erro: 'Anexe o certificado digital antes de passar esta empresa para produção.'
+        });
+      }
+      if (new Date(cert.rows[0].valido_ate) < new Date()) {
+        return res.status(400).json({
+          erro: 'O certificado desta empresa está vencido. Renove antes de emitir em produção.'
+        });
+      }
+    }
+
+    const r = await db.query(
+      'UPDATE empresas SET ambiente = $1 WHERE cnpj = $2 RETURNING cnpj, razao_social, ambiente',
+      [b.ambiente, cnpj]);
+
+    // A numeração é independente por ambiente; avisar de onde a próxima sai
+    const num = await db.query(
+      'SELECT serie, prox_numero FROM numeracao_dps WHERE empresa_id = $1 AND ambiente = $2',
+      [emp.rows[0].id, b.ambiente]);
+
+    console.log(`[empresa] ${cnpj}: ambiente ${emp.rows[0].ambiente} -> ${b.ambiente}` +
+                (req.auth.tipo === 'usuario' ? ` (por ${req.auth.email})` : ''));
+
+    res.json(Object.assign(r.rows[0], {
+      anterior: emp.rows[0].ambiente,
+      numeracao: num.rows[0] || null
+    }));
+  } catch (e) { next(e); }
+});
+
 /* Numeração da DPS por ambiente (homologação e produção são independentes) */
 router.get('/:cnpj/numeracao', exigirEmpresaVisivel, async (req, res, next) => {
   try {

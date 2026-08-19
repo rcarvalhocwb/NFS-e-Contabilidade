@@ -20,6 +20,12 @@ const AMBIENTES = {
 
 const config = {
   port: parseInt(process.env.PORT || '3000', 10),
+  /* Trava de instalação: com PERMITIR_PRODUCAO=false, nenhuma nota sai em
+     produção, mesmo que a empresa esteja marcada assim. Serve para a máquina de
+     treinamento e para a de desenvolvimento — onde uma nota real emitida por
+     engano teria valor fiscal e geraria imposto.
+     O padrão é permitir: a instalação normal é para emitir de verdade. */
+  permitirProducao: process.env.PERMITIR_PRODUCAO !== 'false',
   databaseUrl: process.env.DATABASE_URL,
   apiKey: process.env.GATEWAY_API_KEY,
   masterKey: process.env.MASTER_KEY,
@@ -83,6 +89,9 @@ function validar() {
 function validarOuSair() {
   const { erros, avisos } = validar();
 
+  if (!config.permitirProducao) {
+    console.warn('[config] PERMITIR_PRODUCAO=false — emissão em produção bloqueada nesta instalação');
+  }
   avisos.forEach(a => console.warn('[config] aviso:', a));
 
   if (erros.length) {

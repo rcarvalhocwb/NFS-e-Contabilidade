@@ -84,6 +84,15 @@ async function emitir(cnpjEmpresa, dados, contexto = {}) {
   }
 
   const cert = await carregarCertificadoAtivo(empresa.id);
+  /* Trava da instalação, conferida antes de reservar número: numa máquina de
+     treinamento a nota não pode escapar para produção nem por engano. */
+  if (empresa.ambiente === 'producao' && !config.permitirProducao) {
+    throw Object.assign(
+      new Error('Esta instalação está com a emissão em produção bloqueada ' +
+                '(PERMITIR_PRODUCAO=false no .env). Use homologação ou libere no servidor.'),
+      { status: 403 });
+  }
+
   const amb = config.ambientes[empresa.ambiente];
 
   const reserva = dados.numero
