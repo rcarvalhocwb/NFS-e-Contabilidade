@@ -145,6 +145,7 @@
       <a href="#usuarios" data-tela="usuarios" data-admin hidden><span class="ico">◉</span> Usuários</a>
       <a href="#municipios" data-tela="municipios" data-admin hidden><span class="ico">⬡</span> Municípios</a>
       <a href="#webhooks" data-tela="webhooks" data-admin hidden><span class="ico">⇄</span> Webhooks</a>
+      <a href="#identidade" data-tela="identidade" data-admin hidden><span class="ico">◈</span> Identidade visual</a>
       <a href="#manutencao" data-tela="manutencao" data-admin hidden><span class="ico">▤</span> Backup e migração</a>
     </nav>
 
@@ -1004,6 +1005,74 @@
       </section>
 
       <!-- ---------------- BACKUP E MIGRAÇÃO ---------------- -->
+      <section data-tela-conteudo="identidade" hidden>
+        <div class="cartao" style="margin:0 0 18px">
+          <div class="cartao-cab"><h2>A marca do escritório</h2></div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:16px">
+              Aparece no painel, na tela de acesso e nos relatórios que você entrega
+              ao cliente. <strong>Não entra no DANFSe</strong>: ali o emitente é a
+              empresa prestadora, e a marca da contabilidade daria a entender que foi
+              ela quem emitiu a nota.
+            </div>
+
+            <div class="grade c2">
+              <div><label for="idNome">Nome do escritório</label>
+                <input id="idNome" maxlength="80" placeholder="Ex.: Contabilidade Silva"></div>
+              <div><label for="idDescricao">Linha de apoio</label>
+                <input id="idDescricao" maxlength="80" placeholder="Ex.: Assessoria contábil e fiscal">
+                <div class="ajuda">Aparece menor, logo abaixo do nome.</div></div>
+            </div>
+
+            <div class="grade c2" style="margin-top:16px">
+              <div>
+                <label for="idCor">Cor da marca</label>
+                <div style="display:flex;gap:10px;align-items:center">
+                  <input id="idCor" type="color" value="#2563eb"
+                         style="width:52px;height:38px;padding:3px;cursor:pointer">
+                  <input id="idCorTexto" maxlength="7" placeholder="#2563eb" class="mono"
+                         style="flex:1">
+                </div>
+                <div class="ajuda">Botões, destaques e o cabeçalho dos relatórios.</div>
+              </div>
+              <div>
+                <label>Logo</label>
+                <div style="display:flex;gap:10px;align-items:center">
+                  <div id="idPreview" style="width:120px;height:46px;border:1px solid var(--linha);
+                       border-radius:var(--raio-sm);display:grid;place-items:center;
+                       background:var(--superficie-2);font-size:11px;color:var(--texto-3);
+                       overflow:hidden">sem logo</div>
+                  <div>
+                    <input type="file" id="idArquivo" accept="image/png,image/jpeg,image/webp"
+                           style="display:none">
+                    <button id="btnEscolherLogo">Escolher imagem</button>
+                    <button id="btnRemoverLogo" class="perigo" hidden>Remover</button>
+                  </div>
+                </div>
+                <div class="ajuda">PNG, JPG ou WebP, até 300 KB. Largura de 400 pixels basta.</div>
+              </div>
+            </div>
+
+            <div style="margin-top:16px">
+              <label for="idRodape">Rodapé dos relatórios</label>
+              <input id="idRodape" maxlength="160"
+                     placeholder="Ex.: Contabilidade Silva · CRC-PR 000000/O · (41) 3000-0000">
+            </div>
+
+            <div class="grade c3" style="margin-top:16px">
+              <div><label for="idSite">Site</label><input id="idSite" maxlength="120"></div>
+              <div><label for="idTelefone">Telefone</label><input id="idTelefone" maxlength="40"></div>
+              <div><label for="idEmail">E-mail</label><input id="idEmail" type="email" maxlength="120"></div>
+            </div>
+
+            <div class="linha-botoes" style="margin-top:20px">
+              <button class="primario" id="btnSalvarIdentidade">Salvar identidade</button>
+              <a class="botao" id="lnkVerRelatorio" href="#relatorios">Ver como fica no relatório</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section data-tela-conteudo="manutencao" hidden>
         <div class="cartao" style="margin:0 0 18px">
           <div class="cartao-cab"><h2>Versão do sistema</h2></div>

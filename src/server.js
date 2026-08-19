@@ -18,6 +18,8 @@ const consultaRouter = require('./routes/consulta');
 const integracaoRouter = require('./routes/integracao');
 const painelRouter = require('./routes/painel');
 const atualizacaoRouter = require('./routes/atualizacao');
+const identidadeRouter = require('./routes/identidade');
+const identidadeServico = require('./services/identidade');
 const obrigacoesRouter = require('./routes/obrigacoes');
 const emissorRouter = require('./routes/emissor');
 const authRouter = require('./routes/auth');
@@ -93,6 +95,31 @@ app.get('/', (req, res) => {
    entrar ainda não tem credencial. Cada rota se protege por conta própria. */
 app.use('/auth', authRouter);
 
+/* A marca do escritório é pública: a tela de acesso a mostra antes de existir
+   sessão. São nome, cor e logo — nada que já não esteja no papel timbrado. */
+app.get('/marca', async (_req, res) => {
+  try {
+    const i = await identidadeServico.ler();
+    res.json({ nome: i.nome || null, descricao: i.descricao || null,
+               corAcento: i.cor_acento || null, temLogo: !!i.tem_logo });
+  } catch (e) {
+    // Sem banco, o painel abre com a identidade padrão em vez de não abrir
+    res.json({ nome: null, descricao: null, corAcento: null, temLogo: false });
+  }
+});
+
+app.get('/marca/logo', async (_req, res) => {
+  try {
+    const logo = await identidadeServico.lerLogo();
+    if (!logo) return res.status(404).end();
+    res.setHeader('Content-Type', logo.tipo);
+    // Curto de propósito: trocar a logo e ver a antiga por uma hora seria pior
+    // que baixá-la de novo a cada cinco minutos.
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.send(logo.conteudo);
+  } catch (e) { res.status(404).end(); }
+});
+
 /* Painel de administração (empresas e certificados).
    A página em si não exige autenticação — é só o shell, sem dados nem segredos:
    quem entra faz login com usuário e senha, e as rotas de dados abaixo seguem
@@ -136,6 +163,7 @@ app.use('/emissor', emissorRouter);
 app.use('/painel', painelRouter);
 app.use('/atualizacao', atualizacaoRouter);
 app.use('/obrigacoes', obrigacoesRouter);
+app.use('/identidade', identidadeRouter);
 app.use('/usuarios', usuariosRouter);
 app.use('/manutencao', manutencaoRouter);
 app.use('/lote', loteRouter);

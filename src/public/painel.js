@@ -307,6 +307,7 @@
     servicos:    { titulo:'Serviços',      sub:'Modelos para emitir mais rápido',       carregar: carregarServicos },
     usuarios:    { titulo:'Usuários',      sub:'Quem acessa o gateway e o que pode fazer', carregar: carregarUsuarios },
     agenda:      { titulo:'Agenda do escritório', sub:'Obrigações e prazos dos clientes', carregar: function () { carregarAgenda(); carregarModelos(); } },
+    identidade:  { titulo:'Identidade visual', sub:'A marca do escritório no painel e nos relatórios', carregar: carregarIdentidade },
     manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: function () { carregarManutencao(); carregarAtualizacao(); } },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
     webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks }
@@ -969,6 +970,164 @@
       })
       .catch(function (e) { aviso(e.message, 'erro'); })
       .then(function () { b.disabled = false; b.textContent = 'Baixar pacote'; });
+  };
+
+  /* ========================== Identidade do escritório =======================
+     A marca aparece no painel, na tela de acesso e nos relatórios entregues ao
+     cliente. Fora do DANFSe, que é documento fiscal da empresa prestadora. */
+
+  /* Deriva o tema a partir de uma cor só. Pedir seis cores a quem quer apenas
+     "colocar a marca da empresa" é o caminho para uma tela desmontada. */
+  function aplicarMarca(m) {
+    if (!m) return;
+    var raiz = document.documentElement;
+
+    if (m.corAcento || m.cor_acento) {
+      var cor = m.corAcento || m.cor_acento;
+      raiz.style.setProperty('--acento', cor);
+      raiz.style.setProperty('--marca', escurecer(cor, 0.26));
+      raiz.style.setProperty('--marca-2', escurecer(cor, 0.4));
+      raiz.style.setProperty('--acento-suave', clarear(cor, 0.9));
+      raiz.style.setProperty('--acento-fg', contrasteClaro(cor) ? '#ffffff' : '#10161f');
+    }
+
+    var nome = m.nome;
+    if (nome) {
+      var alvo = document.querySelector('.marca .nome');
+      if (alvo) alvo.textContent = nome;
+      var acesso = document.querySelector('.marca-grande h1');
+      if (acesso) acesso.textContent = nome;
+      document.title = nome + ' · NFS-e';
+    }
+    var desc = m.descricao;
+    if (desc) {
+      var sub = document.querySelector('.marca .versao');
+      if (sub) sub.textContent = desc;
+      var subAcesso = document.querySelector('.marca-grande div[style*="texto-3"]');
+      if (subAcesso) subAcesso.textContent = desc;
+    }
+
+    if (m.temLogo || m.tem_logo) {
+      /* A logo substitui o quadrado "NF". Fundo transparente e altura fixa: o
+         que varia entre logos é a largura, e esticar a imagem é pior que
+         deixá-la pequena. */
+      document.querySelectorAll('.logo').forEach(function (caixa) {
+        caixa.innerHTML = '<img src="/marca/logo" alt="' + esc(nome || 'Logo') + '">';
+        // A classe muda o arranjo do bloco inteiro; o CSS cuida do resto
+        if (caixa.parentElement) caixa.parentElement.classList.add('com-logo');
+      });
+    }
+  }
+
+  function corParaRgb(hex) {
+    var h = String(hex).replace('#', '');
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  function paraHex(r, g, b) {
+    return '#' + [r, g, b].map(function (v) {
+      return Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+    }).join('');
+  }
+  function escurecer(hex, quanto) {
+    var c = corParaRgb(hex);
+    return paraHex(c[0] * (1 - quanto), c[1] * (1 - quanto), c[2] * (1 - quanto));
+  }
+  function clarear(hex, quanto) {
+    var c = corParaRgb(hex);
+    return paraHex(c[0] + (255 - c[0]) * quanto, c[1] + (255 - c[1]) * quanto,
+                   c[2] + (255 - c[2]) * quanto);
+  }
+  /* Texto branco só quando o fundo é escuro o bastante para sustentá-lo. */
+  function contrasteClaro(hex) {
+    var c = corParaRgb(hex);
+    return (c[0] * 299 + c[1] * 587 + c[2] * 114) / 1000 < 150;
+  }
+
+  function carregarMarca() {
+    return fetch('/marca', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (m) { estado.marca = m; aplicarMarca(m); })
+      .catch(function () { /* sem marca, o padrão serve */ });
+  }
+
+  function carregarIdentidade() {
+    api('/identidade').then(function (i) {
+      el('idNome').value = i.nome || '';
+      el('idDescricao').value = i.descricao || '';
+      el('idRodape').value = i.rodape || '';
+      el('idSite').value = i.site || '';
+      el('idTelefone').value = i.telefone || '';
+      el('idEmail').value = i.email || '';
+      var cor = i.cor_acento || '#2563eb';
+      el('idCor').value = cor;
+      el('idCorTexto').value = cor;
+
+      var pv = el('idPreview');
+      if (i.tem_logo) {
+        pv.innerHTML = '<img src="/marca/logo?t=' + Date.now() +
+          '" style="max-width:100%;max-height:100%;object-fit:contain">';
+        el('btnRemoverLogo').hidden = false;
+      } else {
+        pv.textContent = 'sem logo';
+        el('btnRemoverLogo').hidden = true;
+      }
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  // Os dois campos de cor andam juntos: o seletor para escolher, o texto para
+  // colar o código que veio do manual de marca
+  el('idCor').oninput = function () { el('idCorTexto').value = el('idCor').value; };
+  el('idCorTexto').oninput = function () {
+    var v = el('idCorTexto').value.trim();
+    if (/^#?[0-9a-fA-F]{6}$/.test(v)) el('idCor').value = v[0] === '#' ? v : '#' + v;
+  };
+
+  el('btnSalvarIdentidade').onclick = function () {
+    var b = el('btnSalvarIdentidade');
+    b.disabled = true;
+    api('/identidade', { method: 'PUT', body: JSON.stringify({
+      nome: el('idNome').value,
+      descricao: el('idDescricao').value,
+      corAcento: el('idCorTexto').value || el('idCor').value,
+      rodape: el('idRodape').value,
+      site: el('idSite').value,
+      telefone: el('idTelefone').value,
+      email: el('idEmail').value
+    })}).then(function () {
+      aviso('Identidade salva.', 'ok');
+      return carregarMarca();
+    }).catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
+
+  el('btnEscolherLogo').onclick = function () { el('idArquivo').click(); };
+
+  el('idArquivo').onchange = function () {
+    var arquivo = el('idArquivo').files[0];
+    if (!arquivo) return;
+    var fd = new FormData();
+    fd.append('logo', arquivo);
+    // FormData sem content-type: quem monta o boundary é o navegador
+    api('/identidade/logo', { method: 'POST', body: fd })
+      .then(function () {
+        aviso('Logo atualizada.', 'ok');
+        el('idArquivo').value = '';
+        carregarIdentidade();
+        return carregarMarca();
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); el('idArquivo').value = ''; });
+  };
+
+  el('btnRemoverLogo').onclick = function () {
+    if (!confirm('Remover a logo do escritório?')) return;
+    api('/identidade/logo', { method: 'DELETE' }).then(function () {
+      aviso('Logo removida.', 'ok');
+      carregarIdentidade();
+      // Volta o quadrado padrão sem exigir recarga da página
+      document.querySelectorAll('.logo').forEach(function (c) {
+        c.style.background = ''; c.style.width = ''; c.textContent = 'NF';
+      });
+    }).catch(function (e) { aviso(e.message, 'erro'); });
   };
 
   function aba(nome) {
@@ -2366,6 +2525,10 @@
       location.hash = a.dataset.tela;
     }
   });
+
+  /* A marca vem antes de qualquer decisão de tela: a de acesso já a mostra, e
+     aplicá-la depois faria a página piscar do azul padrão para a cor da casa. */
+  carregarMarca();
 
   /* Retomada: o cookie sobrevive ao F5, então a sessão continua sem novo login. */
   api('/usuarios/eu')

@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { gerarCsv } = require('../util/csv');
+const identidade = require('../services/identidade');
+const { gerarFechamentoPdf } = require('../nfse/relatorioPdf');
 const { dataLocalISO, primeiroDiaDoMes } = require('../util/data');
 const { empresasVisiveis } = require('../middleware/escopo');
 const { extrairValores, baseCalculo, valorIss, totalRetencoesFederais } =
@@ -80,8 +82,7 @@ async function buscar(req) {
 }
 
 /* Fechamento: totais por empresa, que é como o escritório fecha o mês. */
-router.get('/fechamento', async (req, res, next) => {
-  try {
+async function montarFechamento(req) {
     const { inicio, fim, linhas } = await buscar(req);
     const autorizadas = linhas.filter(l => l.status === 'autorizada');
 
@@ -114,7 +115,7 @@ router.get('/fechamento', async (req, res, next) => {
     };
     const empresas = Object.values(porEmpresa).map(arredondar);
 
-    res.json({
+    return {
       periodo: { inicio, fim },
       empresas,
       totais: arredondar(empresas.reduce((t, e) => ({
@@ -129,7 +130,29 @@ router.get('/fechamento', async (req, res, next) => {
       naoAutorizadas: linhas.filter(l => l.status !== 'autorizada')
         .map(l => ({ empresa: l.empresa, numero: l.numero, serie: l.serie,
                      status: l.status, referencia: l.referencia }))
-    });
+    };
+}
+
+router.get('/fechamento', async (req, res, next) => {
+  try {
+    res.json(await montarFechamento(req));
+  } catch (e) { next(e); }
+});
+
+/* O mesmo fechamento em PDF, com a marca do escritório. É o que se manda ao
+   cliente — e ter o documento pronto evita que os números sejam copiados à mão
+   para outro lugar, que é onde o erro de transcrição aparece. */
+router.get('/fechamento.pdf', async (req, res, next) => {
+  try {
+    const [dados, marca, logo] = await Promise.all([
+      montarFechamento(req), identidade.ler(), identidade.lerLogo()
+    ]);
+    const pdf = await gerarFechamentoPdf(dados, marca, logo);
+    const nome = `fechamento-${dados.periodo.inicio}-a-${dados.periodo.fim}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="${nome}"`);
+    res.send(pdf);
   } catch (e) { next(e); }
 });
 
