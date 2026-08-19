@@ -3,7 +3,7 @@ const db = require('../db');
 const { emitir, consultar, cancelar } = require('../services/emissaoService');
 const { criarZip } = require('../util/zip');
 const { notaNoEscopo, filtroSqlEmpresas, empresaVisivel } = require('../middleware/escopo');
-const { validarDocumento } = require('../util/documento');
+const { validarDocumento, limparDocumento } = require('../util/documento');
 const { gerarDanfse } = require('../nfse/danfse');
 
 const router = express.Router();

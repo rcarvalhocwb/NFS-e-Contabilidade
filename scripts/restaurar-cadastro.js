@@ -28,6 +28,9 @@ const EMPRESA = {
   cnpj: '21583854000118',
   razaoSocial: 'RECALCATTI SEGURANCA PRIVADA LTDA',
   nomeFantasia: 'GRUPO RECALCATTI',
+  // Sem a IM a Sefin rejeita com E0116 quando o município exige o
+  // cadastro do prestador — foi o que faltou na primeira restauração.
+  inscricaoMunicipal: '1102709463',
   codigoMunicipio: '4106902',      // Curitiba/PR
   uf: 'PR',
   opSimpNac: 3,                    // ME/EPP do Simples Nacional
@@ -72,12 +75,14 @@ async function principal() {
     await cliente.query('BEGIN');
 
     const emp = await cliente.query(
-      `INSERT INTO empresas (cnpj, razao_social, nome_fantasia, codigo_municipio, uf,
+      `INSERT INTO empresas (cnpj, razao_social, nome_fantasia, inscricao_municipal,
+                             codigo_municipio, uf,
                              op_simp_nac, reg_esp_trib, ambiente, email, telefone)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (cnpj) DO UPDATE SET razao_social = EXCLUDED.razao_social
        RETURNING id, (xmax = 0) AS criada`,
-      [EMPRESA.cnpj, EMPRESA.razaoSocial, EMPRESA.nomeFantasia, EMPRESA.codigoMunicipio,
+      [EMPRESA.cnpj, EMPRESA.razaoSocial, EMPRESA.nomeFantasia, EMPRESA.inscricaoMunicipal,
+       EMPRESA.codigoMunicipio,
        EMPRESA.uf, EMPRESA.opSimpNac, EMPRESA.regEspTrib, EMPRESA.ambiente,
        EMPRESA.email, EMPRESA.telefone]);
     const empresaId = emp.rows[0].id;
