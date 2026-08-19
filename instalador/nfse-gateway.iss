@@ -1,4 +1,4 @@
-; ---------------------------------------------------------------------------
+﻿; ---------------------------------------------------------------------------
 ; Instalador do NFS-e Gateway.
 ;
 ; Gera um .exe unico que instala tudo — Node, PostgreSQL, o gateway — sem
@@ -11,7 +11,10 @@
 ; ---------------------------------------------------------------------------
 
 #define Nome "NFS-e Gateway"
-#define Versao "1.1.0"
+; A versao vem do package.json, gravada aqui por preparar-pacote.ps1.
+; Mantida a mao nos dois lugares ela diverge — e e a versao do sistema
+; que o verificador de atualizacoes compara com a release publicada.
+#include "versao.iss"
 #define Publicador "Grupo Recalcatti"
 #define ExeAtalho "Iniciar Gateway.bat"
 

@@ -17,6 +17,7 @@ const municipiosRouter = require('./routes/municipios');
 const consultaRouter = require('./routes/consulta');
 const integracaoRouter = require('./routes/integracao');
 const painelRouter = require('./routes/painel');
+const atualizacaoRouter = require('./routes/atualizacao');
 const emissorRouter = require('./routes/emissor');
 const authRouter = require('./routes/auth');
 const usuariosRouter = require('./routes/usuarios');
@@ -25,6 +26,7 @@ const loteRouter = require('./routes/lote');
 const relatoriosRouter = require('./routes/relatorios');
 const sessoes = require('./services/sessoes');
 const fila = require('./services/filaEmissao');
+const atualizacao = require('./services/atualizacao');
 const webhooks = require('./services/webhooks');
 const emailTomador = require('./services/emailTomador');
 const backupAutomatico = require('./services/backupAutomatico');
@@ -117,6 +119,7 @@ app.use('/empresas', empresasRouter);
 app.use('/consulta', consultaRouter);
 app.use('/emissor', emissorRouter);
 app.use('/painel', painelRouter);
+app.use('/atualizacao', atualizacaoRouter);
 app.use('/usuarios', usuariosRouter);
 app.use('/manutencao', manutencaoRouter);
 app.use('/lote', loteRouter);
@@ -141,6 +144,7 @@ const servidor = app.listen(config.port, () => {
   if (process.env.WEBHOOK_ATIVO !== 'false') webhooks.iniciar();
   if (process.env.EMAIL_ATIVO !== 'false') emailTomador.iniciar();
   if (process.env.BACKUP_ATIVO !== 'false') backupAutomatico.iniciar();
+  atualizacao.iniciarVerificacaoPeriodica();
 });
 
 /* Sessões expiradas se acumulariam para sempre. De hora em hora basta: elas já

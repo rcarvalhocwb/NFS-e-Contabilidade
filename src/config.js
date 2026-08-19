@@ -31,7 +31,20 @@ const config = {
   masterKey: process.env.MASTER_KEY,
   verAplic: process.env.VER_APLIC || 'nfse-gateway/1.0',
   xmlSigAlg: (process.env.XML_SIG_ALG || 'sha1').toLowerCase(),
-  ambientes: AMBIENTES
+  ambientes: AMBIENTES,
+
+  /* Atualizações. O repositório de releases é PÚBLICO e separado do código,
+     que é privado: assim o gateway baixa sem token, e nenhuma credencial de
+     acesso ao fonte precisa viajar dentro do instalador. */
+  atualizacao: {
+    repositorio: process.env.ATUALIZACAO_REPO || 'rcarvalhocwb/nfse-gateway-releases',
+    // Sobrescreve o endereço inteiro, para quem publicar fora do GitHub
+    url: process.env.ATUALIZACAO_URL || null,
+    ativo: process.env.ATUALIZACAO_VERIFICAR !== 'false',
+    intervaloHoras: Number(process.env.ATUALIZACAO_INTERVALO_HORAS || 6),
+    timeoutMs: Number(process.env.ATUALIZACAO_TIMEOUT_MS || 8000),
+    pasta: process.env.ATUALIZACAO_PASTA || require('path').join(process.cwd(), 'atualizacoes')
+  }
 };
 
 /**

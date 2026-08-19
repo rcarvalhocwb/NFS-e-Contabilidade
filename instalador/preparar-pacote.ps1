@@ -111,6 +111,19 @@ Copy-Item (Join-Path $raizInstalador 'postgres-local.ps1') $pacote -Force
 Copy-Item (Join-Path $raizInstalador 'LEIA-ME.txt') $pacote -Force
 Ok "copiados"
 
+# ------------------------------------------------------------- 7. versao
+
+# A versao vem do package.json e de nenhum outro lugar. Mantida a mao nos dois,
+# ela diverge: o instalador ja anunciou 1.1.0 enquanto o sistema se dizia
+# 1.0.0 — e e a versao do sistema que o verificador de atualizacoes compara
+# com a release publicada. Divergir ali significa avisar de atualizacao que
+# nao existe, ou nao avisar da que existe.
+Titulo "7. Versao"
+$versao = (Get-Content (Join-Path $raizProjeto 'package.json') -Raw | ConvertFrom-Json).version
+if (-not $versao) { throw "package.json sem campo version" }
+"#define Versao `"$versao`"" | Out-File (Join-Path $raizInstalador 'versao.iss') -Encoding utf8
+Ok "versao $versao gravada em versao.iss"
+
 $tamanho = [math]::Round((Get-ChildItem $pacote -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 1)
 Write-Host ""
 Write-Host "  Pacote pronto: $pacote ($tamanho MB)" -ForegroundColor Green

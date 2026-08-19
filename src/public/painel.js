@@ -297,7 +297,7 @@
   /* ------------------------------------------------------------ navegação */
 
   var TELAS = {
-    inicio:      { titulo:'Início',        sub:'Visão geral do sistema',                carregar: carregarInicio },
+    inicio:      { titulo:'Início',        sub:'Visão geral do sistema',                carregar: function () { carregarInicio(); carregarAtualizacao(); } },
     empresas:    { titulo:'Empresas',      sub:'Cadastro, certificados e numeração',    carregar: carregarEmpresas },
     empresaEdit: { titulo:'Empresa',       sub:'',                                       carregar: null },
     notas:       { titulo:'Notas emitidas',sub:'Consulta, XML, PDF e cancelamento',     carregar: carregarNotas },
@@ -306,7 +306,7 @@
     clientes:    { titulo:'Clientes',      sub:'Tomadores usados nas emissões',         carregar: carregarClientes },
     servicos:    { titulo:'Serviços',      sub:'Modelos para emitir mais rápido',       carregar: carregarServicos },
     usuarios:    { titulo:'Usuários',      sub:'Quem acessa o gateway e o que pode fazer', carregar: carregarUsuarios },
-    manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: carregarManutencao },
+    manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: function () { carregarManutencao(); carregarAtualizacao(); } },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
     webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks }
   };
@@ -1766,6 +1766,119 @@
     if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / 1048576).toFixed(1) + ' MB';
   }
+
+  /* Atualizações do gateway.
+
+     O gateway roda na contabilidade, sem TI por perto, e as regras da Sefin
+     mudam sem aviso. Ele confere sozinho se saiu versão nova, mas não instala:
+     trocar arquivos no meio de uma emissão interromperia o trabalho, e quem
+     sabe a hora de parar é quem está operando. */
+  function tamanhoLegivel(bytes) {
+    if (!bytes) return '';
+    var mb = bytes / 1048576;
+    return mb >= 1 ? mb.toFixed(1).replace('.', ',') + ' MB'
+                   : Math.round(bytes / 1024) + ' KB';
+  }
+
+  /* As notas da release vêm em markdown. Em vez de interpretar tudo, mostra o
+     texto como está — escapado, que é o que importa: veio da internet. */
+  function notasComoTexto(notas) {
+    return '<pre style="white-space:pre-wrap;font-family:inherit;margin:0">' +
+           esc(String(notas || '').replace(/^SHA-?256.*$/gim, '').trim()) + '</pre>';
+  }
+
+  function mostrarAtualizacao(a) {
+    estado.atualizacao = a;
+
+    // Faixa na tela inicial: some quando não há nada novo ou quando a pessoa
+    // já disse que não quer ser avisada desta versão
+    var faixa = el('avisoAtualizacao');
+    if (faixa) {
+      var mostrar = a.temAtualizacao && !a.dispensada;
+      faixa.hidden = !mostrar;
+      if (mostrar) {
+        faixa.innerHTML =
+          '<div class="linha-alerta aviso"><strong>Versão ' + esc(a.versaoDisponivel) +
+          ' disponível</strong> — você está na ' + esc(a.versaoAtual) +
+          '. <a href="#manutencao">Ver o que mudou</a></div>';
+      }
+    }
+
+    if (!el('atVersaoAtual')) return;   // tela de manutenção ainda não montada
+    el('atVersaoAtual').textContent = a.versaoAtual || '—';
+    el('atVersaoNova').textContent = a.temAtualizacao
+      ? a.versaoDisponivel + (a.tamanhoBytes ? ' (' + tamanhoLegivel(a.tamanhoBytes) + ')' : '')
+      : (a.versaoDisponivel ? a.versaoDisponivel + ' — já instalada' : '—');
+    el('atVerificado').textContent = a.erro
+      ? 'falhou em ' + fmtDataHora(a.erroEm) + ': ' + a.erro
+      : fmtDataHora(a.verificadoEm);
+
+    var notas = el('atNotas');
+    notas.hidden = !(a.temAtualizacao && a.notas);
+    if (!notas.hidden) notas.innerHTML = notasComoTexto(a.notas);
+
+    el('btnBaixarAtualizacao').hidden = !a.temAtualizacao;
+    el('btnDispensarAtualizacao').hidden = !a.temAtualizacao || a.dispensada;
+
+    if (a.arquivoBaixado && a.temAtualizacao) {
+      el('atResultado').innerHTML =
+        'Instalador pronto em <span class="mono">' + esc(a.arquivoBaixado) + '</span>.<br>' +
+        'Feche o gateway e execute esse arquivo para atualizar. Seus dados, ' +
+        'certificados e numeração continuam onde estão.';
+    }
+  }
+
+  function carregarAtualizacao() {
+    return api('/atualizacao')
+      .then(mostrarAtualizacao)
+      .catch(function () { /* nunca atrapalha o resto da tela */ });
+  }
+
+  el('btnVerificarAtualizacao').onclick = function () {
+    var b = el('btnVerificarAtualizacao');
+    b.disabled = true; b.textContent = 'Verificando…';
+    el('atResultado').textContent = '';
+    api('/atualizacao/verificar', { method: 'POST' })
+      .then(function (a) {
+        mostrarAtualizacao(a);
+        if (a.erro) aviso('Não foi possível verificar: ' + a.erro, 'erro');
+        else if (a.temAtualizacao) aviso('Versão ' + a.versaoDisponivel + ' disponível.', 'ok');
+        else aviso('O gateway já está atualizado.', 'ok');
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; b.textContent = 'Verificar agora'; });
+  };
+
+  el('btnBaixarAtualizacao').onclick = function () {
+    var b = el('btnBaixarAtualizacao');
+    b.disabled = true; b.textContent = 'Baixando…';
+    el('atResultado').textContent = 'Baixando o instalador. Pode levar alguns minutos.';
+    api('/atualizacao/baixar', { method: 'POST' })
+      .then(function (a) {
+        mostrarAtualizacao(a);
+        // Sem soma publicada o arquivo veio, mas ninguém conferiu a origem —
+        // e isso precisa aparecer antes de alguém executá-lo como administrador
+        if (a.aviso) aviso(a.aviso, 'erro');
+        else aviso('Instalador baixado e conferido.', 'ok');
+      })
+      .catch(function (e) {
+        el('atResultado').textContent = '';
+        aviso(e.message, 'erro');
+      })
+      .then(function () { b.disabled = false; b.textContent = 'Baixar atualização'; });
+  };
+
+  el('btnDispensarAtualizacao').onclick = function () {
+    var a = estado.atualizacao || {};
+    api('/atualizacao/dispensar', { method: 'POST',
+                                    body: JSON.stringify({ versao: a.versaoDisponivel }) })
+      .then(function (r) {
+        mostrarAtualizacao(r);
+        aviso('Não avisaremos mais sobre a versão ' + a.versaoDisponivel +
+              '. Ela continua disponível aqui.', 'ok');
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); });
+  };
 
   function carregarManutencao() {
     api('/manutencao').then(function (d) {
