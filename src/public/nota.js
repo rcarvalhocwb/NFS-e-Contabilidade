@@ -42,12 +42,19 @@
     if (dados.erro || dados.detalhe) return dados.erro || dados.detalhe;
     var sefin = dados.retornoSefin || dados;
     if (Array.isArray(sefin.erros) && sefin.erros.length) {
+      /* A Sefin devolve Codigo/Descricao/Complemento em maiúsculas; outros
+         retornos usam minúsculas. Procurar só uma das formas fazia a caixa de
+         erro aparecer vazia — o operador via "rejeitada" sem saber por quê. */
       return sefin.erros.map(function (e) {
-        return (e.codigo ? e.codigo + ': ' : '') + (e.descricao || e.mensagem || '') +
-               (e.complemento ? ' — ' + e.complemento : '');
+        var codigo = e.Codigo || e.codigo;
+        var descricao = e.Descricao || e.descricao || e.Mensagem || e.mensagem;
+        var complemento = e.Complemento || e.complemento;
+        return (codigo ? codigo + ': ' : '') + (descricao || 'erro sem descrição') +
+               (complemento ? ' — ' + complemento : '');
       }).join(' | ');
     }
-    return sefin.mensagem || ('Erro HTTP ' + status);
+    return sefin.mensagem || sefin.Mensagem ||
+           ('A Sefin recusou a nota sem detalhar o motivo (HTTP ' + status + ')');
   }
 
   function api(caminho, opcoes) {
@@ -131,6 +138,7 @@
     api('/emissor/contexto?empresaId=' + empresaId).then(function (d) {
       estado.tomadores = d.tomadores || [];
       estado.servicos = d.servicos || [];
+      aplicarSugestoes(d.sugestoes || {});
 
       var st = el('sugTomadores'); st.innerHTML = '';
       estado.tomadores.slice(0, 6).forEach(function (t) {
@@ -155,6 +163,51 @@
         ss.appendChild(b);
       });
     }).catch(function () { /* sugestão é conveniência, não bloqueia */ });
+  }
+
+  /* Preenche o que o sistema já sabe.
+     Só campos vazios: quem digitou algo tem a palavra final, e sobrescrever o
+     que a pessoa acabou de escrever é pior que não preencher. */
+  function aplicarSugestoes(sug) {
+    estado.sugestoes = sug;
+    var vazio = function (id) { return !el(id).value; };
+
+    // Município da prestação: o da empresa, que é o caso comum
+    if (sug.municipioPrestacao && vazio('fMunPrest')) {
+      el('fMunPrest').value = sug.municipioPrestacao;
+    }
+    if (sug.competencia && vazio('fCompetencia')) {
+      el('fCompetencia').value = sug.competencia;
+    }
+    // Alíquota do município, quando ele está classificado e a empresa não é
+    // optante do Simples (que recolhe no DAS, sem alíquota na nota)
+    if (sug.aliquotaMunicipal && !sug.optanteSimples && vazio('fAliquota')) {
+      el('fAliquota').value = sug.aliquotaMunicipal;
+    }
+
+    // O que a empresa emitiu por último costuma ser o que vai emitir de novo
+    var u = sug.ultimoServico;
+    if (u && u.codigoTributacao) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = 'Repetir última: ' + (u.descricao || '').slice(0, 34) +
+                      ((u.descricao || '').length > 34 ? '…' : '');
+      b.title = 'Preenche com o serviço da última nota autorizada';
+      b.onclick = function () {
+        el('fCodTrib').value = u.codigoTributacao;
+        el('fDescricao').value = u.descricao || '';
+        if (u.codigoNbs) el('fNbs').value = u.codigoNbs;
+        if (u.aliquota != null && !el('fAliquota').disabled) el('fAliquota').value = u.aliquota;
+        atualizarTotal();
+        el('fValor').focus();
+        aviso('Preenchido com a última nota. Confira o valor.');
+      };
+      var caixa = el('sugServicos');
+      if (!caixa.querySelector('[data-ultima]')) {
+        b.setAttribute('data-ultima', '1');
+        caixa.insertBefore(b, caixa.firstChild);
+      }
+    }
   }
 
   function preencherTomador(t) {
@@ -438,14 +491,27 @@
     var doc = docLimpo(el('fDoc').value);
     if (doc && doc.length !== 11 && doc.length !== 14) return 'Documento do cliente inválido.';
     if (doc && !el('fNome').value.trim()) return 'Informe o nome do cliente.';
+    var munTom = digitos(el('fMunTom').value);
+    if (munTom && munTom.length !== 7) return 'O código do município do cliente tem 7 dígitos (IBGE).';
+    var munPrest = digitos(el('fMunPrest').value);
+    if (munPrest && munPrest.length !== 7) return 'O código do município da prestação tem 7 dígitos (IBGE).';
     if (el('fNatureza').value === '2' && !el('fPais').value.trim()) {
       return 'Exportação de serviço exige o país da prestação.';
     }
+    /* Formato do NBS conferido aqui: a Sefin recusa com E1235 ("falha no
+       esquema XML") depois de reservar número e assinar — um dígito a menos
+       custa um número da sequência fiscal. */
+    var nbs = digitos(el('fNbs').value);
+    if (nbs && nbs.length !== 9) {
+      return 'O código NBS tem 9 dígitos (você informou ' + nbs.length + ').';
+    }
     if (el('fIbsAtivo').checked) {
-      if (!digitos(el('fNbs').value)) return 'Com IBS/CBS, informe o código NBS do serviço.';
+      if (!nbs) return 'Com IBS/CBS, informe o código NBS do serviço.';
       if (!digitos(el('fIbsCst').value)) return 'Informe o CST do IBS/CBS.';
       if (!digitos(el('fIbsClass').value)) return 'Informe a classificação tributária do IBS/CBS.';
       if (!digitos(el('fIbsOperacao').value)) return 'Informe o indicador da operação (cIndOp).';
+      if (digitos(el('fIbsClass').value).length > 6) return 'A classificação tributária tem até 6 dígitos.';
+      if (digitos(el('fIbsOperacao').value).length > 6) return 'O indicador da operação tem até 6 dígitos.';
     }
     if (el('fObraCodigo').value.trim() && el('fObraCib').value.trim()) {
       return 'Informe o código da obra OU o CIB, não os dois.';

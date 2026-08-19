@@ -13,6 +13,7 @@ router.get('/contexto', async (req, res, next) => {
   try {
     const empresas = await db.query(
       `SELECT e.id, e.cnpj, e.razao_social, e.nome_fantasia, e.ambiente, e.op_simp_nac,
+              e.codigo_municipio,
               (c.id IS NOT NULL) AS tem_certificado,
               c.valido_ate AS certificado_valido_ate
          FROM empresas e
@@ -37,7 +38,51 @@ router.get('/contexto', async (req, res, next) => {
           ORDER BY vezes_usado DESC, ultimo_uso DESC NULLS LAST LIMIT 50`, [empresaId]);
     }
 
-    res.json({ empresas: empresas.rows, tomadores: tomadores.rows, servicos: servicos.rows });
+    /* Sugestões de preenchimento: o que dá para saber sem perguntar.
+       Cada campo que o operador não precisa digitar é um a menos para errar —
+       e um erro de digitação aqui custa um número da sequência fiscal. */
+    let sugestoes = {};
+    if (empresaId && empresaVisivel(req, empresaId)) {
+      const emp = empresas.rows.filter(e => e.id === empresaId)[0];
+      if (emp) {
+        // Alíquota do ISS do município, quando classificado
+        const mun = await db.query(
+          `SELECT aliquota_iss, nome FROM municipios
+            WHERE codigo_municipio = (SELECT codigo_municipio FROM empresas WHERE id = $1)`,
+          [empresaId]);
+
+        // A última nota autorizada diz o que essa empresa costuma emitir
+        const ultima = await db.query(
+          `SELECT dps_xml FROM notas
+            WHERE empresa_id = $1 AND status = 'autorizada' AND dps_xml IS NOT NULL
+            ORDER BY id DESC LIMIT 1`, [empresaId]);
+
+        let ultimoServico = null;
+        if (ultima.rows.length) {
+          const x = ultima.rows[0].dps_xml;
+          const pega = t => (x.match(new RegExp('<' + t + '>([^<]*)</' + t + '>')) || [])[1] || null;
+          ultimoServico = {
+            codigoTributacao: pega('cTribNac'),
+            descricao: pega('xDescServ'),
+            codigoNbs: pega('cNBS'),
+            aliquota: pega('pAliq') ? Number(pega('pAliq')) : null
+          };
+        }
+
+        sugestoes = {
+          municipioPrestacao: emp.codigo_municipio,
+          municipioNome: mun.rows[0] ? mun.rows[0].nome : null,
+          aliquotaMunicipal: mun.rows[0] ? mun.rows[0].aliquota_iss : null,
+          // Optante do Simples não declara alíquota: o ISS sai no DAS
+          optanteSimples: [2, 3].includes(Number(emp.op_simp_nac)),
+          competencia: new Date().toISOString().slice(0, 10),
+          ultimoServico
+        };
+      }
+    }
+
+    res.json({ empresas: empresas.rows, tomadores: tomadores.rows,
+               servicos: servicos.rows, sugestoes });
   } catch (e) { next(e); }
 });
 

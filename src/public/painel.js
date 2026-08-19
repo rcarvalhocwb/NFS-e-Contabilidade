@@ -58,12 +58,19 @@
     if (dados.erro || dados.detalhe) return dados.erro || dados.detalhe;
     var sefin = dados.retornoSefin || dados;
     if (Array.isArray(sefin.erros) && sefin.erros.length) {
+      /* A Sefin devolve Codigo/Descricao/Complemento em maiúsculas; outros
+         retornos usam minúsculas. Procurar só uma das formas fazia a caixa de
+         erro aparecer vazia — o operador via "rejeitada" sem saber por quê. */
       return sefin.erros.map(function (e) {
-        return (e.codigo ? e.codigo + ': ' : '') + (e.descricao || e.mensagem || '') +
-               (e.complemento ? ' — ' + e.complemento : '');
+        var codigo = e.Codigo || e.codigo;
+        var descricao = e.Descricao || e.descricao || e.Mensagem || e.mensagem;
+        var complemento = e.Complemento || e.complemento;
+        return (codigo ? codigo + ': ' : '') + (descricao || 'erro sem descrição') +
+               (complemento ? ' — ' + complemento : '');
       }).join(' | ');
     }
-    return sefin.mensagem || sefin.motivo || ('Erro HTTP ' + status);
+    return sefin.mensagem || sefin.motivo || sefin.Mensagem ||
+           ('A Sefin recusou a nota sem detalhar o motivo (HTTP ' + status + ')');
   }
 
   /* A credencial vai no cookie de sessão, que o navegador envia sozinho — nada
