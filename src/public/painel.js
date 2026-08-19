@@ -77,9 +77,24 @@
      de chave em sessionStorage ao alcance de qualquer script da página. */
   function api(caminho, opcoes) {
     opcoes = opcoes || {};
+
+    /* Sem content-type, o express.json() ignora o corpo e a rota recebe {} —
+       uma requisição que parece ter dado certo (200) e gravou vazio. Foi assim
+       que os padrões fiscais de uma empresa foram apagados: a tela mostrava os
+       valores, o PUT levava os valores, e o servidor gravou nulos.
+       Definido aqui, e não em cada chamador, porque esquecer é silencioso. */
+    var headers = {};
+    Object.keys(opcoes.headers || {}).forEach(function (h) {
+      headers[h] = opcoes.headers[h];
+    });
+    if (opcoes.body && typeof opcoes.body === 'string' &&
+        !Object.keys(headers).some(function (h) { return h.toLowerCase() === 'content-type'; })) {
+      headers['content-type'] = 'application/json';
+    }
+
     return fetch(caminho, {
       method: opcoes.method || 'GET',
-      headers: opcoes.headers || {},
+      headers: headers,
       body: opcoes.body,
       credentials: 'same-origin'
     }).then(function (res) {
@@ -464,6 +479,143 @@
     }).catch(function (err) { aviso(err.message, 'erro'); });
   }
 
+  function carregarVisaoGeral(cnpj) {
+    api('/empresas/' + cnpj + '/resumo').then(function (d) {
+      var e = d.empresa;
+
+      // Alertas antes dos números: é o que impede de emitir
+      var alertas = '';
+      if (!d.certificado) {
+        alertas += '<div class="linha-alerta critico"><strong>Sem certificado digital</strong>' +
+          ' — esta empresa não consegue emitir. Anexe na aba Certificado.</div>';
+      } else if (d.certificado.dias < 0) {
+        alertas += '<div class="linha-alerta critico"><strong>Certificado vencido</strong> em ' +
+          fmtData(d.certificado.valido_ate) + ' — renove antes de emitir.</div>';
+      } else if (d.certificado.dias <= 30) {
+        alertas += '<div class="linha-alerta aviso"><strong>Certificado vence em ' +
+          d.certificado.dias + ' dia(s)</strong> (' + fmtData(d.certificado.valido_ate) + ').</div>';
+      }
+      if (d.naFila) {
+        alertas += '<div class="linha-alerta aviso">' + d.naFila +
+          ' nota(s) aguardando resposta da Sefin.</div>';
+      }
+      var comProblema = (d.mes.porStatus.rejeitada || 0) + (d.mes.porStatus.erro || 0);
+      if (comProblema) {
+        alertas += '<div class="linha-alerta aviso">' + comProblema +
+          ' nota(s) com problema neste mês — veja a lista abaixo.</div>';
+      }
+      el('visaoAlertas').innerHTML = alertas;
+
+      el('vgMes').textContent = d.mes.total;
+      el('vgMesNota').textContent = d.mes.autorizadas + ' autorizada(s)';
+
+      // Faturamento vem dos XMLs das últimas notas: o resumo não recalcula o
+      // mês inteiro, que é trabalho do relatório de fechamento.
+      var faturado = d.ultimasNotas
+        .filter(function (n) { return n.status === 'autorizada'; })
+        .reduce(function (t, n) { return t + ((n.valores && n.valores.valorServico) || 0); }, 0);
+      el('vgFaturado').textContent = fmtMoeda(faturado);
+
+      var num = (d.numeracao || []).filter(function (n) { return n.ambiente === e.ambiente; })[0];
+      el('vgProxima').textContent = num ? num.serie + '/' + num.prox_numero : '—';
+      el('vgAmbiente').innerHTML = seloAmbiente(e.ambiente);
+
+      el('vgCert').innerHTML = seloCertificado(d.certificado && d.certificado.valido_ate);
+      el('vgCertNota').textContent = d.certificado
+        ? 'anexado em ' + fmtData(d.certificado.criado_em) : 'nenhum anexado';
+
+      // Barras simples: doze meses cabem sem biblioteca de gráfico
+      var maior = Math.max.apply(null, d.historico.map(function (h) { return h.total; }).concat([1]));
+      el('vgHistorico').innerHTML = d.historico.length
+        ? d.historico.map(function (h) {
+            var altura = Math.max(3, Math.round((h.total / maior) * 74));
+            var mes = h.mes.slice(5) + '/' + h.mes.slice(2, 4);
+            return '<div title="' + mes + ': ' + h.total + ' nota(s), ' + h.autorizadas +
+              ' autorizada(s)" style="flex:1;display:flex;flex-direction:column;' +
+              'justify-content:flex-end;align-items:center;gap:4px">' +
+              '<div style="width:100%;height:' + altura + 'px;background:var(--acento);' +
+              'border-radius:3px 3px 0 0;opacity:' + (h.total ? 1 : .25) + '"></div>' +
+              '<span style="font-size:9.5px;color:var(--texto-3)">' + mes + '</span></div>';
+          }).join('')
+        : '<div class="ajuda">Sem histórico ainda.</div>';
+
+      var tb = el('vgNotas'); tb.innerHTML = '';
+      el('vgSemNotas').hidden = d.ultimasNotas.length > 0;
+      d.ultimasNotas.forEach(function (n) {
+        var v = n.valores || {};
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="mono">' + esc(n.serie) + '/' + esc(n.numero) + '</td>' +
+          '<td>' + esc(v.tomador || '—') + '</td>' +
+          '<td>' + (v.valorServico ? fmtMoeda(v.valorServico) : '—') + '</td>' +
+          '<td>' + seloStatus(n.status) +
+            (n.ultimo_erro ? '<div class="ajuda">' + esc(n.ultimo_erro.slice(0, 60)) + '</div>' : '') + '</td>' +
+          '<td style="color:var(--texto-2)">' + fmtDataHora(n.criado_em) + '</td>' +
+          '<td class="acoes"></td>';
+        var ver = document.createElement('button');
+        ver.className = 'pequeno'; ver.textContent = 'Ver';
+        ver.onclick = function () { abrirNota(n.id); };
+        tr.lastChild.appendChild(ver);
+        tb.appendChild(tr);
+      });
+
+      el('vgLotes').innerHTML = d.lotes.length
+        ? d.lotes.map(function (l) {
+            return '<div style="display:flex;gap:9px;align-items:center;margin-bottom:7px;font-size:13px">' +
+              '<span class="mono">#' + l.id + '</span>' +
+              '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+                esc(l.descricao || '—') + '</span>' +
+              '<span class="ajuda">' + l.total + ' linha(s)' +
+                (l.com_erro ? ', ' + l.com_erro + ' com erro' : '') + '</span></div>';
+          }).join('')
+        : '<div class="ajuda">Nenhum lote enviado.</div>';
+
+      el('vgClientes').textContent = d.cadastros.clientes;
+      el('vgServicos').textContent = d.cadastros.servicos;
+      el('vgVerNotas').onclick = function () {
+        el('nf_empresa').value = cnpj;
+        location.hash = 'notas';
+      };
+    }).catch(function (err) { aviso(err.message, 'erro'); });
+  }
+
+  function montarBlocoAmbiente(empresa, numeracoes) {
+    var producao = empresa.ambiente === 'producao';
+    var lista = estado.empresas.filter(function (x) { return x.cnpj === empresa.cnpj; })[0] || {};
+
+    el('seloAmbienteEmpresa').innerHTML = producao
+      ? '<span class="selo-status s-erro">produção</span>'
+      : '<span class="selo-status s-info sem-ponto">homologação</span>';
+
+    el('textoAmbiente').textContent = producao
+      ? 'As notas emitidas por esta empresa têm valor fiscal e geram imposto.'
+      : 'As notas são de teste. Não têm valor fiscal e não geram imposto.';
+
+    var num = (numeracoes || []).filter(function (n) { return n.ambiente === empresa.ambiente; })[0];
+    el('proximaNota').textContent = num
+      ? 'série ' + num.serie + ', número ' + num.prox_numero
+      : 'ainda não numerada';
+
+    // Sem certificado válido a produção não é permitida; dizer isso aqui evita
+    // a recusa depois do clique.
+    el('certAmbiente').innerHTML = seloCertificado(lista.certificado_valido_ate);
+
+    var b = el('btnTrocarAmbiente');
+    b.textContent = producao ? 'Voltar para homologação (teste)' : 'Passar para produção';
+    b.className = producao ? 'perigo' : 'primario';
+    b.onclick = function () {
+      trocarAmbiente({
+        cnpj: empresa.cnpj,
+        ambiente: empresa.ambiente,
+        nome_fantasia: empresa.nome_fantasia,
+        razao_social: empresa.razao_social
+      }, function () { abrirEmpresa(empresa.cnpj); });
+    };
+
+    el('blocoAmbiente').hidden = false;
+    el('wrapAmbienteNovo').hidden = true;   // o select é só para empresa nova
+  }
+
   function preencherSelectsEmpresa() {
     [['nf_empresa','Todas'], ['cl_empresa',null], ['sv_empresa',null], ['w_empresa','Todas']]
       .forEach(function (par) {
@@ -480,6 +632,66 @@
       });
   }
 
+  /* Padrões fiscais da empresa.
+
+     Antes, o código de tributação, o NBS e a alíquota eram digitados em cada
+     nota. Uma empresa de vigilância emite o mesmo serviço todo mês: repetir
+     seis dígitos de cTribNac cem vezes por mês é onde o erro entra, e a Sefin
+     só reclama depois de queimar o número da DPS. Ficam aqui, no cadastro,
+     definidos uma vez por quem entende do enquadramento. */
+  function padroesRefletemNatureza() {
+    var natureza = Number(el('pf_natureza').value);
+    var tributavel = natureza === 1;
+    var simples = estado.padroesSimples;
+
+    // Fora de operação tributável não há alíquota a informar; no Simples, quem
+    // define o ISS é o DAS, e o que vai na nota é o total de tributos do PGDAS
+    el('pf_wrapAliquota').style.display = (tributavel && !simples) ? '' : 'none';
+    el('pf_ajudaAliquota').textContent = tributavel
+      ? 'Do município do prestador.' : '';
+    el('pf_ajudaTotTrib').textContent = simples
+      ? 'Optante do Simples: informe aqui a alíquota efetiva do PGDAS.'
+      : 'Opcional — Lei 12.741 (imposto aproximado).';
+  }
+
+  function carregarPadroesFiscais(cnpj) {
+    api('/empresas/' + cnpj + '/padroes-fiscais').then(function (p) {
+      estado.padroesSimples = [2, 3].indexOf(Number(p.op_simp_nac)) >= 0;
+      el('pf_codigo').value = p.cod_tributacao_padrao || '';
+      el('pf_nbs').value = p.cod_nbs_padrao || '';
+      el('pf_codmun').value = p.cod_tributacao_municipal || '';
+      el('pf_descricao').value = p.descricao_padrao || '';
+      el('pf_natureza').value = String(p.tributacao_issqn_padrao || 1);
+      el('pf_aliquota').value = p.aliquota_iss_padrao != null ? p.aliquota_iss_padrao : '';
+      el('pf_retido').value = p.iss_retido_padrao ? 'true' : 'false';
+      el('pf_tottrib').value = p.perc_total_tributos != null ? p.perc_total_tributos : '';
+      padroesRefletemNatureza();
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('pf_natureza').onchange = padroesRefletemNatureza;
+
+  el('btnSalvarPadroes').onclick = function () {
+    if (!estado.editando) return;
+    var corpo = {
+      codigoTributacao: el('pf_codigo').value.trim(),
+      codigoNbs: el('pf_nbs').value.trim(),
+      codigoTributacaoMunicipal: el('pf_codmun').value.trim(),
+      descricao: el('pf_descricao').value.trim(),
+      tributacaoIssqn: Number(el('pf_natureza').value),
+      aliquotaIss: el('pf_aliquota').value,
+      issRetido: el('pf_retido').value === 'true',
+      percentualTotalTributos: el('pf_tottrib').value
+    };
+    var b = el('btnSalvarPadroes');
+    b.disabled = true;
+    api('/empresas/' + estado.editando + '/padroes-fiscais',
+        { method: 'PUT', body: JSON.stringify(corpo) })
+      .then(function () { aviso('Padrões salvos. Valem para as próximas notas.', 'ok'); })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
+
   function aba(nome) {
     $$('#abas button').forEach(function (b) { b.classList.toggle('ativo', b.dataset.aba === nome); });
     ['visao','identificacao','endereco','contato','responsavel','contabilidade','fiscais','certificado','integracao']
@@ -490,6 +702,7 @@
         ? 'none' : '';
     if (nome === 'integracao' && estado.editando) carregarIntegracao(estado.editando);
     if (nome === 'visao' && estado.editando) carregarVisaoGeral(estado.editando);
+    if (nome === 'fiscais' && estado.editando) carregarPadroesFiscais(estado.editando);
   }
   el('abas').onclick = function (ev) {
     var b = ev.target.closest('button');

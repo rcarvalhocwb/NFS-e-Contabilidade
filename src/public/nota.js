@@ -179,9 +179,33 @@
     if (sug.competencia && vazio('fCompetencia')) {
       el('fCompetencia').value = sug.competencia;
     }
-    // Alíquota do município, quando ele está classificado e a empresa não é
-    // optante do Simples (que recolhe no DAS, sem alíquota na nota)
-    if (sug.aliquotaMunicipal && !sug.optanteSimples && vazio('fAliquota')) {
+    /* Os padrões da empresa vêm primeiro, e por isso ficam antes da alíquota
+       do município e da última nota: foi o contador quem os cadastrou olhando
+       o enquadramento do cliente, enquanto os outros dois são inferência. */
+    var pad = sug.padroes || {};
+    if (pad.codigoTributacao && vazio('fCodTrib')) el('fCodTrib').value = pad.codigoTributacao;
+    if (pad.codigoNbs && vazio('fNbs')) el('fNbs').value = pad.codigoNbs;
+    if (pad.codigoTributacaoMunicipal && vazio('fCodMun')) {
+      el('fCodMun').value = pad.codigoTributacaoMunicipal;
+    }
+    if (pad.descricao && vazio('fDescricao')) el('fDescricao').value = pad.descricao;
+    if (pad.tributacaoIssqn) {
+      el('fNatureza').value = String(pad.tributacaoIssqn);
+      // A natureza governa quais campos aparecem: sem reaplicar, a tela fica
+      // pedindo alíquota numa nota imune
+      aplicarNatureza();
+    }
+    if (pad.issRetido) el('fIssRetido').value = 'true';
+    if (pad.percentualTotalTributos != null && vazio('fTotTrib')) {
+      el('fTotTrib').value = pad.percentualTotalTributos;
+    }
+    if (pad.aliquotaIss != null && !sug.optanteSimples && vazio('fAliquota')) {
+      el('fAliquota').value = pad.aliquotaIss;
+    }
+
+    // Alíquota do município: só quando a empresa não cadastrou a dela
+    if (sug.aliquotaMunicipal && pad.aliquotaIss == null &&
+        !sug.optanteSimples && vazio('fAliquota')) {
       el('fAliquota').value = sug.aliquotaMunicipal;
     }
 

@@ -14,6 +14,9 @@ router.get('/contexto', async (req, res, next) => {
     const empresas = await db.query(
       `SELECT e.id, e.cnpj, e.razao_social, e.nome_fantasia, e.ambiente, e.op_simp_nac,
               e.codigo_municipio,
+              e.cod_tributacao_padrao, e.cod_tributacao_municipal, e.cod_nbs_padrao,
+              e.descricao_padrao, e.aliquota_iss_padrao, e.iss_retido_padrao,
+              e.perc_total_tributos, e.tributacao_issqn_padrao,
               (c.id IS NOT NULL) AS tem_certificado,
               c.valido_ate AS certificado_valido_ate
          FROM empresas e
@@ -72,11 +75,27 @@ router.get('/contexto', async (req, res, next) => {
         sugestoes = {
           municipioPrestacao: emp.codigo_municipio,
           municipioNome: mun.rows[0] ? mun.rows[0].nome : null,
-          aliquotaMunicipal: mun.rows[0] ? mun.rows[0].aliquota_iss : null,
           // Optante do Simples não declara alíquota: o ISS sai no DAS
           optanteSimples: [2, 3].includes(Number(emp.op_simp_nac)),
           competencia: new Date().toISOString().slice(0, 10),
-          ultimoServico
+          ultimoServico,
+
+          /* Padrões cadastrados na empresa. Vêm antes da alíquota do município
+             e da última nota: foi o contador quem os definiu, olhando o
+             enquadramento do cliente. */
+          padroes: {
+            codigoTributacao: emp.cod_tributacao_padrao,
+            codigoTributacaoMunicipal: emp.cod_tributacao_municipal,
+            codigoNbs: emp.cod_nbs_padrao,
+            descricao: emp.descricao_padrao,
+            aliquotaIss: emp.aliquota_iss_padrao !== null ? Number(emp.aliquota_iss_padrao) : null,
+            issRetido: emp.iss_retido_padrao,
+            percentualTotalTributos: emp.perc_total_tributos !== null
+              ? Number(emp.perc_total_tributos) : null,
+            tributacaoIssqn: emp.tributacao_issqn_padrao
+          },
+          // Fica como alternativa quando a empresa não tem alíquota própria
+          aliquotaMunicipal: mun.rows[0] ? mun.rows[0].aliquota_iss : null
         };
       }
     }

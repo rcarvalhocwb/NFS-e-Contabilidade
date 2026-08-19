@@ -314,6 +314,86 @@ router.put('/:cnpj/ambiente', somenteAdmin, exigirEmpresaVisivel, async (req, re
   } catch (e) { next(e); }
 });
 
+/* Padrões fiscais da empresa.
+   Rota própria: são os campos que a emissão puxa sozinha, e misturá-los no
+   cadastro geral tornaria ainda maior um UPDATE que já tem vinte colunas. */
+router.get('/:cnpj/padroes-fiscais', exigirEmpresaVisivel, async (req, res, next) => {
+  try {
+    const r = await db.query(
+      `SELECT cod_tributacao_padrao, cod_tributacao_municipal, cod_nbs_padrao,
+              descricao_padrao, aliquota_iss_padrao, iss_retido_padrao,
+              perc_total_tributos, tributacao_issqn_padrao, op_simp_nac
+         FROM empresas WHERE cnpj = $1`, [limparCnpj(req.params.cnpj)]);
+    if (!r.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });
+    res.json(r.rows[0]);
+  } catch (e) { next(e); }
+});
+
+router.put('/:cnpj/padroes-fiscais', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+
+    // Formatos conferidos aqui: gravar um NBS de 7 dígitos como padrão faria
+    // toda nota da empresa nascer errada, e a Sefin só reclama depois de
+    // reservar número e assinar (E1235).
+    const cod = b.codigoTributacao ? String(b.codigoTributacao).replace(/\D/g, '') : null;
+    if (cod && cod.length !== 6) {
+      return res.status(400).json({ erro: 'O código de tributação tem 6 dígitos (cTribNac).' });
+    }
+    const nbs = b.codigoNbs ? String(b.codigoNbs).replace(/\D/g, '') : null;
+    if (nbs && nbs.length !== 9) {
+      return res.status(400).json({ erro: 'O código NBS tem 9 dígitos.' });
+    }
+    const natureza = b.tributacaoIssqn !== undefined ? Number(b.tributacaoIssqn) : null;
+    if (natureza !== null && ![1, 2, 3, 4].includes(natureza)) {
+      return res.status(400).json({ erro: 'Natureza da operação deve ser 1, 2, 3 ou 4.' });
+    }
+
+    /* Edição parcial: o que o corpo não menciona fica como está. A alternativa
+       — sobrescrever tudo — apagou os padrões de uma empresa quando um corpo
+       chegou vazio por falta de content-type. O 200 escondeu a perda, e só a
+       nota seguinte, nascendo em branco, denunciaria. Campo presente e vazio
+       continua limpando: é o operador apagando de propósito. */
+    const num = v => (v === undefined || v === '' || v === null ? null : Number(v));
+    const colunas = [];
+    const valores = [limparCnpj(req.params.cnpj)];
+    const põe = (coluna, valor) => {
+      valores.push(valor);
+      colunas.push(`${coluna} = $${valores.length}`);
+    };
+
+    if (b.codigoTributacao !== undefined) põe('cod_tributacao_padrao', cod);
+    if (b.codigoTributacaoMunicipal !== undefined) {
+      põe('cod_tributacao_municipal', b.codigoTributacaoMunicipal || null);
+    }
+    if (b.codigoNbs !== undefined) põe('cod_nbs_padrao', nbs);
+    if (b.descricao !== undefined) põe('descricao_padrao', b.descricao || null);
+    if (b.aliquotaIss !== undefined) põe('aliquota_iss_padrao', num(b.aliquotaIss));
+    if (b.issRetido !== undefined) põe('iss_retido_padrao', !!b.issRetido);
+    if (b.percentualTotalTributos !== undefined) {
+      põe('perc_total_tributos', num(b.percentualTotalTributos));
+    }
+    if (natureza !== null) põe('tributacao_issqn_padrao', natureza);
+
+    if (!colunas.length) {
+      return res.status(400).json({
+        erro: 'Nenhum padrão foi informado. Se a intenção era limpar um campo, ' +
+              'envie-o vazio; um corpo sem campos não altera nada.'
+      });
+    }
+
+    const r = await db.query(
+      `UPDATE empresas SET ${colunas.join(', ')}, atualizado_em = now()
+       WHERE cnpj = $1
+       RETURNING cod_tributacao_padrao, cod_tributacao_municipal, cod_nbs_padrao,
+                 descricao_padrao, aliquota_iss_padrao, iss_retido_padrao,
+                 perc_total_tributos, tributacao_issqn_padrao`, valores);
+
+    if (!r.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });
+    res.json(r.rows[0]);
+  } catch (e) { next(e); }
+});
+
 /* Numeração da DPS por ambiente (homologação e produção são independentes) */
 router.get('/:cnpj/numeracao', exigirEmpresaVisivel, async (req, res, next) => {
   try {
