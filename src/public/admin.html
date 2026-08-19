@@ -1028,6 +1028,26 @@
   </form>
 </div></dialog>
 
+<dialog id="dlgProducao"><div class="interno">
+  <h3>Passar para produção</h3>
+  <div class="dsub" id="prodEmpresa"></div>
+  <div class="aviso erro" style="display:block">
+    A partir daí, cada nota emitida por esta empresa <strong>tem valor fiscal</strong>,
+    <strong>gera imposto</strong> e só sai por cancelamento.
+  </div>
+  <dl class="kv" style="margin:14px 0">
+    <dt>Próxima nota passa a ser</dt><dd id="prodNumeracao">—</dd>
+    <dt>Certificado</dt><dd id="prodCert">—</dd>
+  </dl>
+  <label for="prodConfirma">Para confirmar, digite <strong>PRODUCAO</strong></label>
+  <input id="prodConfirma" autocomplete="off" placeholder="PRODUCAO"
+         style="text-transform:uppercase">
+  <div class="acoes-form">
+    <button type="button" id="prodCancelar">Cancelar</button>
+    <button type="button" class="perigo" id="prodConfirmar" disabled>Passar para produção</button>
+  </div>
+</div></dialog>
+
 <dialog id="dlgLote" class="largo"><div class="interno">
   <h3 id="loteTitulo">Lote</h3>
   <div class="dsub" id="loteSub"></div>

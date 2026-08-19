@@ -168,13 +168,33 @@
       estado.empresas = l || []; preencherSelectsEmpresa();
     }).catch(function () {});
 
-    // Senha definida por outra pessoa: trocar antes de operar
-    if (usuario.trocarSenha) {
-      el('trocaMotivo').textContent =
-        'Sua senha foi definida por um administrador. Escolha uma que só você conheça.';
-      el('tsCancelar').hidden = true;
-      el('dlgTrocarSenha').showModal();
-    }
+    // Senha definida por outra pessoa: trocar antes de operar.
+    if (usuario.trocarSenha) abrirTrocaObrigatoria();
+  }
+
+  /* Troca obrigatória: o diálogo não fecha por ESC nem por clique fora.
+     Antes fechava — e como a marcação no banco continuava, ele voltava a cada
+     carga da página. Ou a troca é obrigatória de verdade, ou não é. */
+  function abrirTrocaObrigatoria() {
+    el('trocaMotivo').textContent =
+      'Sua senha foi definida por um administrador. Escolha uma que só você conheça ' +
+      'para continuar.';
+    el('tsCancelar').hidden = true;
+    el('formTrocarSenha').reset();
+
+    var dlg = el('dlgTrocarSenha');
+    dlg.addEventListener('cancel', impedirFechamento);
+    dlg.showModal();
+    el('tsAtual').focus();
+  }
+
+  function impedirFechamento(ev) {
+    ev.preventDefault();
+    aviso('Escolha uma senha para continuar. Ela substitui a que foi definida por outra pessoa.', 'info');
+  }
+
+  function liberarFechamento() {
+    el('dlgTrocarSenha').removeEventListener('cancel', impedirFechamento);
   }
 
   function sair() {
@@ -224,12 +244,15 @@
   /* ---------------------------------------------------------- minha conta */
 
   el('btnMinhaConta').onclick = function () {
+    // Troca voluntária: dá para desistir
+    liberarFechamento();
     el('trocaMotivo').textContent = 'Escolha uma senha que só você conheça.';
     el('tsCancelar').hidden = false;
     el('formTrocarSenha').reset();
     el('dlgTrocarSenha').showModal();
+    el('tsAtual').focus();
   };
-  el('tsCancelar').onclick = function () { el('dlgTrocarSenha').close(); };
+  el('tsCancelar').onclick = function () { liberarFechamento(); el('dlgTrocarSenha').close(); };
   el('formTrocarSenha').onsubmit = function (ev) {
     ev.preventDefault();
     if (el('tsNova').value !== el('tsConfirma').value) {
@@ -241,6 +264,7 @@
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ senhaAtual: el('tsAtual').value, senhaNova: el('tsNova').value })
     }).then(function () {
+      liberarFechamento();
       el('dlgTrocarSenha').close();
       if (estado.usuario) estado.usuario.trocarSenha = false;
       aviso('Senha alterada. As demais sessões abertas foram encerradas.');
@@ -374,185 +398,63 @@
     }).catch(function (e) { aviso(e.message, 'erro'); });
   }
 
+  /* Troca de ambiente.
+     A confirmação usa diálogo próprio, não prompt(): o prompt nativo é
+     bloqueado por vários navegadores e, quando bloqueado, retorna null — o
+     usuário clicava, nada acontecia, e não havia como saber por quê. */
   function trocarAmbiente(e, aoConcluir) {
-    var paraProducao = e.ambiente === 'homologacao';
     var nome = e.nome_fantasia || e.razao_social;
 
-    if (paraProducao) {
-      var texto = 'Passar ' + nome + ' para PRODUÇÃO?\n\n' +
-        'A partir daí, cada nota emitida por esta empresa:\n' +
-        '  • tem valor fiscal\n' +
-        '  • gera imposto a recolher\n' +
-        '  • só sai por cancelamento\n\n' +
-        'A numeração de produção é independente da de teste.';
-      if (!confirm(texto)) return;
-      // Segunda confirmação digitada: o clique duplo por engano é comum, e
-      // aqui o engano custa uma nota fiscal real.
-      var resposta = prompt('Para confirmar, digite PRODUCAO em maiúsculas:');
-      if (resposta !== 'PRODUCAO') {
-        if (resposta !== null) aviso('Confirmação não conferiu. Nada foi alterado.', 'erro');
-        return;
-      }
-    } else {
+    if (e.ambiente === 'producao') {
       if (!confirm('Voltar ' + nome + ' para homologação (teste)?\n\n' +
                    'As notas passam a ser de teste, sem valor fiscal.')) return;
+      return aplicarAmbiente(e, 'homologacao', false, nome, aoConcluir);
     }
 
+    // Para produção: diálogo com o que muda, a numeração de destino e a
+    // confirmação digitada.
+    el('prodEmpresa').textContent = nome + ' — ' + fmtDoc(e.cnpj);
+    el('prodConfirma').value = '';
+    el('prodConfirmar').disabled = true;
+
+    api('/empresas/' + e.cnpj + '/resumo').then(function (d) {
+      var num = (d.numeracao || []).filter(function (n) { return n.ambiente === 'producao'; })[0];
+      el('prodNumeracao').textContent = num
+        ? 'série ' + num.serie + ', número ' + num.prox_numero
+        : 'série 1, número 1 (primeira nota em produção)';
+      el('prodCert').innerHTML = seloCertificado(d.certificado && d.certificado.valido_ate);
+    }).catch(function () {
+      el('prodNumeracao').textContent = '—';
+    });
+
+    el('prodConfirmar').onclick = function () {
+      el('dlgProducao').close();
+      aplicarAmbiente(e, 'producao', true, nome, aoConcluir);
+    };
+    el('dlgProducao').showModal();
+    el('prodConfirma').focus();
+  }
+
+  /* Só habilita o botão quando o texto confere: o clique por engano aqui custa
+     uma nota fiscal real. */
+  el('prodConfirma').oninput = function () {
+    el('prodConfirmar').disabled = el('prodConfirma').value.trim().toUpperCase() !== 'PRODUCAO';
+  };
+  el('prodConfirma').onkeydown = function (ev) {
+    if (ev.key === 'Enter' && !el('prodConfirmar').disabled) el('prodConfirmar').click();
+  };
+  el('prodCancelar').onclick = function () { el('dlgProducao').close(); };
+
+  function aplicarAmbiente(e, ambiente, confirmo, nome, aoConcluir) {
     api('/empresas/' + e.cnpj + '/ambiente', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ambiente: paraProducao ? 'producao' : 'homologacao',
-        confirmo: paraProducao
-      })
+      body: JSON.stringify({ ambiente: ambiente, confirmo: confirmo })
     }).then(function (r) {
       var n = r.numeracao;
       aviso(nome + ' agora emite em ' + nomeAmbiente(r.ambiente) +
         (n ? '. Próxima nota: série ' + n.serie + ', número ' + n.prox_numero + '.' : '.'));
       if (aoConcluir) aoConcluir(); else carregarEmpresas();
     }).catch(function (err) { aviso(err.message, 'erro'); });
-  }
-
-  /* Bloco de ambiente na tela da empresa.
-     Empresa nova escolhe o ambiente no cadastro (o select); empresa já salva
-     troca por aqui, com confirmação — mudar de teste para produção decide se a
-     próxima nota é documento fiscal, e não pode ser salvo junto com o telefone. */
-  /* Visão geral da empresa: o painel do cliente, para o contador responder
-     "como está a empresa X" sem passar por três telas filtrando cada uma. */
-  function carregarVisaoGeral(cnpj) {
-    api('/empresas/' + cnpj + '/resumo').then(function (d) {
-      var e = d.empresa;
-
-      // Alertas antes dos números: é o que impede de emitir
-      var alertas = '';
-      if (!d.certificado) {
-        alertas += '<div class="linha-alerta critico"><strong>Sem certificado digital</strong>' +
-          ' — esta empresa não consegue emitir. Anexe na aba Certificado.</div>';
-      } else if (d.certificado.dias < 0) {
-        alertas += '<div class="linha-alerta critico"><strong>Certificado vencido</strong> em ' +
-          fmtData(d.certificado.valido_ate) + ' — renove antes de emitir.</div>';
-      } else if (d.certificado.dias <= 30) {
-        alertas += '<div class="linha-alerta aviso"><strong>Certificado vence em ' +
-          d.certificado.dias + ' dia(s)</strong> (' + fmtData(d.certificado.valido_ate) + ').</div>';
-      }
-      if (d.naFila) {
-        alertas += '<div class="linha-alerta aviso">' + d.naFila +
-          ' nota(s) aguardando resposta da Sefin.</div>';
-      }
-      var comProblema = (d.mes.porStatus.rejeitada || 0) + (d.mes.porStatus.erro || 0);
-      if (comProblema) {
-        alertas += '<div class="linha-alerta aviso">' + comProblema +
-          ' nota(s) com problema neste mês — veja a lista abaixo.</div>';
-      }
-      el('visaoAlertas').innerHTML = alertas;
-
-      el('vgMes').textContent = d.mes.total;
-      el('vgMesNota').textContent = d.mes.autorizadas + ' autorizada(s)';
-
-      // Faturamento vem dos XMLs das últimas notas: o resumo não recalcula o
-      // mês inteiro, que é trabalho do relatório de fechamento.
-      var faturado = d.ultimasNotas
-        .filter(function (n) { return n.status === 'autorizada'; })
-        .reduce(function (t, n) { return t + ((n.valores && n.valores.valorServico) || 0); }, 0);
-      el('vgFaturado').textContent = fmtMoeda(faturado);
-
-      var num = (d.numeracao || []).filter(function (n) { return n.ambiente === e.ambiente; })[0];
-      el('vgProxima').textContent = num ? num.serie + '/' + num.prox_numero : '—';
-      el('vgAmbiente').innerHTML = seloAmbiente(e.ambiente);
-
-      el('vgCert').innerHTML = seloCertificado(d.certificado && d.certificado.valido_ate);
-      el('vgCertNota').textContent = d.certificado
-        ? 'anexado em ' + fmtData(d.certificado.criado_em) : 'nenhum anexado';
-
-      // Barras simples: doze meses cabem sem biblioteca de gráfico
-      var maior = Math.max.apply(null, d.historico.map(function (h) { return h.total; }).concat([1]));
-      el('vgHistorico').innerHTML = d.historico.length
-        ? d.historico.map(function (h) {
-            var altura = Math.max(3, Math.round((h.total / maior) * 74));
-            var mes = h.mes.slice(5) + '/' + h.mes.slice(2, 4);
-            return '<div title="' + mes + ': ' + h.total + ' nota(s), ' + h.autorizadas +
-              ' autorizada(s)" style="flex:1;display:flex;flex-direction:column;' +
-              'justify-content:flex-end;align-items:center;gap:4px">' +
-              '<div style="width:100%;height:' + altura + 'px;background:var(--acento);' +
-              'border-radius:3px 3px 0 0;opacity:' + (h.total ? 1 : .25) + '"></div>' +
-              '<span style="font-size:9.5px;color:var(--texto-3)">' + mes + '</span></div>';
-          }).join('')
-        : '<div class="ajuda">Sem histórico ainda.</div>';
-
-      var tb = el('vgNotas'); tb.innerHTML = '';
-      el('vgSemNotas').hidden = d.ultimasNotas.length > 0;
-      d.ultimasNotas.forEach(function (n) {
-        var v = n.valores || {};
-        var tr = document.createElement('tr');
-        tr.innerHTML =
-          '<td class="mono">' + esc(n.serie) + '/' + esc(n.numero) + '</td>' +
-          '<td>' + esc(v.tomador || '—') + '</td>' +
-          '<td>' + (v.valorServico ? fmtMoeda(v.valorServico) : '—') + '</td>' +
-          '<td>' + seloStatus(n.status) +
-            (n.ultimo_erro ? '<div class="ajuda">' + esc(n.ultimo_erro.slice(0, 60)) + '</div>' : '') + '</td>' +
-          '<td style="color:var(--texto-2)">' + fmtDataHora(n.criado_em) + '</td>' +
-          '<td class="acoes"></td>';
-        var ver = document.createElement('button');
-        ver.className = 'pequeno'; ver.textContent = 'Ver';
-        ver.onclick = function () { abrirNota(n.id); };
-        tr.lastChild.appendChild(ver);
-        tb.appendChild(tr);
-      });
-
-      el('vgLotes').innerHTML = d.lotes.length
-        ? d.lotes.map(function (l) {
-            return '<div style="display:flex;gap:9px;align-items:center;margin-bottom:7px;font-size:13px">' +
-              '<span class="mono">#' + l.id + '</span>' +
-              '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-                esc(l.descricao || '—') + '</span>' +
-              '<span class="ajuda">' + l.total + ' linha(s)' +
-                (l.com_erro ? ', ' + l.com_erro + ' com erro' : '') + '</span></div>';
-          }).join('')
-        : '<div class="ajuda">Nenhum lote enviado.</div>';
-
-      el('vgClientes').textContent = d.cadastros.clientes;
-      el('vgServicos').textContent = d.cadastros.servicos;
-      el('vgVerNotas').onclick = function () {
-        el('nf_empresa').value = cnpj;
-        location.hash = 'notas';
-      };
-    }).catch(function (err) { aviso(err.message, 'erro'); });
-  }
-
-  function montarBlocoAmbiente(empresa, numeracoes) {
-    var producao = empresa.ambiente === 'producao';
-    var lista = estado.empresas.filter(function (x) { return x.cnpj === empresa.cnpj; })[0] || {};
-
-    el('seloAmbienteEmpresa').innerHTML = producao
-      ? '<span class="selo-status s-erro">produção</span>'
-      : '<span class="selo-status s-info sem-ponto">homologação</span>';
-
-    el('textoAmbiente').textContent = producao
-      ? 'As notas emitidas por esta empresa têm valor fiscal e geram imposto.'
-      : 'As notas são de teste. Não têm valor fiscal e não geram imposto.';
-
-    var num = (numeracoes || []).filter(function (n) { return n.ambiente === empresa.ambiente; })[0];
-    el('proximaNota').textContent = num
-      ? 'série ' + num.serie + ', número ' + num.prox_numero
-      : 'ainda não numerada';
-
-    // Sem certificado válido a produção não é permitida; dizer isso aqui evita
-    // a recusa depois do clique.
-    el('certAmbiente').innerHTML = seloCertificado(lista.certificado_valido_ate);
-
-    var b = el('btnTrocarAmbiente');
-    b.textContent = producao ? 'Voltar para homologação (teste)' : 'Passar para produção';
-    b.className = producao ? 'perigo' : 'primario';
-    b.onclick = function () {
-      trocarAmbiente({
-        cnpj: empresa.cnpj,
-        ambiente: empresa.ambiente,
-        nome_fantasia: empresa.nome_fantasia,
-        razao_social: empresa.razao_social
-      }, function () { abrirEmpresa(empresa.cnpj); });
-    };
-
-    el('blocoAmbiente').hidden = false;
-    el('wrapAmbienteNovo').hidden = true;   // o select é só para empresa nova
   }
 
   function preencherSelectsEmpresa() {

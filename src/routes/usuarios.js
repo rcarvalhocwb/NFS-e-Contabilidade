@@ -89,6 +89,15 @@ router.put('/:id', async (req, res, next) => {
     const id = Number(req.params.id);
     const b = req.body || {};
 
+    /* Senha definida para OUTRA pessoa é provisória; definida para si mesmo,
+       não. Sem essa distinção, o administrador que trocasse a própria senha
+       por esta tela ficava marcado para trocar de novo — e o diálogo de troca
+       obrigatória voltava a cada carga da página. */
+    if (b.senha && b.trocarSenha === undefined &&
+        req.auth.tipo === 'usuario' && Number(req.auth.usuarioId) === id) {
+      b.trocarSenha = false;
+    }
+
     // Não deixar o sistema ficar sem administrador: sem ninguém para promover
     // outro, a instalação vira um beco sem saída.
     const perdeAdmin = (b.perfil !== undefined && b.perfil !== 'admin') || b.ativo === false;
