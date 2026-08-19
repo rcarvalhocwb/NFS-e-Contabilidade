@@ -269,7 +269,8 @@
         <button class="plano pequeno" id="btnVoltarEmp" style="margin-bottom:12px">‹ Voltar para empresas</button>
         <div class="cartao">
           <div class="abas" id="abas">
-            <button data-aba="identificacao" class="ativo">Identificação</button>
+            <button data-aba="visao" class="ativo" data-precisa-salvar="1">Visão geral</button>
+            <button data-aba="identificacao">Identificação</button>
             <button data-aba="endereco">Endereço</button>
             <button data-aba="contato">Contato</button>
             <button data-aba="responsavel">Responsável</button>
@@ -279,7 +280,71 @@
             <button data-aba="integracao" data-precisa-salvar="1">Integração / API</button>
           </div>
 
-          <div class="painel-aba ativo" id="aba-identificacao">
+          <div class="painel-aba ativo" id="aba-visao">
+            <div id="visaoAlertas"></div>
+
+            <div class="grade c4" style="margin-bottom:16px">
+              <div class="metrica destaque">
+                <div class="rotulo">Notas no mês</div>
+                <div class="valor" id="vgMes">—</div>
+                <div class="nota" id="vgMesNota"></div>
+              </div>
+              <div class="metrica">
+                <div class="rotulo">Faturado no mês</div>
+                <div class="valor" id="vgFaturado" style="font-size:20px">—</div>
+                <div class="nota">notas autorizadas</div>
+              </div>
+              <div class="metrica">
+                <div class="rotulo">Próxima nota</div>
+                <div class="valor" id="vgProxima" style="font-size:20px">—</div>
+                <div class="nota" id="vgAmbiente"></div>
+              </div>
+              <div class="metrica">
+                <div class="rotulo">Certificado</div>
+                <div class="valor" id="vgCert" style="font-size:15px;margin-top:9px">—</div>
+                <div class="nota" id="vgCertNota"></div>
+              </div>
+            </div>
+
+            <div class="caixa-amb">
+              <h4>Últimos 12 meses</h4>
+              <div id="vgHistorico" style="display:flex;align-items:flex-end;gap:4px;height:90px"></div>
+              <div class="ajuda" style="margin-top:8px">Notas por mês. Passe o mouse para ver o total.</div>
+            </div>
+
+            <div class="caixa-amb">
+              <h4>Últimas notas <span class="espaco"></span></h4>
+              <div class="tabela-area">
+                <table>
+                  <thead><tr><th>Nota</th><th>Cliente</th><th>Valor</th><th>Situação</th><th>Data</th><th></th></tr></thead>
+                  <tbody id="vgNotas"></tbody>
+                </table>
+              </div>
+              <div id="vgSemNotas" class="ajuda" hidden style="padding:14px 0">
+                Nenhuma nota emitida por esta empresa ainda.
+              </div>
+            </div>
+
+            <div class="grade c2">
+              <div class="caixa-amb" style="margin:0">
+                <h4>Lotes recentes</h4>
+                <div id="vgLotes"></div>
+              </div>
+              <div class="caixa-amb" style="margin:0">
+                <h4>Cadastros</h4>
+                <dl class="kv">
+                  <dt>Clientes</dt><dd id="vgClientes">—</dd>
+                  <dt>Serviços salvos</dt><dd id="vgServicos">—</dd>
+                </dl>
+                <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+                  <a class="botao pequeno" href="/nota" id="vgEmitir">Emitir nota</a>
+                  <button class="pequeno" id="vgVerNotas">Ver todas as notas</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="painel-aba" id="aba-identificacao">
             <div class="grade c2">
               <div>
                 <label for="f_cnpj">CNPJ *</label>

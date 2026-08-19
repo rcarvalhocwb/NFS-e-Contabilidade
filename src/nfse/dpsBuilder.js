@@ -278,6 +278,18 @@ function gerarIdDps({ codigoMunicipio, cnpj, serie, numero }) {
     String(serie).padStart(5, '0') + String(numero).padStart(15, '0');
 }
 
+/* Margem de segurança do dhEmi.
+ *
+ * A DPS é montada, assinada e transmitida em menos de um segundo. Se o relógio
+ * da máquina estiver adiantado em relação ao da Sefin — bastam décimos —, a
+ * data de emissão fica "no futuro" e a nota volta com E0008:
+ *   "A data de emissão da DPS não pode ser posterior à data do seu processamento."
+ *
+ * Aconteceu com 0,3s de diferença. Recuar alguns segundos não muda nada
+ * fiscalmente (a competência é por data) e elimina a corrida.
+ */
+const MARGEM_EMISSAO_S = parseInt(process.env.DPS_MARGEM_SEGUNDOS || '5', 10);
+
 function fmtDataHoraLocal(d = new Date()) {
   // ISO com offset local (ex.: 2026-07-21T10:00:00-03:00)
   const tz = -d.getTimezoneOffset();
@@ -343,7 +355,7 @@ function montarDps(empresa, dados, opts) {
 `<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="${versao}">` +
 `<infDPS Id="${idDps}">` +
   tag('tpAmb', opts.tpAmb) +
-  tag('dhEmi', fmtDataHoraLocal()) +
+  tag('dhEmi', fmtDataHoraLocal(new Date(Date.now() - MARGEM_EMISSAO_S * 1000))) +
   tag('verAplic', opts.verAplic) +
   tag('serie', serie) +
   tag('nDPS', numero) +

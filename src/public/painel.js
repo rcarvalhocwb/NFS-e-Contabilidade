@@ -416,6 +416,108 @@
      Empresa nova escolhe o ambiente no cadastro (o select); empresa já salva
      troca por aqui, com confirmação — mudar de teste para produção decide se a
      próxima nota é documento fiscal, e não pode ser salvo junto com o telefone. */
+  /* Visão geral da empresa: o painel do cliente, para o contador responder
+     "como está a empresa X" sem passar por três telas filtrando cada uma. */
+  function carregarVisaoGeral(cnpj) {
+    api('/empresas/' + cnpj + '/resumo').then(function (d) {
+      var e = d.empresa;
+
+      // Alertas antes dos números: é o que impede de emitir
+      var alertas = '';
+      if (!d.certificado) {
+        alertas += '<div class="linha-alerta critico"><strong>Sem certificado digital</strong>' +
+          ' — esta empresa não consegue emitir. Anexe na aba Certificado.</div>';
+      } else if (d.certificado.dias < 0) {
+        alertas += '<div class="linha-alerta critico"><strong>Certificado vencido</strong> em ' +
+          fmtData(d.certificado.valido_ate) + ' — renove antes de emitir.</div>';
+      } else if (d.certificado.dias <= 30) {
+        alertas += '<div class="linha-alerta aviso"><strong>Certificado vence em ' +
+          d.certificado.dias + ' dia(s)</strong> (' + fmtData(d.certificado.valido_ate) + ').</div>';
+      }
+      if (d.naFila) {
+        alertas += '<div class="linha-alerta aviso">' + d.naFila +
+          ' nota(s) aguardando resposta da Sefin.</div>';
+      }
+      var comProblema = (d.mes.porStatus.rejeitada || 0) + (d.mes.porStatus.erro || 0);
+      if (comProblema) {
+        alertas += '<div class="linha-alerta aviso">' + comProblema +
+          ' nota(s) com problema neste mês — veja a lista abaixo.</div>';
+      }
+      el('visaoAlertas').innerHTML = alertas;
+
+      el('vgMes').textContent = d.mes.total;
+      el('vgMesNota').textContent = d.mes.autorizadas + ' autorizada(s)';
+
+      // Faturamento vem dos XMLs das últimas notas: o resumo não recalcula o
+      // mês inteiro, que é trabalho do relatório de fechamento.
+      var faturado = d.ultimasNotas
+        .filter(function (n) { return n.status === 'autorizada'; })
+        .reduce(function (t, n) { return t + ((n.valores && n.valores.valorServico) || 0); }, 0);
+      el('vgFaturado').textContent = fmtMoeda(faturado);
+
+      var num = (d.numeracao || []).filter(function (n) { return n.ambiente === e.ambiente; })[0];
+      el('vgProxima').textContent = num ? num.serie + '/' + num.prox_numero : '—';
+      el('vgAmbiente').innerHTML = seloAmbiente(e.ambiente);
+
+      el('vgCert').innerHTML = seloCertificado(d.certificado && d.certificado.valido_ate);
+      el('vgCertNota').textContent = d.certificado
+        ? 'anexado em ' + fmtData(d.certificado.criado_em) : 'nenhum anexado';
+
+      // Barras simples: doze meses cabem sem biblioteca de gráfico
+      var maior = Math.max.apply(null, d.historico.map(function (h) { return h.total; }).concat([1]));
+      el('vgHistorico').innerHTML = d.historico.length
+        ? d.historico.map(function (h) {
+            var altura = Math.max(3, Math.round((h.total / maior) * 74));
+            var mes = h.mes.slice(5) + '/' + h.mes.slice(2, 4);
+            return '<div title="' + mes + ': ' + h.total + ' nota(s), ' + h.autorizadas +
+              ' autorizada(s)" style="flex:1;display:flex;flex-direction:column;' +
+              'justify-content:flex-end;align-items:center;gap:4px">' +
+              '<div style="width:100%;height:' + altura + 'px;background:var(--acento);' +
+              'border-radius:3px 3px 0 0;opacity:' + (h.total ? 1 : .25) + '"></div>' +
+              '<span style="font-size:9.5px;color:var(--texto-3)">' + mes + '</span></div>';
+          }).join('')
+        : '<div class="ajuda">Sem histórico ainda.</div>';
+
+      var tb = el('vgNotas'); tb.innerHTML = '';
+      el('vgSemNotas').hidden = d.ultimasNotas.length > 0;
+      d.ultimasNotas.forEach(function (n) {
+        var v = n.valores || {};
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="mono">' + esc(n.serie) + '/' + esc(n.numero) + '</td>' +
+          '<td>' + esc(v.tomador || '—') + '</td>' +
+          '<td>' + (v.valorServico ? fmtMoeda(v.valorServico) : '—') + '</td>' +
+          '<td>' + seloStatus(n.status) +
+            (n.ultimo_erro ? '<div class="ajuda">' + esc(n.ultimo_erro.slice(0, 60)) + '</div>' : '') + '</td>' +
+          '<td style="color:var(--texto-2)">' + fmtDataHora(n.criado_em) + '</td>' +
+          '<td class="acoes"></td>';
+        var ver = document.createElement('button');
+        ver.className = 'pequeno'; ver.textContent = 'Ver';
+        ver.onclick = function () { abrirNota(n.id); };
+        tr.lastChild.appendChild(ver);
+        tb.appendChild(tr);
+      });
+
+      el('vgLotes').innerHTML = d.lotes.length
+        ? d.lotes.map(function (l) {
+            return '<div style="display:flex;gap:9px;align-items:center;margin-bottom:7px;font-size:13px">' +
+              '<span class="mono">#' + l.id + '</span>' +
+              '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+                esc(l.descricao || '—') + '</span>' +
+              '<span class="ajuda">' + l.total + ' linha(s)' +
+                (l.com_erro ? ', ' + l.com_erro + ' com erro' : '') + '</span></div>';
+          }).join('')
+        : '<div class="ajuda">Nenhum lote enviado.</div>';
+
+      el('vgClientes').textContent = d.cadastros.clientes;
+      el('vgServicos').textContent = d.cadastros.servicos;
+      el('vgVerNotas').onclick = function () {
+        el('nf_empresa').value = cnpj;
+        location.hash = 'notas';
+      };
+    }).catch(function (err) { aviso(err.message, 'erro'); });
+  }
+
   function montarBlocoAmbiente(empresa, numeracoes) {
     var producao = empresa.ambiente === 'producao';
     var lista = estado.empresas.filter(function (x) { return x.cnpj === empresa.cnpj; })[0] || {};
@@ -471,12 +573,14 @@
 
   function aba(nome) {
     $$('#abas button').forEach(function (b) { b.classList.toggle('ativo', b.dataset.aba === nome); });
-    ['identificacao','endereco','contato','responsavel','contabilidade','fiscais','certificado','integracao']
+    ['visao','identificacao','endereco','contato','responsavel','contabilidade','fiscais','certificado','integracao']
       .forEach(function (p) { el('aba-' + p).classList.toggle('ativo', p === nome); });
     // Numeração, certificado e integração gravam por conta própria
     el('acoesEmpresa').style.display =
-      (nome === 'fiscais' || nome === 'certificado' || nome === 'integracao') ? 'none' : '';
+      (nome === 'visao' || nome === 'fiscais' || nome === 'certificado' || nome === 'integracao')
+        ? 'none' : '';
     if (nome === 'integracao' && estado.editando) carregarIntegracao(estado.editando);
+    if (nome === 'visao' && estado.editando) carregarVisaoGeral(estado.editando);
   }
   el('abas').onclick = function (ev) {
     var b = ev.target.closest('button');
@@ -521,7 +625,7 @@
   function abrirEmpresa(cnpj) {
     limparFormulario(); estado.editando = cnpj;
     el('f_cnpj').disabled = true; el('wrapAtivo').hidden = false;
-    travarAbasNovas(false); aba('identificacao');
+    travarAbasNovas(false); aba('visao');
 
     api('/empresas/' + cnpj).then(function (e) {
       TELAS.empresaEdit.titulo = e.razao_social;

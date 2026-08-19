@@ -4,6 +4,7 @@ const db = require('../db');
 const { salvarCertificado } = require('../services/certificadoService');
 const { validarCnpj, limparDocumento } = require('../util/documento');
 const { somenteAdmin, empresasVisiveis, empresaVisivel } = require('../middleware/escopo');
+const { extrairValores } = require('../nfse/extrairValores');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
@@ -175,6 +176,84 @@ router.put('/:cnpj', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) 
     );
     if (!r.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });
     res.json(r.rows[0]);
+  } catch (e) { next(e); }
+});
+
+/* Painel da empresa: tudo que o contador precisa saber sobre um cliente numa
+   tela só. Antes disso, responder "como está a empresa X" exigia passar por
+   Notas, Relatórios e Lotes, filtrando cada um. */
+router.get('/:cnpj/resumo', exigirEmpresaVisivel, async (req, res, next) => {
+  try {
+    const cnpj = limparCnpj(req.params.cnpj);
+    const emp = await db.query('SELECT * FROM empresas WHERE cnpj = $1', [cnpj]);
+    if (!emp.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });
+    const id = emp.rows[0].id;
+
+    const [cert, numeracao, mes, ano, ultimas, lotes, clientes, servicos, pendencias] =
+      await Promise.all([
+        db.query(`SELECT subject, valido_ate, criado_em,
+                         EXTRACT(DAY FROM (valido_ate - now()))::int AS dias
+                    FROM certificados WHERE empresa_id = $1 AND ativo
+                   ORDER BY criado_em DESC LIMIT 1`, [id]),
+
+        db.query(`SELECT ambiente, serie, prox_numero, atualizado_em
+                    FROM numeracao_dps WHERE empresa_id = $1 ORDER BY ambiente`, [id]),
+
+        // Mês corrente, por status: é o número que o contador olha primeiro
+        db.query(`SELECT status, count(*)::int AS total
+                    FROM notas WHERE empresa_id = $1
+                     AND criado_em >= date_trunc('month', now())
+                   GROUP BY status`, [id]),
+
+        // Doze meses, para ver sazonalidade e comparar com o mês anterior
+        db.query(`SELECT to_char(date_trunc('month', criado_em), 'YYYY-MM') AS mes,
+                         count(*)::int AS total,
+                         count(*) FILTER (WHERE status = 'autorizada')::int AS autorizadas
+                    FROM notas WHERE empresa_id = $1
+                     AND criado_em >= date_trunc('month', now()) - interval '11 months'
+                   GROUP BY 1 ORDER BY 1`, [id]),
+
+        db.query(`SELECT n.id, n.serie, n.numero, n.status, n.ambiente, n.referencia,
+                         n.chave_acesso, n.criado_em, n.ultimo_erro, n.dps_xml,
+                         u.nome AS emitida_por
+                    FROM notas n LEFT JOIN usuarios u ON u.id = n.usuario_id
+                   WHERE n.empresa_id = $1 ORDER BY n.id DESC LIMIT 10`, [id]),
+
+        db.query(`SELECT l.id, l.descricao, l.total, l.ambiente, l.criado_em,
+                         count(*) FILTER (WHERE i.status = 'erro')::int AS com_erro
+                    FROM lotes l LEFT JOIN lote_itens i ON i.lote_id = l.id
+                   WHERE l.empresa_id = $1
+                   GROUP BY l.id ORDER BY l.id DESC LIMIT 5`, [id]),
+
+        db.query('SELECT count(*)::int AS total FROM tomadores WHERE empresa_id = $1', [id]),
+        db.query('SELECT count(*)::int AS total FROM servicos WHERE empresa_id = $1 AND ativo', [id]),
+
+        // O que trava a operação, para aparecer antes dos números
+        db.query(`SELECT count(*)::int AS na_fila
+                    FROM notas WHERE empresa_id = $1 AND status = 'processando'`, [id])
+      ]);
+
+    const porStatus = {};
+    mes.rows.forEach(r => { porStatus[r.status] = r.total; });
+
+    res.json({
+      empresa: emp.rows[0],
+      certificado: cert.rows[0] || null,
+      numeracao: numeracao.rows,
+      mes: {
+        porStatus,
+        total: Object.values(porStatus).reduce((a, b) => a + b, 0),
+        autorizadas: porStatus.autorizada || 0
+      },
+      historico: ano.rows,
+      ultimasNotas: ultimas.rows.map(n => {
+        const { dps_xml, ...resto } = n;
+        return Object.assign(resto, { valores: extrairValores(dps_xml) });
+      }),
+      lotes: lotes.rows,
+      cadastros: { clientes: clientes.rows[0].total, servicos: servicos.rows[0].total },
+      naFila: pendencias.rows[0].na_fila
+    });
   } catch (e) { next(e); }
 });
 
