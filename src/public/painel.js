@@ -664,6 +664,27 @@
         b.className = 'pequeno'; b.textContent = 'Ver';
         b.onclick = function () { abrirNota(n.id); };
         tr.lastChild.appendChild(b);
+
+        // Baixar direto da lista: quem precisa de vinte PDFs não deveria abrir
+        // vinte diálogos para isso.
+        if (n.status === 'autorizada' || n.status === 'cancelada' || n.status === 'substituida') {
+          var pdf = document.createElement('button');
+          pdf.className = 'pequeno'; pdf.textContent = 'PDF';
+          pdf.title = 'Baixar o DANFSe';
+          pdf.style.marginLeft = '6px';
+          pdf.onclick = function () {
+            baixar('/nfse/' + n.id + '/danfse', 'DANFSe-' + (n.chave_acesso || n.id) + '.pdf');
+          };
+          var xml = document.createElement('button');
+          xml.className = 'pequeno'; xml.textContent = 'XML';
+          xml.title = 'Baixar o XML autorizado';
+          xml.style.marginLeft = '4px';
+          xml.onclick = function () {
+            baixar('/nfse/' + n.id + '/xml', (n.chave_acesso || n.id) + '.xml');
+          };
+          tr.lastChild.appendChild(pdf);
+          tr.lastChild.appendChild(xml);
+        }
         tb.appendChild(tr);
       });
     }).catch(function (e) { aviso(e.message, 'erro'); });
@@ -792,6 +813,38 @@
   }
   el('btnExpNfse').onclick = function () { exportar('nfse', el('btnExpNfse')); };
   el('btnExpDps').onclick = function () { exportar('dps', el('btnExpDps')); };
+
+  /* Os PDFs são montados um a um na hora — por isso o aviso de espera aqui e o
+     teto de quantidade no servidor. */
+  function baixarZipPdf(caminho, botao) {
+    var texto = botao.textContent;
+    botao.disabled = true; botao.textContent = 'Gerando…';
+    aviso('Montando os PDFs. Em lotes grandes isso leva alguns minutos.', 'info');
+    fetch(caminho, { credentials: 'same-origin' })
+      .then(function (r) {
+        if (r.status === 404) throw new Error('Nenhuma nota autorizada para os filtros ativos.');
+        if (!r.ok) throw new Error('Falha ao gerar os PDFs.');
+        var total = r.headers.get('X-Total-Pdfs');
+        return r.blob().then(function (b) {
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(b);
+          a.download = 'danfse-' + new Date().toISOString().slice(0, 10) + '.zip';
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(a.href);
+          aviso(total + ' PDF(s) no arquivo.');
+        });
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { botao.disabled = false; botao.textContent = texto; });
+  }
+
+  el('btnExpPdf').onclick = function () {
+    var q = [];
+    if (el('nf_empresa').value) q.push('cnpjEmpresa=' + encodeURIComponent(el('nf_empresa').value));
+    if (el('nf_status').value) q.push('status=' + encodeURIComponent(el('nf_status').value));
+    if (el('nf_ambiente').value) q.push('ambiente=' + encodeURIComponent(el('nf_ambiente').value));
+    baixarZipPdf('/nfse/export-pdf' + (q.length ? '?' + q.join('&') : ''), el('btnExpPdf'));
+  };
 
   /* -------------------------------------------------------------- clientes */
 
@@ -1098,6 +1151,28 @@
   el('btnBaixarCsv').onclick = function () {
     baixar('/relatorios/notas.csv?' + filtrosRelatorio(),
            'nfse-' + el('rl_inicio').value + '-a-' + el('rl_fim').value + '.csv');
+  };
+
+  /* Documentos do período: o que o escritório arquiva e manda ao cliente no
+     fechamento. Mesmos filtros da tela, para não haver diferença entre o que
+     se vê e o que se baixa. */
+  function filtrosDocumentos() {
+    var q = ['inicio=' + el('rl_inicio').value, 'fim=' + el('rl_fim').value, 'status=autorizada'];
+    if (el('rl_ambiente').value) q.push('ambiente=' + el('rl_ambiente').value);
+    var emp = el('rl_empresa').value;
+    if (emp) {
+      var e = estado.empresas.filter(function (x) { return String(x.id) === String(emp); })[0];
+      if (e) q.push('cnpjEmpresa=' + encodeURIComponent(e.cnpj));
+    }
+    return q.join('&');
+  }
+
+  el('btnBaixarPdfsPeriodo').onclick = function () {
+    baixarZipPdf('/nfse/export-pdf?' + filtrosDocumentos(), el('btnBaixarPdfsPeriodo'));
+  };
+  el('btnBaixarXmlsPeriodo').onclick = function () {
+    baixar('/nfse/export?tipo=nfse&' + filtrosDocumentos(),
+           'xmls-' + el('rl_inicio').value + '-a-' + el('rl_fim').value + '.zip');
   };
 
   /* -------------------------------------------------------------- usuários */

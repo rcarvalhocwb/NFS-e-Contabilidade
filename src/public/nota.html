@@ -130,6 +130,13 @@
         <div><label for="fMunPrest">Município da prestação</label><input id="fMunPrest" inputmode="numeric" maxlength="7">
           <div class="ajuda">Vazio = o da empresa.</div></div>
       </div>
+      <div class="grade c3" style="margin-top:14px">
+        <div><label for="fNbs">Código NBS</label><input id="fNbs" inputmode="numeric" maxlength="9">
+          <div class="ajuda">9 dígitos. Obrigatório com IBS/CBS.</div></div>
+        <div><label for="fDocTec">Documento técnico</label><input id="fDocTec" maxlength="40" placeholder="ART, RRT...">
+          <div class="ajuda">Sai impresso na nota.</div></div>
+        <div><label for="fPedido">Nº do pedido</label><input id="fPedido" maxlength="60"></div>
+      </div>
       <div style="margin-top:14px">
         <label for="fDescricao">Descrição do serviço *</label>
         <textarea id="fDescricao" rows="2" maxlength="2000"></textarea>
@@ -177,6 +184,14 @@
         <div><label for="fDescIncond">Desconto incondicionado</label><input id="fDescIncond" type="number" step="0.01" min="0"></div>
         <div><label for="fDeducoes">Deduções da base</label><input id="fDeducoes" type="number" step="0.01" min="0">
           <div class="ajuda">Material, subempreitada.</div></div>
+      </div>
+
+      <div class="grade c3" style="margin-top:14px">
+        <div><label for="fDescCond">Desconto condicionado</label><input id="fDescCond" type="number" step="0.01" min="0">
+          <div class="ajuda">Não reduz a base de cálculo.</div></div>
+        <div><label for="fBmNumero">Nº do benefício municipal</label><input id="fBmNumero" inputmode="numeric" maxlength="14">
+          <div class="ajuda">Concedido por lei do município.</div></div>
+        <div><label for="fBmReducao">Redução do benefício (%)</label><input id="fBmReducao" type="number" step="0.01" min="0" max="100"></div>
       </div>
 
       <!-- Campos que dependem da natureza escolhida -->
@@ -228,6 +243,90 @@
               Retido pelo tomador
             </label>
           </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- IBS/CBS: facultativo hoje, mas quem informa tem tudo validado -->
+    <details class="avancado" id="detIbsCbs">
+      <summary>IBS e CBS — Reforma Tributária</summary>
+      <div class="conteudo">
+        <div class="ajuda" style="margin-bottom:14px">
+          <strong>Facultativo por enquanto.</strong> A Sefin suspendeu a
+          obrigatoriedade e autoriza notas sem estes campos. Mas se você informar,
+          <strong>todo o conteúdo passa a ser validado</strong> — só preencha com
+          os códigos corretos, e teste em homologação antes.
+          <br>Informar IBS/CBS leva a nota para o leiaute 1.01, onde o
+          <strong>código NBS passa a ser obrigatório</strong>.
+        </div>
+        <label style="display:flex;align-items:center;gap:9px;font-weight:400;cursor:pointer;margin-bottom:14px">
+          <input type="checkbox" id="fIbsAtivo" style="width:auto;margin:0">
+          Informar IBS/CBS nesta nota
+        </label>
+        <div id="fIbsCampos" hidden>
+          <div class="grade c3">
+            <div>
+              <label for="fIbsCst">CST *</label>
+              <input id="fIbsCst" inputmode="numeric" maxlength="3" placeholder="000">
+              <div class="ajuda">3 dígitos (LC 214/2025).</div>
+            </div>
+            <div>
+              <label for="fIbsClass">Classificação tributária *</label>
+              <input id="fIbsClass" inputmode="numeric" maxlength="6" placeholder="000001">
+              <div class="ajuda">6 dígitos (cClassTrib).</div>
+            </div>
+            <div>
+              <label for="fIbsOperacao">Indicador da operação *</label>
+              <input id="fIbsOperacao" inputmode="numeric" maxlength="6" placeholder="000001">
+              <div class="ajuda">cIndOp, do Anexo VII.</div>
+            </div>
+          </div>
+          <div class="grade c3" style="margin-top:14px">
+            <div>
+              <label for="fIbsDest">Destinatário</label>
+              <select id="fIbsDest">
+                <option value="0">0 — É o próprio tomador</option>
+                <option value="1">1 — É outra pessoa</option>
+              </select>
+            </div>
+            <div>
+              <label for="fIbsFinal">Uso ou consumo pessoal</label>
+              <select id="fIbsFinal">
+                <option value="">Não informar</option>
+                <option value="0">Não</option>
+                <option value="1">Sim</option>
+              </select>
+            </div>
+            <div>
+              <label for="fIbsCredPres">Crédito presumido</label>
+              <input id="fIbsCredPres" inputmode="numeric" maxlength="2">
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Construção civil -->
+    <details class="avancado">
+      <summary>Obra (construção civil)</summary>
+      <div class="conteudo">
+        <div class="ajuda" style="margin-bottom:14px">
+          Identifique a obra pelo código <strong>ou</strong> pelo endereço —
+          o leiaute aceita um dos dois, nunca os dois juntos.
+        </div>
+        <div class="grade c3">
+          <div><label for="fObraCodigo">Código da obra (CNO/CEI)</label><input id="fObraCodigo" maxlength="30"></div>
+          <div><label for="fObraCib">Código CIB</label><input id="fObraCib" maxlength="8"></div>
+          <div><label for="fObraInscricao">Inscrição imobiliária</label><input id="fObraInscricao" maxlength="30"></div>
+        </div>
+        <div class="grade c3" style="margin-top:14px">
+          <div><label for="fObraCep">CEP da obra</label><input id="fObraCep" inputmode="numeric" maxlength="9"></div>
+          <div style="grid-column:span 2"><label for="fObraLogradouro">Logradouro</label><input id="fObraLogradouro" maxlength="255"></div>
+        </div>
+        <div class="grade c3" style="margin-top:14px">
+          <div><label for="fObraNumero">Número</label><input id="fObraNumero" maxlength="60"></div>
+          <div><label for="fObraComplemento">Complemento</label><input id="fObraComplemento" maxlength="156"></div>
+          <div><label for="fObraBairro">Bairro</label><input id="fObraBairro" maxlength="60"></div>
         </div>
       </div>
     </details>

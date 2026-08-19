@@ -275,9 +275,15 @@
   el('btnLimpar').onclick = function () {
     if (!confirm('Limpar todos os campos?')) return;
     ['fDoc','fNome','fMunTom','fEmailTom','fFoneTom','fCodTrib','fCodMun','fMunPrest',
-     'fDescricao','fCompl','fValor','fAliquota','fDescIncond','fDeducoes','fNumProcesso',
+     'fNbs','fDocTec','fPedido','fDescricao','fCompl','fValor','fAliquota','fDescIncond',
+     'fDescCond','fDeducoes','fBmNumero','fBmReducao','fNumProcesso',
      'fPais','fCompetencia','fReferencia','fTotTrib',
-     'fRetPis','fRetCofins','fRetIrrf','fRetCsll','fRetInss'].forEach(function (id) { el(id).value = ''; });
+     'fRetPis','fRetCofins','fRetIrrf','fRetCsll','fRetInss',
+     'fIbsCst','fIbsClass','fIbsOperacao','fIbsCredPres',
+     'fObraCodigo','fObraCib','fObraInscricao','fObraCep','fObraLogradouro',
+     'fObraNumero','fObraComplemento','fObraBairro'].forEach(function (id) { el(id).value = ''; });
+    el('fIbsAtivo').checked = false;
+    el('fIbsCampos').hidden = true;
     el('fNatureza').value = '1';
     el('fIssRetido').value = 'false';
     aplicarNatureza();
@@ -285,6 +291,65 @@
   };
 
   /* ------------------------------------------------------------- emitir */
+
+  /* Obra: código OU CIB OU endereço — o leiaute aceita um dos três, e mandar
+     mais de um faz a Sefin recusar. A ordem aqui define a preferência. */
+  function montarObra() {
+    var codigo = el('fObraCodigo').value.trim();
+    var cib = el('fObraCib').value.trim();
+    var cep = digitos(el('fObraCep').value);
+    var logradouro = el('fObraLogradouro').value.trim();
+    var inscricao = el('fObraInscricao').value.trim();
+
+    if (!codigo && !cib && !cep && !logradouro && !inscricao) return undefined;
+
+    var obra = {};
+    if (inscricao) obra.inscricaoImobiliaria = inscricao;
+    if (codigo) {
+      obra.codigoObra = codigo;
+    } else if (cib) {
+      obra.codigoCIB = cib;
+    } else {
+      obra.cep = cep;
+      obra.logradouro = logradouro;
+      obra.numero = el('fObraNumero').value.trim() || undefined;
+      obra.complemento = el('fObraComplemento').value.trim() || undefined;
+      obra.bairro = el('fObraBairro').value.trim() || undefined;
+    }
+    return obra;
+  }
+
+  /* IBS/CBS só entra quando marcado. Enquanto é facultativo, informar por
+     engano é pior que não informar: o conteúdo passa a ser todo validado. */
+  function montarIbsCbs() {
+    if (!el('fIbsAtivo').checked) return null;
+
+    var g = {
+      indicadorOperacao: digitos(el('fIbsOperacao').value),
+      indicadorDestinatario: Number(el('fIbsDest').value),
+      tributacao: {
+        cst: digitos(el('fIbsCst').value),
+        classificacaoTributaria: digitos(el('fIbsClass').value)
+      }
+    };
+    if (el('fIbsFinal').value !== '') g.consumidorFinal = Number(el('fIbsFinal').value);
+    if (digitos(el('fIbsCredPres').value)) {
+      g.tributacao.creditoPresumido = digitos(el('fIbsCredPres').value);
+    }
+    return g;
+  }
+
+  el('fIbsAtivo').onchange = function () {
+    var ligado = el('fIbsAtivo').checked;
+    el('fIbsCampos').hidden = !ligado;
+    if (ligado) {
+      el('detIbsCbs').open = true;
+      // O leiaute 1.01 torna o NBS obrigatório; avisar aqui evita a recusa
+      if (!digitos(el('fNbs').value)) {
+        aviso('Com IBS/CBS, o código NBS passa a ser obrigatório. Preencha-o no bloco do serviço.', 'info');
+      }
+    }
+  };
 
   function montarCorpo() {
     var e = empresaAtual();
@@ -303,7 +368,14 @@
       valores.numeroProcesso = el('fNumProcesso').value.trim() || undefined;
     }
     if (num('fDescIncond') !== undefined) valores.descontoIncondicionado = num('fDescIncond');
+    if (num('fDescCond') !== undefined) valores.descontoCondicionado = num('fDescCond');
     if (num('fDeducoes') !== undefined) valores.valorDeducoes = num('fDeducoes');
+    if (digitos(el('fBmNumero').value)) {
+      valores.beneficioMunicipal = { numero: digitos(el('fBmNumero').value) };
+      if (num('fBmReducao') !== undefined) {
+        valores.beneficioMunicipal.percentualReducao = num('fBmReducao');
+      }
+    }
     if (num('fTotTrib') !== undefined) {
       var optanteSN = [2, 3].indexOf(Number(e.op_simp_nac)) !== -1;
       if (optanteSN) valores.percentualTotalTributosSN = num('fTotTrib');
@@ -331,8 +403,12 @@
         codigoTributacaoMunicipal: el('fCodMun').value.trim() || undefined,
         descricao: el('fDescricao').value.trim(),
         codigoMunicipioPrestacao: digitos(el('fMunPrest').value) || undefined,
+        codigoNbs: digitos(el('fNbs').value) || undefined,
+        documentoTecnico: el('fDocTec').value.trim() || undefined,
+        pedido: el('fPedido').value.trim() || undefined,
         informacoesComplementares: el('fCompl').value.trim() || undefined,
-        codigoPaisPrestacao: natureza === '2' ? (el('fPais').value.trim().toUpperCase() || undefined) : undefined
+        codigoPaisPrestacao: natureza === '2' ? (el('fPais').value.trim().toUpperCase() || undefined) : undefined,
+        obra: montarObra()
       },
       valores: valores
     };
@@ -346,6 +422,8 @@
         corpo.tomador.endereco = { codigoMunicipio: digitos(el('fMunTom').value) };
       }
     }
+    var ibs = montarIbsCbs();
+    if (ibs) corpo.ibsCbs = ibs;
     if (el('fCompetencia').value) corpo.dataCompetencia = el('fCompetencia').value;
     if (el('fReferencia').value.trim()) corpo.referencia = el('fReferencia').value.trim();
     return corpo;
@@ -362,6 +440,15 @@
     if (doc && !el('fNome').value.trim()) return 'Informe o nome do cliente.';
     if (el('fNatureza').value === '2' && !el('fPais').value.trim()) {
       return 'Exportação de serviço exige o país da prestação.';
+    }
+    if (el('fIbsAtivo').checked) {
+      if (!digitos(el('fNbs').value)) return 'Com IBS/CBS, informe o código NBS do serviço.';
+      if (!digitos(el('fIbsCst').value)) return 'Informe o CST do IBS/CBS.';
+      if (!digitos(el('fIbsClass').value)) return 'Informe a classificação tributária do IBS/CBS.';
+      if (!digitos(el('fIbsOperacao').value)) return 'Informe o indicador da operação (cIndOp).';
+    }
+    if (el('fObraCodigo').value.trim() && el('fObraCib').value.trim()) {
+      return 'Informe o código da obra OU o CIB, não os dois.';
     }
     return null;
   }

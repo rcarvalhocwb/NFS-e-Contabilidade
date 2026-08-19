@@ -71,7 +71,25 @@ const CASOS = {
   'benefício municipal': { valores: { valorServico: 1000, aliquotaIss: 5,
     beneficioMunicipal: { numero: '12345678901234', percentualReducao: 50 } } },
   'descontos': { valores: { valorServico: 1000, aliquotaIss: 5,
-    descontoIncondicionado: 50, descontoCondicionado: 30 } }
+    descontoIncondicionado: 50, descontoCondicionado: 30 } },
+  // Tudo que o formulário de emissão pode preencher, de uma vez: é o caso que
+  // pega uma combinação inválida entre campos que sozinhos passam.
+  'formulário completo': {
+    servico: { codigoTributacaoNacional: '070201', descricao: 'Construcao civil',
+      codigoNbs: '123456789', documentoTecnico: 'ART-2026-99', pedido: 'PED-42',
+      informacoesComplementares: 'Medicao 3',
+      obra: { codigoObra: 'CNO-123456', inscricaoImobiliaria: 'IPTU-9' } },
+    valores: { valorServico: 50000, aliquotaIss: 3, issRetido: true,
+      descontoIncondicionado: 1000, descontoCondicionado: 500, valorDeducoes: 20000,
+      beneficioMunicipal: { numero: '12345678901234', percentualReducao: 10 },
+      retencoesFederais: { baseCalculo: 50000, valorPis: 325, valorCofins: 1500,
+        valorRetencaoIrrf: 750, valorRetencaoCsll: 500, valorRetencaoPrevidencia: 5500,
+        retidoPeloTomador: true } },
+    ibsCbs: { indicadorOperacao: '000001', indicadorDestinatario: 0, consumidorFinal: 0,
+      tributacao: { cst: '000', classificacaoTributaria: '000001' } },
+    tomador: { cnpj: '14073521000183', razaoSocial: 'CLIENTE LTDA',
+      endereco: { codigoMunicipio: '4106902' } }
+  }
 };
 
 function gerar(extra) {

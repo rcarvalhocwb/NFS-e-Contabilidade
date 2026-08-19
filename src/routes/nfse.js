@@ -154,6 +154,74 @@ router.get('/export', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* Exportar os DANFSe em .zip, com os mesmos filtros da listagem.
+   Quem fecha o mês precisa dos PDFs para arquivar e para mandar ao cliente —
+   baixar um a um é o que a tela evitava até aqui. */
+router.get('/export-pdf', async (req, res, next) => {
+  try {
+    const params = [];
+    let where = 'n.nfse_xml IS NOT NULL';
+    if (req.query.cnpjEmpresa) {
+      params.push(limparDocumento(req.query.cnpjEmpresa));
+      where += ` AND e.cnpj = $${params.length}`;
+    }
+    if (req.query.status) { params.push(req.query.status); where += ` AND n.status = $${params.length}`; }
+    if (req.query.ambiente) { params.push(req.query.ambiente); where += ` AND n.ambiente = $${params.length}`; }
+    if (req.query.inicio) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query.inicio)) {
+        return res.status(400).json({ erro: 'inicio deve ser AAAA-MM-DD' });
+      }
+      params.push(req.query.inicio); where += ` AND n.criado_em >= $${params.length}::date`;
+    }
+    if (req.query.fim) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query.fim)) {
+        return res.status(400).json({ erro: 'fim deve ser AAAA-MM-DD' });
+      }
+      params.push(req.query.fim);
+      where += ` AND n.criado_em < ($${params.length}::date + interval '1 day')`;
+    }
+    const escopo = filtroSqlEmpresas(req, 'n.empresa_id', params.length);
+    where += escopo.sql;
+    params.push(...escopo.params);
+
+    // Gerar PDF é caro: cada um é um documento montado na hora. O teto evita
+    // que um filtro largo demais segure o processo por minutos.
+    params.push(Math.min(parseInt(req.query.limite || '200', 10), 500));
+
+    const r = await db.query(
+      `SELECT n.id, n.chave_acesso, n.numero, n.serie, n.nfse_xml
+       FROM notas n JOIN empresas e ON e.id = n.empresa_id
+       WHERE ${where} ORDER BY n.numero LIMIT $${params.length}`, params);
+
+    if (!r.rows.length) {
+      return res.status(404).json({ erro: 'Nenhuma nota autorizada para os filtros informados' });
+    }
+
+    const arquivos = [];
+    for (const linha of r.rows) {
+      try {
+        arquivos.push({
+          nome: `NFSe-${linha.serie}-${String(linha.numero).padStart(6, '0')}-` +
+                `${linha.chave_acesso || linha.id}.pdf`,
+          conteudo: await gerarDanfse(linha.nfse_xml)
+        });
+      } catch (e) {
+        // Uma nota com XML estranho não pode impedir o resto do lote
+        console.error(`[danfse] falhou na nota ${linha.id}:`, e.message);
+      }
+    }
+    if (!arquivos.length) {
+      return res.status(500).json({ erro: 'Não consegui gerar nenhum PDF' });
+    }
+
+    const nomeZip = `danfse-${new Date().toISOString().slice(0, 10)}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${nomeZip}"`);
+    res.setHeader('X-Total-Pdfs', String(arquivos.length));
+    res.send(criarZip(arquivos));
+  } catch (e) { next(e); }
+});
+
 /* Detalhar nota local (inclui XMLs) */
 router.get('/local/:id', async (req, res, next) => {
   try {
