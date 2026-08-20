@@ -112,6 +112,16 @@ function dadosDoXml(xml) {
   const toma = dentro(infDps, 'toma');
   const endToma = dentro(toma, 'end');
   const endNacToma = dentro(endToma, 'endNac');
+  /* Intermediário (item 2.1.6) e destinatário (2.1.5). O destinatário mora
+     dentro do grupo IBS/CBS: na Reforma Tributária ele pode ser diferente do
+     tomador, e é dele o direito ao crédito. */
+  const interm = dentro(infDps, 'interm');
+  const endInterm = dentro(interm, 'end');
+  const endNacInterm = dentro(endInterm, 'endNac');
+  const ibsCbs = dentro(infDps, 'IBSCBS');
+  const destIbs = dentro(ibsCbs, 'dest');
+  const endDest = dentro(destIbs, 'end');
+  const endNacDest = dentro(endDest, 'endNac');
   const serv = dentro(infDps, 'serv');
   const cServ = dentro(serv, 'cServ');
   const valoresDps = dentro(infDps, 'valores');
@@ -165,6 +175,18 @@ function dadosDoXml(xml) {
       cep: valor(endNacToma, 'CEP'),
       fone: valor(toma, 'fone'),
       email: valor(toma, 'email')
+    },
+    intermediario: {
+      doc: valor(interm, 'CNPJ') || valor(interm, 'CPF') || valor(interm, 'NIF'),
+      im: valor(interm, 'IM'), nome: valor(interm, 'xNome'),
+      logradouro: valor(endInterm, 'xLgr'), numero: valor(endInterm, 'nro'),
+      bairro: valor(endInterm, 'xBairro'), cMun: valor(endNacInterm, 'cMun'),
+      cep: valor(endNacInterm, 'CEP'), fone: valor(interm, 'fone')
+    },
+    destinatario: {
+      doc: valor(destIbs, 'CNPJ') || valor(destIbs, 'CPF') || valor(destIbs, 'NIF'),
+      nome: valor(destIbs, 'xNome'),
+      cMun: valor(endNacDest, 'cMun'), cep: valor(endNacDest, 'CEP')
     },
     serie: valor(infDps, 'serie'),
     nDPS: valor(infDps, 'nDPS'),
@@ -403,6 +425,31 @@ function gerarDanfse(xmlNfse, opcoes = {}) {
         { r: 'Município / Sigla UF', v: '', w: 0.20 },
         { r: 'Código IBGE / CEP', v: [d.tomador.cMun, fmtCep(d.tomador.cep)].filter(Boolean).join(' / '), w: 0.20 },
         { r: 'E-mail', v: d.tomador.email, w: 0.18 }
+      ]);
+    }
+
+    /* --- destinatário (item 2.1.5) --------------------------------------
+       Só aparece quando existe: na maioria das notas o destinatário é o próprio
+       tomador, e repetir o mesmo nome em dois blocos gastaria espaço numa
+       página que a NT exige que seja única. */
+    if (d.destinatario.doc || d.destinatario.nome) {
+      y = tituloBloco('Destinatário da Operação', y);
+      y = linhaCampos(y, [
+        { r: 'Nome / Nome Empresarial', v: d.destinatario.nome, w: 0.50 },
+        { r: 'CNPJ / CPF / NIF', v: fmtDoc(d.destinatario.doc), w: 0.25 },
+        { r: 'Código IBGE / CEP',
+          v: [d.destinatario.cMun, fmtCep(d.destinatario.cep)].filter(Boolean).join(' / '), w: 0.25 }
+      ]);
+    }
+
+    /* --- intermediário (item 2.1.6) -------------------------------------- */
+    if (d.intermediario.doc || d.intermediario.nome) {
+      y = tituloBloco('Intermediário da Operação', y);
+      y = linhaCampos(y, [
+        { r: 'Nome / Nome Empresarial', v: d.intermediario.nome, w: 0.42 },
+        { r: 'CNPJ / CPF / NIF', v: fmtDoc(d.intermediario.doc), w: 0.20 },
+        { r: 'Indicador Municipal (Inscrição)', v: d.intermediario.im, w: 0.20 },
+        { r: 'Telefone', v: fmtTelefone(d.intermediario.fone), w: 0.18 }
       ]);
     }
 

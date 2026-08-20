@@ -187,6 +187,47 @@ test('2.4.3 — cabeçalho em 9 pontos', async () => {
   assert.match(fluxo, /\/F\d+ 9 Tf/, 'nenhum texto em corpo 9');
 });
 
+/* NFS-e com intermediário e com destinatário do IBS/CBS — os dois blocos que a
+   NT exige e que o DANFSe não imprimia. */
+function nfseCompleta() {
+  return nfseXml().replace('<serv>',
+    `<interm><CNPJ>11222333000181</CNPJ><xNome>INTERMEDIARIO LTDA</xNome>
+      <IM>987654</IM><fone>4133335555</fone></interm><serv>`)
+   .replace('</infDPS>',
+    `<IBSCBS><dest><CNPJ>99888777000166</CNPJ><xNome>DESTINATARIO FINAL SA</xNome>
+      <end><endNac><cMun>3550308</cMun><CEP>01001000</CEP></endNac></end></dest>
+     </IBSCBS></infDPS>`);
+}
+
+/* Os títulos de bloco saem em CAIXA ALTA (item 2.4.1), então a busca
+   ignora a caixa — procurar "Intermediário" com grafia mista não acha. */
+test('2.1.6 — o intermediário aparece quando existe', async () => {
+  const t = textoDo(await gerarDanfse(nfseCompleta())).replace(/\s+/g, '');
+  assert.ok(/INTERMEDI/i.test(t), 'falta o bloco do intermediário');
+  assert.ok(t.includes('INTERMEDIARIOLTDA'), 'falta o nome do intermediário');
+});
+
+test('2.1.5 — o destinatário aparece quando existe', async () => {
+  /* Na Reforma Tributária o destinatário pode ser diferente do tomador, e é
+     dele o direito ao crédito — omiti-lo do documento apaga essa informação. */
+  const t = textoDo(await gerarDanfse(nfseCompleta())).replace(/\s+/g, '');
+  assert.ok(/DESTINAT/i.test(t), 'falta o bloco do destinatário');
+  assert.ok(t.includes('DESTINATARIOFINALSA'), 'falta o nome do destinatário');
+});
+
+test('sem intermediário nem destinatário, os blocos não aparecem', async () => {
+  // A página é única: bloco vazio gastaria espaço de quem tem conteúdo
+  const t = textoDo(await gerarDanfse(nfseXml())).replace(/\s+/g, '');
+  assert.ok(!/INTERMEDI[ÁA]RIODAOPERA/i.test(t), 'bloco vazio de intermediário');
+  assert.ok(!/DESTINAT[ÁA]RIODAOPERA/i.test(t), 'bloco vazio de destinatário');
+});
+
+test('com os dois blocos extras, ainda cabe em uma página', async () => {
+  const pdf = await gerarDanfse(nfseCompleta());
+  const paginas = (bruto(pdf).match(/\/Type\s*\/Page[^s]/g) || []).length;
+  assert.equal(paginas, 1, 'saiu com ' + paginas + ' páginas');
+});
+
 test('o conteúdo impresso vem do XML, não de valor inventado', async () => {
   // Item 2.1: não podem ser impressas informações que não constem da NFS-e
   const t = textoDo(await gerarDanfse(nfseXml())).replace(/\s+/g, '');
