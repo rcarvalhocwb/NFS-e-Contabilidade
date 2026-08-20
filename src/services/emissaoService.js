@@ -2,6 +2,7 @@ const db = require('../db');
 const { limparDocumento } = require('../util/documento');
 const config = require('../config');
 const { montarDps, gerarIdDps } = require('../nfse/dpsBuilder');
+const { conferirEmissao, conferirCancelamento } = require('../nfse/regrasDps');
 const { montarPedidoCancelamento } = require('../nfse/eventoBuilder');
 const { assinarXml } = require('../nfse/assinador');
 const sefin = require('../nfse/sefinClient');
@@ -98,6 +99,12 @@ async function emitir(cnpjEmpresa, dados, contexto = {}) {
     ), { status: 422 });
   }
 
+  /* Conferência do leiaute ANTES de reservar número. A Sefin só recusaria
+     depois de a numeração ter sido consumida e a DPS assinada — deixando um
+     buraco na sequência fiscal por um e-mail longo demais ou uma alíquota que
+     não cabe no campo. */
+  conferirEmissao(dados);
+
   const cert = await carregarCertificadoAtivo(empresa.id);
   /* Trava da instalação, conferida antes de reservar número: numa máquina de
      treinamento a nota não pode escapar para produção nem por engano. */
@@ -181,8 +188,18 @@ async function consultar(cnpjEmpresa, chaveAcesso) {
   return { httpStatus: resp.status, retornoSefin: resp.json ?? resp.raw };
 }
 
+/* Eventos registrados na Sefin para uma NFS-e. O gateway sabe dos eventos que
+   ele enviou; esta é a lista da Sefin, que inclui o que veio por outro caminho. */
+async function consultarEventos(cnpjEmpresa, chaveAcesso) {
+  const empresa = await buscarEmpresa(cnpjEmpresa);
+  const cert = await carregarCertificadoAtivo(empresa.id);
+  const resp = await sefin.consultarEventos(empresa.ambiente, chaveAcesso, cert);
+  return { httpStatus: resp.status, retornoSefin: resp.json ?? resp.raw };
+}
+
 /* Cancela NFS-e via evento e101101. */
 async function cancelar(cnpjEmpresa, chaveAcesso, { codigoMotivo, motivo } = {}) {
+  conferirCancelamento({ codigoMotivo, motivo });
   const empresa = await buscarEmpresa(cnpjEmpresa);
   const cert = await carregarCertificadoAtivo(empresa.id);
   const amb = config.ambientes[empresa.ambiente];
@@ -209,4 +226,4 @@ async function cancelar(cnpjEmpresa, chaveAcesso, { codigoMotivo, motivo } = {})
   return { httpStatus: resp.status, cancelada: ok, retornoSefin: resp.json ?? resp.raw };
 }
 
-module.exports = { emitir, consultar, cancelar };
+module.exports = { emitir, consultar, consultarEventos, cancelar };

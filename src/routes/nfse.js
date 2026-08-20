@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { emitir, consultar, cancelar } = require('../services/emissaoService');
+const { emitir, consultar, consultarEventos, cancelar } = require('../services/emissaoService');
 const { criarZip } = require('../util/zip');
 const { notaNoEscopo, filtroSqlEmpresas, empresaVisivel } = require('../middleware/escopo');
 const auditoria = require('../services/auditoria');
@@ -493,6 +493,35 @@ router.get('/:chaveAcesso', async (req, res, next) => {
     if (!cnpjEmpresa) return res.status(400).json({ erro: 'Informe ?cnpjEmpresa= (certificado usado na consulta)' });
     if (!await exigirEmpresaNoEscopo(req, res, cnpjEmpresa)) return;
     res.json(await consultar(cnpjEmpresa, req.params.chaveAcesso));
+  } catch (e) { next(e); }
+});
+
+/* Eventos registrados na Sefin para esta NFS-e: cancelamento, substituição.
+   O gateway conhece os eventos que ele mesmo enviou; a Sefin conhece também os
+   que vieram por outro caminho.
+
+   ATENÇÃO: o caminho GET /nfse/{chave}/eventos devolve HTTP 405 ("does not
+   support http method GET") na produção da Sefin, em 20/08/2026 — testado com
+   certificado válido, na mesma base em que a consulta da NFS-e responde 200.
+   O endpoint correto ainda não foi confirmado no Manual de Integração. A rota
+   fica aqui porque o caminho é a única peça em dúvida, e explica o 405 em vez
+   de repassá-lo cru. */
+router.get('/:chaveAcesso/eventos', async (req, res, next) => {
+  try {
+    const cnpjEmpresa = req.query.cnpjEmpresa;
+    if (!cnpjEmpresa) return res.status(400).json({ erro: 'Informe ?cnpjEmpresa=' });
+    if (!await exigirEmpresaNoEscopo(req, res, cnpjEmpresa)) return;
+
+    const r = await consultarEventos(cnpjEmpresa, req.params.chaveAcesso);
+    if (r.httpStatus === 405 || r.httpStatus === 404) {
+      return res.status(501).json({
+        erro: 'A Sefin não atende este caminho de consulta de eventos (HTTP ' +
+              r.httpStatus + '). O endereço precisa ser confirmado no Manual de ' +
+              'Integração antes de a consulta funcionar.',
+        retornoSefin: r.retornoSefin
+      });
+    }
+    res.json(r);
   } catch (e) { next(e); }
 });
 

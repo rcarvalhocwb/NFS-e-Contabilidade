@@ -82,6 +82,27 @@ async function consultarNfse(ambiente, chaveAcesso, cert) {
   return r;
 }
 
+/* Eventos registrados numa NFS-e: cancelamento, substituição, e o que mais a
+   Sefin tiver anotado. É a versão dela da história — o gateway conhece só os
+   eventos que ele mesmo enviou, e uma nota pode ser cancelada por outro
+   caminho. */
+async function consultarEventos(ambiente, chaveAcesso, cert) {
+  const r = await request({
+    method: 'GET',
+    url: `${baseUrl(ambiente)}/nfse/${chaveAcesso}/eventos`,
+    cert
+  });
+  // Cada evento vem com o XML gzipado; devolve também decodificado.
+  if (r.json && Array.isArray(r.json.eventos)) {
+    r.json.eventos = r.json.eventos.map(ev => {
+      if (!ev || !ev.eventoXmlGZipB64) return ev;
+      try { return Object.assign({}, ev, { eventoXml: gunzipB64(ev.eventoXmlGZipB64) }); }
+      catch (_) { return ev; }   // evento ilegível não invalida os demais
+    });
+  }
+  return r;
+}
+
 /* Consulta DPS por id: útil para verificar se uma DPS já virou NFS-e (idempotência). */
 async function consultarDps(ambiente, idDps, cert) {
   return request({
@@ -108,4 +129,4 @@ function urlDanfse(ambiente, chaveAcesso) {
   return `${config.ambientes[ambiente].adnBaseUrl}/danfse/${chaveAcesso}`;
 }
 
-module.exports = { enviarDps, consultarNfse, consultarDps, enviarEvento, urlDanfse, gzipB64, gunzipB64 };
+module.exports = { enviarDps, consultarNfse, consultarDps, enviarEvento, urlDanfse, gzipB64, gunzipB64, consultarEventos};
