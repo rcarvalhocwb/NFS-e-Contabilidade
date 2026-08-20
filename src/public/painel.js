@@ -307,6 +307,7 @@
     servicos:    { titulo:'Serviços',      sub:'Modelos para emitir mais rápido',       carregar: carregarServicos },
     usuarios:    { titulo:'Usuários',      sub:'Quem acessa o gateway e o que pode fazer', carregar: carregarUsuarios },
     agenda:      { titulo:'Agenda do escritório', sub:'Obrigações e prazos dos clientes', carregar: function () { carregarAgenda(); carregarModelos(); } },
+    email:       { titulo:'E-mail e avisos', sub:'Envio de notas e resumo de prazos', carregar: carregarEmail },
     identidade:  { titulo:'Identidade visual', sub:'A marca do escritório no painel e nos relatórios', carregar: carregarIdentidade },
     manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: function () { carregarManutencao(); carregarAtualizacao(); } },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
@@ -1128,6 +1129,152 @@
         c.style.background = ''; c.style.width = ''; c.textContent = 'NF';
       });
     }).catch(function (e) { aviso(e.message, 'erro'); });
+  };
+
+  /* ============================ E-mail e avisos =============================
+     Configuração do envio e do resumo diário de prazos. O resumo leva os
+     compromissos anexados em .ics: é assim que o prazo chega ao celular sem
+     precisar expor o gateway na internet. */
+
+  function preencherProvedores(provedores) {
+    var sel = el('emProvedor');
+    if (sel.options.length) return;
+    Object.keys(provedores).forEach(function (chave) {
+      var o = document.createElement('option');
+      o.value = chave;
+      o.textContent = provedores[chave].nome;
+      sel.appendChild(o);
+    });
+    estado.provedoresEmail = provedores;
+  }
+
+  el('emProvedor').onchange = function () {
+    var p = (estado.provedoresEmail || {})[el('emProvedor').value];
+    if (!p) return;
+    // "Outro" não sobrescreve o que a pessoa já digitou
+    if (p.host) {
+      el('emHost').value = p.host;
+      el('emPorta').value = p.porta;
+      el('emSeguro').value = String(p.seguro);
+    }
+    el('emAjudaProvedor').textContent = p.ajuda || '';
+  };
+
+  function carregarEmail() {
+    // Horas do resumo, uma vez
+    var h = el('emResumoHora');
+    if (!h.options.length) {
+      for (var i = 0; i < 24; i++) {
+        var o = document.createElement('option');
+        o.value = i;
+        o.textContent = String(i).padStart(2, '0') + ':00';
+        h.appendChild(o);
+      }
+    }
+
+    api('/email').then(function (d) {
+      preencherProvedores(d.provedores || {});
+      var c = d.config || {};
+      el('emHost').value = c.host || '';
+      el('emPorta').value = c.porta || 587;
+      el('emSeguro').value = String(!!c.seguro);
+      el('emUsuario').value = c.usuario || '';
+      el('emRemetente').value = c.remetente || '';
+      el('emAtivo').checked = !!c.ativo;
+      el('emResumoPara').value = c.resumo_para || '';
+      el('emResumoHora').value = c.resumo_hora != null ? c.resumo_hora : 8;
+      el('emResumoAtivo').checked = !!c.resumo_diario;
+      el('emSenha').value = '';
+
+      el('emSenhaEstado').textContent = c.tem_senha
+        ? 'Uma senha já está guardada. Deixe em branco para mantê-la.'
+        : 'Nenhuma senha guardada.';
+
+      // Adivinha o provedor pelo host, para a ajuda certa aparecer
+      var achou = Object.keys(d.provedores || {}).filter(function (k) {
+        return d.provedores[k].host && d.provedores[k].host === c.host;
+      })[0];
+      el('emProvedor').value = achou || 'outro';
+      el('emAjudaProvedor').textContent = achou ? d.provedores[achou].ajuda : '';
+
+      var partes = [];
+      if (!c.ativo && d.emUso) partes.push('Em uso pela configuração do arquivo .env.');
+      if (c.testado_em) {
+        partes.push(c.ultimo_erro
+          ? 'Último teste em ' + fmtDataHora(c.testado_em) + ' falhou: ' + c.ultimo_erro
+          : 'Último teste em ' + fmtDataHora(c.testado_em) + ': funcionou.');
+      }
+      el('emResultado').textContent = partes.join(' ');
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  function corpoEmail() {
+    return {
+      host: el('emHost').value,
+      porta: Number(el('emPorta').value),
+      seguro: el('emSeguro').value === 'true',
+      usuario: el('emUsuario').value,
+      remetente: el('emRemetente').value,
+      ativo: el('emAtivo').checked,
+      resumoPara: el('emResumoPara').value,
+      resumoHora: Number(el('emResumoHora').value),
+      resumoDiario: el('emResumoAtivo').checked,
+      // Vazio significa "manter a que está guardada", não "apagar"
+      senha: el('emSenha').value || undefined
+    };
+  }
+
+  function salvarEmail() {
+    return api('/email', { method: 'PUT', body: JSON.stringify(corpoEmail()) });
+  }
+
+  el('btnSalvarEmail').onclick = function () {
+    var b = el('btnSalvarEmail');
+    b.disabled = true;
+    salvarEmail()
+      .then(function () { aviso('Configuração salva.', 'ok'); carregarEmail(); })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
+
+  el('btnTestarEmail').onclick = function () {
+    var destino = el('emTeste').value.trim();
+    if (!destino) return aviso('Informe um endereço para receber o teste.', 'erro');
+
+    var b = el('btnTestarEmail');
+    b.disabled = true; b.textContent = 'Enviando…';
+    el('emResultado').textContent = '';
+
+    /* Salva antes de testar: testar o que está na tela, e não o que está
+       gravado, é o que a pessoa espera de um botão ao lado dos campos. */
+    salvarEmail()
+      .then(function () {
+        return api('/email/testar', { method: 'POST', body: JSON.stringify({ para: destino }) });
+      })
+      .then(function (r) {
+        el('emResultado').textContent =
+          'Enviado para ' + r.destino + ' por ' + r.servidor + '. Confira a caixa de entrada.';
+        aviso('E-mail de teste enviado.', 'ok');
+        carregarEmail();
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); carregarEmail(); })
+      .then(function () { b.disabled = false; b.textContent = 'Enviar teste'; });
+  };
+
+  el('btnResumoAgora').onclick = function () {
+    var b = el('btnResumoAgora');
+    b.disabled = true; b.textContent = 'Enviando…';
+    salvarEmail()
+      .then(function () { return api('/email/resumo', { method: 'POST' }); })
+      .then(function (r) {
+        el('emResumoResultado').textContent = r.enviado
+          ? r.prazos + ' prazo(s) enviados para ' + r.destino +
+            (r.atrasadas ? ' — ' + r.atrasadas + ' atrasada(s).' : '.')
+          : 'Nada enviado: ' + r.motivo + '.';
+        if (r.enviado) aviso('Resumo enviado.', 'ok');
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; b.textContent = 'Enviar o resumo agora'; });
   };
 
   function aba(nome) {

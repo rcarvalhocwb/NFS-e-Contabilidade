@@ -146,6 +146,7 @@
       <a href="#municipios" data-tela="municipios" data-admin hidden><span class="ico">⬡</span> Municípios</a>
       <a href="#webhooks" data-tela="webhooks" data-admin hidden><span class="ico">⇄</span> Webhooks</a>
       <a href="#identidade" data-tela="identidade" data-admin hidden><span class="ico">◈</span> Identidade visual</a>
+      <a href="#email" data-tela="email" data-admin hidden><span class="ico">✉</span> E-mail e avisos</a>
       <a href="#manutencao" data-tela="manutencao" data-admin hidden><span class="ico">▤</span> Backup e migração</a>
     </nav>
 
@@ -1069,6 +1070,99 @@
               <button class="primario" id="btnSalvarIdentidade">Salvar identidade</button>
               <a class="botao" id="lnkVerRelatorio" href="#relatorios">Ver como fica no relatório</a>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section data-tela-conteudo="email" hidden>
+        <div class="cartao" style="margin:0 0 18px">
+          <div class="cartao-cab"><h2>Servidor de e-mail</h2></div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:16px">
+              Usado para mandar a nota ao cliente e o resumo de prazos.
+              <strong>No Gmail é preciso uma senha de app</strong> — a senha da conta
+              não é aceita. Gere em
+              <span class="mono">myaccount.google.com/apppasswords</span> com a
+              verificação em duas etapas ligada.
+            </div>
+
+            <div class="grade c2" style="margin-bottom:16px">
+              <div>
+                <label for="emProvedor">Provedor</label>
+                <select id="emProvedor"></select>
+                <div class="ajuda" id="emAjudaProvedor"></div>
+              </div>
+              <div style="align-self:start">
+                <label for="emRemetente">Remetente</label>
+                <input id="emRemetente" maxlength="200"
+                       placeholder="Contabilidade Exemplo &lt;nfse@exemplo.com.br&gt;">
+                <div class="ajuda">Nome e endereço que o cliente vê.</div>
+              </div>
+            </div>
+
+            <div class="grade c3">
+              <div><label for="emHost">Servidor</label>
+                <input id="emHost" maxlength="120" placeholder="smtp.gmail.com"></div>
+              <div><label for="emPorta">Porta</label>
+                <input id="emPorta" type="number" min="1" max="65535" value="587">
+                <div class="ajuda">587 com STARTTLS · 465 com TLS.</div></div>
+              <div><label for="emSeguro">Segurança</label>
+                <select id="emSeguro">
+                  <option value="false">STARTTLS (porta 587)</option>
+                  <option value="true">TLS direto (porta 465)</option>
+                </select></div>
+            </div>
+
+            <div class="grade c2" style="margin-top:16px">
+              <div><label for="emUsuario">Usuário</label>
+                <input id="emUsuario" maxlength="160" autocomplete="off"
+                       placeholder="nfse@exemplo.com.br"></div>
+              <div><label for="emSenha">Senha</label>
+                <input id="emSenha" type="password" autocomplete="new-password"
+                       placeholder="deixe em branco para manter a atual">
+                <div class="ajuda" id="emSenhaEstado"></div></div>
+            </div>
+
+            <label style="display:flex;align-items:center;gap:9px;margin-top:16px;font-weight:400">
+              <input type="checkbox" id="emAtivo" style="width:auto">
+              Usar esta configuração
+            </label>
+
+            <div class="linha-botoes" style="margin-top:18px">
+              <button class="primario" id="btnSalvarEmail">Salvar</button>
+              <input id="emTeste" type="email" placeholder="seu@email.com"
+                     style="max-width:230px" autocomplete="off">
+              <button id="btnTestarEmail">Enviar teste</button>
+            </div>
+            <div id="emResultado" class="ajuda" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0">
+          <div class="cartao-cab"><h2>Resumo de prazos</h2></div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:16px">
+              Um e-mail por dia com o que vence e o que atrasou, em todos os
+              clientes. Vai com os compromissos anexados: abra o anexo no celular
+              e eles entram na sua agenda — Google, Outlook ou Apple — com aviso.
+            </div>
+            <div class="grade c3" style="align-items:end">
+              <div><label for="emResumoPara">Enviar para</label>
+                <input id="emResumoPara" type="email" maxlength="200"
+                       placeholder="contabil@exemplo.com.br"></div>
+              <div><label for="emResumoHora">A partir das</label>
+                <select id="emResumoHora"></select></div>
+              <div>
+                <label style="display:flex;align-items:center;gap:9px;font-weight:400">
+                  <input type="checkbox" id="emResumoAtivo" style="width:auto">
+                  Enviar todo dia
+                </label>
+              </div>
+            </div>
+            <div class="linha-botoes" style="margin-top:18px">
+              <button id="btnResumoAgora">Enviar o resumo agora</button>
+            </div>
+            <div id="emResumoResultado" class="ajuda" style="margin-top:12px"></div>
           </div>
         </div>
       </section>

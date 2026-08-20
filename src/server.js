@@ -19,6 +19,7 @@ const integracaoRouter = require('./routes/integracao');
 const painelRouter = require('./routes/painel');
 const atualizacaoRouter = require('./routes/atualizacao');
 const identidadeRouter = require('./routes/identidade');
+const emailRouter = require('./routes/email');
 const identidadeServico = require('./services/identidade');
 const obrigacoesRouter = require('./routes/obrigacoes');
 const emissorRouter = require('./routes/emissor');
@@ -164,6 +165,7 @@ app.use('/painel', painelRouter);
 app.use('/atualizacao', atualizacaoRouter);
 app.use('/obrigacoes', obrigacoesRouter);
 app.use('/identidade', identidadeRouter);
+app.use('/email', emailRouter);
 app.use('/usuarios', usuariosRouter);
 app.use('/manutencao', manutencaoRouter);
 app.use('/lote', loteRouter);
@@ -192,6 +194,8 @@ const servidor = app.listen(config.port, () => {
 
   /* Gera as ocorrências de obrigações à frente. Idempotente: rodar de novo não
      duplica nem mexe no que já foi concluído. */
+  if (process.env.RESUMO_ATIVO !== 'false') require('./services/resumoPrazos').iniciar();
+
   require('./services/obrigacoes').gerar({ meses: 3 })
     .then(r => { if (r.criadas) console.log(`[obrigacoes] ${r.criadas} ocorrência(s) criada(s)`); })
     .catch(e => console.warn('[obrigacoes] geração falhou:', e.message));
