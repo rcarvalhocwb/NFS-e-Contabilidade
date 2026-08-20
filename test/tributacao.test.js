@@ -158,16 +158,30 @@ test('informação complementar sai no bloco do serviço', () => {
   assert.match(x, /<infoCompl><xInfComp>Contrato 123\/2026 - medicao 4<\/xInfComp><\/infoCompl>/);
 });
 
-test('benefício municipal leva número e redução, sem tpBM', () => {
-  // O leiaute oficial (AnexoVI v1.04.00) tem apenas nBM, vRedBCBM e pRedBCBM
+test('benefício municipal no leiaute 1.00 exige o tipo', () => {
+  /* tpBM existe no esquema 1.00 e foi removido no 1.01. O teste anterior
+     afirmava que "tpBM não existe no leiaute" — verdade no 1.01, falso no 1.00,
+     que é justamente a versão que o gateway emite por padrão. Sem ele, a Sefin
+     recusa com "Expected is tpBM". */
   const x = dps({ valores: {
     valorServico: 1000, aliquotaIss: 5,
-    beneficioMunicipal: { numero: '12345678901234', percentualReducao: 50 }
+    beneficioMunicipal: { tipo: 2, numero: '12345678901234', percentualReducao: 50 }
   } });
-  assert.match(x, /<BM>/);
-  assert.match(x, /<nBM>12345678901234<\/nBM>/);
+  assert.match(x, /<BM><tpBM>2<\/tpBM><nBM>12345678901234<\/nBM>/);
   assert.match(x, /<pRedBCBM>50\.00<\/pRedBCBM>/);
-  assert.ok(!x.includes('tpBM'), 'tpBM não existe no leiaute');
+});
+
+test('benefício municipal sem tipo é recusado antes de gastar número', () => {
+  assert.throws(() => dps({ valores: { valorServico: 1000,
+    beneficioMunicipal: { numero: '12345678901234', percentualReducao: 50 } } }),
+    /beneficioMunicipal\.tipo/);
+});
+
+test('tipo do benefício fora de 1 a 3 é recusado', () => {
+  // 1 alíquota diferenciada · 2 redução da base · 3 isenção
+  assert.throws(() => dps({ valores: { valorServico: 1000,
+    beneficioMunicipal: { tipo: 9, numero: '12345678901234' } } }),
+    /1 \(alíquota diferenciada\)/);
 });
 
 test('exportação declara o país de resultado em cPaisResult', () => {

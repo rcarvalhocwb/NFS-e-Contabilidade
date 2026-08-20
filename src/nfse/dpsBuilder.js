@@ -86,32 +86,61 @@ function tributoMunicipal(v, optanteSN, issRetido, versao) {
      é que o imposto não é exigível enquanto o processo correr. */
   const susp = v.exigibilidadeSuspensa;
 
-  return `<tribMun>` +
-    tag('tribISSQN', tipo) +
-    // Exportação (3): país onde o resultado do serviço se verifica
-    (tipo === '3' ? tag('cPaisResult', v.paisResultado) : '') +
-    // Imunidade (2) exige dizer qual: templo, partido, entidade, livro...
-    (tipo === '2' ? tag('tpImunidade', v.tipoImunidade) : '') +
-    (susp ? blocoExigSuspensa(susp) : '') +
-    // Benefício municipal: nBM é o número do benefício no cadastro do
-    // município (numérico, 14 posições), acompanhado da redução em valor OU
-    // em percentual.
-    (v.beneficioMunicipal ?
-    `<BM>` +
-      tag('nBM', v.beneficioMunicipal.numero) +
-      (v.beneficioMunicipal.valorReducao !== undefined
-        ? tag('vRedBCBM', dec(v.beneficioMunicipal.valorReducao))
-        : (v.beneficioMunicipal.percentualReducao !== undefined
-            ? tag('pRedBCBM', dec(v.beneficioMunicipal.percentualReducao)) : '')) +
-    `</BM>` : '') +
-    tag('tpRetISSQN', issRetido ? '2' : '1') + // 1=não retido 2=retido pelo tomador
-    // Optante do Simples Nacional não informa alíquota de ISS: o imposto é
-    // recolhido no DAS, pela alíquota efetiva do PGDAS, não pela alíquota
-    // municipal. Enviar pAliq aqui é incorreto para MEI/ME/EPP do SN.
-    // Também não se informa alíquota quando o ISS não incide.
-    (!optanteSN && tipo === '1' && v.aliquotaIss !== undefined
-      ? tag('pAliq', dec(v.aliquotaIss)) : '') +
-  `</tribMun>`;
+  // Exportação (3): país onde o resultado do serviço se verifica
+  const paisResult = tipo === '3' ? tag('cPaisResult', v.paisResultado) : '';
+  // Imunidade (2) exige dizer qual: templo, partido, entidade, livro...
+  const imunidade = tipo === '2' ? tag('tpImunidade', v.tipoImunidade) : '';
+  const exigSusp = susp ? blocoExigSuspensa(susp) : '';
+
+  /* Benefício municipal: nBM é o número do benefício no cadastro do município
+     (numérico, 14 posições), acompanhado da redução em valor OU em percentual.
+
+     O esquema 1.00 exige antes um tpBM: 1 = alíquota diferenciada, 2 = redução
+     da base de cálculo, 3 = isenção. O 1.01 removeu esse elemento. Emitir sem
+     ele em 1.00 devolve "Expected is tpBM", com o número da DPS já gasto. */
+  let bm = '';
+  if (v.beneficioMunicipal) {
+    const b = v.beneficioMunicipal;
+    if (versao !== '1.01' && !['1', '2', '3'].includes(String(b.tipo))) {
+      throw Object.assign(new Error(
+        'O esquema 1.00 exige beneficioMunicipal.tipo: 1 (alíquota diferenciada), ' +
+        '2 (redução da base de cálculo) ou 3 (isenção). ' +
+        'A partir do leiaute 1.01 esse campo deixa de existir.'),
+        { status: 400 });
+    }
+    bm = `<BM>` +
+      (versao !== '1.01' ? tag('tpBM', String(b.tipo)) : '') +
+      tag('nBM', b.numero) +
+      (b.valorReducao !== undefined
+        ? tag('vRedBCBM', dec(b.valorReducao))
+        : (b.percentualReducao !== undefined
+            ? tag('pRedBCBM', dec(b.percentualReducao)) : '')) +
+    `</BM>`;
+  }
+
+  const retencao = tag('tpRetISSQN', issRetido ? '2' : '1'); // 1=não retido 2=retido
+  /* Optante do Simples Nacional não informa alíquota de ISS: o imposto é
+     recolhido no DAS, pela alíquota efetiva do PGDAS, não pela alíquota
+     municipal. Também não se informa alíquota quando o ISS não incide. */
+  const aliquota = (!optanteSN && tipo === '1' && v.aliquotaIss !== undefined)
+    ? tag('pAliq', dec(v.aliquotaIss)) : '';
+
+  /* A ORDEM DOS ELEMENTOS MUDA ENTRE OS ESQUEMAS, e o esquema é quem julga:
+   *
+   *   1.00  tribISSQN, cPaisResult, BM, exigSusp, tpImunidade, pAliq, tpRetISSQN
+   *   1.01  tribISSQN, cPaisResult, tpImunidade, exigSusp, BM, tpRetISSQN, pAliq
+   *
+   * Emitir na ordem de uma versão dentro da outra devolve "This element is not
+   * expected" — depois de reservar número e assinar. O gateway usa 1.00 por
+   * padrão, e o erro só aparecia FORA do Simples Nacional, único caso em que
+   * pAliq é enviado: por isso passou despercebido enquanto a única empresa
+   * cadastrada era optante.
+   */
+  const conteudo = versao === '1.01'
+    ? tag('tribISSQN', tipo) + paisResult + imunidade + exigSusp + bm + retencao + aliquota
+    : tag('tribISSQN', tipo) + paisResult + bm + exigSusp + imunidade + aliquota + retencao;
+
+  return `<tribMun>` + conteudo + `</tribMun>`;
 }
 
 /**

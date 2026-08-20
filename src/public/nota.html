@@ -187,6 +187,13 @@
       <div class="grade c3" style="margin-top:14px">
         <div><label for="fDescCond">Desconto condicionado</label><input id="fDescCond" inputmode="decimal" placeholder="0,00" data-moeda>
           <div class="ajuda">Não reduz a base de cálculo.</div></div>
+        <div><label for="fBmTipo">Tipo do benefício</label>
+          <select id="fBmTipo">
+            <option value="">Sem benefício</option>
+            <option value="1">1 — Alíquota diferenciada</option>
+            <option value="2">2 — Redução da base de cálculo</option>
+            <option value="3">3 — Isenção</option>
+          </select></div>
         <div><label for="fBmNumero">Nº do benefício municipal</label><input id="fBmNumero" inputmode="numeric" maxlength="14">
           <div class="ajuda">Concedido por lei do município.</div></div>
         <div><label for="fBmReducao">Redução do benefício (%)</label><input id="fBmReducao" type="number" step="0.01" min="0" max="100"></div>

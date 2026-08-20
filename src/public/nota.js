@@ -530,7 +530,12 @@
     if (num('fDescCond') !== undefined) valores.descontoCondicionado = num('fDescCond');
     if (num('fDeducoes') !== undefined) valores.valorDeducoes = num('fDeducoes');
     if (digitos(el('fBmNumero').value)) {
-      valores.beneficioMunicipal = { numero: digitos(el('fBmNumero').value) };
+      /* tpBM é obrigatório no leiaute 1.00 (1 alíquota diferenciada, 2 redução
+         da base, 3 isenção) e some no 1.01. O gateway emite 1.00 por padrão. */
+      valores.beneficioMunicipal = {
+        tipo: el('fBmTipo').value || undefined,
+        numero: digitos(el('fBmNumero').value)
+      };
       if (num('fBmReducao') !== undefined) {
         valores.beneficioMunicipal.percentualReducao = num('fBmReducao');
       }
@@ -623,6 +628,9 @@
     }
     if (el('fSuspensa').checked && !el('fNumProcesso').value.trim()) {
       return 'Exigibilidade suspensa exige o número do processo.';
+    }
+    if (digitos(el('fBmNumero').value) && !el('fBmTipo').value) {
+      return 'Escolha o tipo do benefício municipal (alíquota diferenciada, redução da base ou isenção).';
     }
     /* Formato do NBS conferido aqui: a Sefin recusa com E1235 ("falha no
        esquema XML") depois de reservar número e assinar — um dígito a menos
