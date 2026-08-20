@@ -25,6 +25,7 @@
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.19.1",
     "pg": "^8.12.0",
+    "qrcode-generator": "^2.0.4",
     "xml-crypto": "^3.2.0"
   }
 }

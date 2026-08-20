@@ -11,6 +11,15 @@ const { gerarCsv } = require('../util/csv');
 
 const router = express.Router();
 
+/* Uma nota cancelada continua existindo e continua sendo consultada — o PDF
+   precisa dizer isso na cara, senão circula como se ainda valesse. */
+const MARCA = { cancelada: 'CANCELADA', substituida: 'SUBSTITUÍDA' };
+const SITUACAO = { autorizada: 'Autorizada', cancelada: 'Cancelada',
+                   substituida: 'Substituída' };
+function marcaDe(status) {
+  return { marcaDagua: MARCA[status] || null, situacao: SITUACAO[status] || null };
+}
+
 /* Emitir NFS-e.
    Body: { cnpjEmpresa, dataCompetencia, tomador{...}, servico{...}, valores{...} } */
 router.post('/', async (req, res, next) => {
@@ -206,7 +215,7 @@ router.get('/export-pdf', async (req, res, next) => {
         arquivos.push({
           nome: `NFSe-${linha.serie}-${String(linha.numero).padStart(6, '0')}-` +
                 `${linha.chave_acesso || linha.id}.pdf`,
-          conteudo: await gerarDanfse(linha.nfse_xml)
+          conteudo: await gerarDanfse(linha.nfse_xml, marcaDe(linha.status))
         });
       } catch (e) {
         // Uma nota com XML estranho não pode impedir o resto do lote
@@ -305,7 +314,8 @@ router.get('/pacote', async (req, res, next) => {
         autorizadas++;
         if (comPdf && arquivos.filter(a => a.nome.startsWith('pdf/')).length < 500) {
           try {
-            arquivos.push({ nome: `pdf/DANFSe-${nome}.pdf`, conteudo: await gerarDanfse(n.nfse_xml) });
+            arquivos.push({ nome: `pdf/DANFSe-${nome}.pdf`,
+                            conteudo: await gerarDanfse(n.nfse_xml, marcaDe(n.status)) });
           } catch (e) {
             // Um XML que não vira PDF não pode derrubar o pacote inteiro
             console.warn('[pacote] DANFSe da nota', n.id, 'falhou:', e.message);
@@ -449,7 +459,7 @@ router.get('/:idOuChave/danfse', async (req, res, next) => {
         status: nota.status
       });
     }
-    const pdf = await gerarDanfse(nota.nfse_xml);
+    const pdf = await gerarDanfse(nota.nfse_xml, marcaDe(nota.status));
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition',
       `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="DANFSe-${nota.chave_acesso}.pdf"`);
