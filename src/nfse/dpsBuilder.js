@@ -201,10 +201,27 @@ function tributosFederais(v) {
  * CST (3 dígitos) e cClassTrib (6 dígitos) vêm das tabelas da LC 214/2025 —
  * quem emite informa; o gateway não os deduz, porque errar aqui muda o imposto.
  */
-/* A NT 009/2026 traz campos que o esquema publicado ainda não aceita —
-   vAjusteBC no lugar de vDedRed, gEstornoCred, exigibilidade suspensa. Emiti-los
-   antes do XSD correspondente faria a Sefin recusar a nota inteira.
-   DPS_LEIAUTE_NT009=true os liga, para testar assim que o esquema sair. */
+/* A NT 009 traz campos que NENHUM esquema publicado aceita ainda.
+   Conferido em 20/08/2026 contra os três conjuntos que temos — 1.00, 1.01 e o
+   pacote RTC de 10/12/2025:
+
+     vAjusteBC      ausente dos três   (o esquema ainda pede vDedRed)
+     tpAjusteBC     ausente dos três
+     docAjusteBC    ausente dos três
+     gIBSCBSAjuste  ausente dos três
+     gEstornoCred   ausente dos três
+     bensMoveis     ausente dos três   (o esquema ainda tem gLocBensMoveis)
+     gPgtoVinc      ausente dos três
+
+   Emitir qualquer um deles hoje faz a Sefin recusar a nota inteira, depois de o
+   número da DPS já ter sido gasto. DPS_LEIAUTE_NT009=true os liga, para testar
+   no dia em que o esquema sair — refaça a conferência acima antes.
+
+   Quatro mudanças da NT 009 JÁ estão atendidas, porque não dependem de campo
+   novo: CNPJ alfanumérico (2.1), evoluções do Simples Nacional (2.4) e a
+   reinserção do indFinal (2.5). A exigibilidade suspensa, que este comentário
+   listava como pendente, na verdade sempre existiu no esquema — está
+   implementada desde a correção da natureza da operação. */
 function leiauteNT009() {
   return process.env.DPS_LEIAUTE_NT009 === 'true';
 }
