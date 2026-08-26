@@ -1,0 +1,12 @@
+{
+  "name": "nfse-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Repassador entre a WhatsApp Cloud API e o gateway NFS-e do escritorio",
+  "main": "servidor.js",
+  "scripts": {
+    "start": "node servidor.js",
+    "test": "node --test teste/*.test.js"
+  },
+  "engines": { "node": ">=20" }
+}

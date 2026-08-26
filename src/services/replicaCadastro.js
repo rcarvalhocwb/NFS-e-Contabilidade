@@ -24,7 +24,7 @@ const db = require('../db');
  *
  *   POST {url}/cadastro
  *        Cabeçalho: Authorization: Bearer {chave}
- *        Corpo: { versao, geradoEm, empresas[], servicos[], acessos[] }
+ *        Corpo: { versao, geradoEm, empresas[], servicos[], acessos[], whatsapp[] }
  *        Responde 200 com { ok: true } depois de aplicar o retrato inteiro.
  */
 
@@ -43,6 +43,16 @@ async function montar() {
        FROM servicos s JOIN empresas e ON e.id = s.empresa_id
       WHERE s.ativo ORDER BY e.cnpj, s.apelido`);
 
+  /* A ultima nota de cada empresa, para o "a nota de sempre" funcionar do
+     outro lado desde a primeira mensagem. So o suficiente para montar o
+     pedido de novo: quem, o que, quanto. Sem chave, sem XML, sem PDF. */
+  const ultimas = await db.query(
+    `SELECT DISTINCT ON (n.empresa_id)
+            e.cnpj, n.dps_xml
+       FROM notas n JOIN empresas e ON e.id = n.empresa_id
+      WHERE n.status = 'autorizada' AND n.dps_xml IS NOT NULL
+      ORDER BY n.empresa_id, n.id DESC`);
+
   const acessos = await db.query(
     `SELECT u.email, u.nome, u.cliente_cargo, u.ativo,
             COALESCE(array_agg(e.cnpj ORDER BY e.cnpj)
@@ -53,8 +63,42 @@ async function montar() {
       WHERE u.perfil = 'cliente'
       GROUP BY u.id ORDER BY u.email`);
 
+  /* O pedido anterior de cada empresa, extraído da DPS. Vai sem chave de
+     acesso e sem XML: serve para repetir, não para consultar. */
+  const anteriores = {};
+  for (const linha of ultimas.rows) {
+    const x = linha.dps_xml;
+    const pega = t => (x.match(new RegExp('<' + t + '>([^<]*)</' + t + '>')) || [])[1] || null;
+    const bloco = (x.match(/<toma>([\s\S]*?)<\/toma>/) || [])[1] || '';
+    const doToma = t => (bloco.match(new RegExp('<' + t + '>([^<]*)</' + t + '>')) || [])[1] || null;
+    const doc = doToma('CNPJ') || doToma('CPF');
+    if (!doc) continue;
+    anteriores[linha.cnpj] = {
+      tomador: { documento: doc, nome: doToma('xNome') },
+      servico: {
+        codigoTributacao: pega('cTribNac'),
+        descricao: pega('xDescServ')
+      },
+      valor: pega('vServ') ? Number(pega('vServ')) : null
+    };
+  }
+
+  /* Quem pode pedir nota pelo WhatsApp, e por qual CNPJ.
+     Vai o número e o teto, nada mais — o relay precisa saber de quem é a
+     mensagem que chegou, não quem a pessoa é. */
+  const whats = await db.query(
+    `SELECT c.telefone, c.nome, c.limite_valor, e.cnpj
+       FROM contatos_whatsapp c JOIN empresas e ON e.id = c.empresa_id
+      WHERE c.ativo AND e.ativo ORDER BY c.telefone`);
+
   const retrato = {
     geradoEm: new Date().toISOString(),
+    whatsapp: whats.rows.map(w => ({
+      telefone: w.telefone,
+      cnpj: w.cnpj,
+      nome: w.nome,
+      limiteValor: w.limite_valor === null ? null : Number(w.limite_valor)
+    })),
     empresas: empresas.rows.map(e => ({
       cnpj: e.cnpj,
       razaoSocial: e.razao_social,
@@ -65,6 +109,8 @@ async function montar() {
       ativo: e.ativo,
       // O portal esconde o botão; o gateway continua conferindo na chegada.
       liberado: e.portal_liberado,
+      // O "de sempre" daquela empresa, quando existe
+      ultimoPedido: anteriores[e.cnpj] || null,
       /* Bloqueio sempre viaja com texto. Sem ele o cliente lê "bloqueado" e não
          sabe o que fazer — e é o mesmo padrão que a conferência na chegada usa,
          para a tela dele e a recusa dizerem a mesma coisa. */
