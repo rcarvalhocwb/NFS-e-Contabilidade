@@ -89,21 +89,11 @@ async function acrescentar({ empresaId, telefone, nome, cargo, limiteValor }) {
   }
   const n = normalizar(telefone);
 
-  /* Um número fala por UMA empresa. Deixar o mesmo celular pedir nota por dois
-     CNPJs traz de volta, pelo WhatsApp, exatamente a confusão que o resto do
-     sistema evita — e do outro lado não há tela mostrando qual empresa está
-     selecionada. Quem atende duas empresas usa dois números, ou pede pelo
-     painel. */
-  const jaTem = await db.query(
-    `SELECT c.empresa_id, e.razao_social FROM contatos_whatsapp c
-       JOIN empresas e ON e.id = c.empresa_id WHERE c.telefone = $1`, [n]);
-  if (jaTem.rows.length && Number(jaTem.rows[0].empresa_id) !== Number(empresaId)) {
-    throw Object.assign(new Error(
-      'Este número já pede notas por ' + jaTem.rows[0].razao_social +
-      '. Um número fala por uma empresa só — no WhatsApp não há tela para ' +
-      'mostrar qual está selecionada.'), { status: 409 });
-  }
-
+  /* O mesmo número pode constar em várias empresas — quem cuida do financeiro
+     de três empresas do grupo não vai andar com três chips. O que evita a
+     confusão não é proibir: é a conversa PERGUNTAR por qual empresa, sempre,
+     antes de qualquer outra coisa, e o gateway conferir a resposta contra este
+     cadastro em vez de acreditar no que voltou da nuvem. */
   const limite = limiteValor === '' || limiteValor == null ? null : Number(limiteValor);
   if (limite !== null && (!Number.isFinite(limite) || limite <= 0)) {
     throw Object.assign(new Error('O teto precisa ser um valor maior que zero.'),
@@ -113,7 +103,7 @@ async function acrescentar({ empresaId, telefone, nome, cargo, limiteValor }) {
   const r = await db.query(
     `INSERT INTO contatos_whatsapp (empresa_id, telefone, nome, cargo, limite_valor)
      VALUES ($1,$2,$3,$4,$5)
-     ON CONFLICT (telefone) DO UPDATE SET nome = EXCLUDED.nome,
+     ON CONFLICT (telefone, empresa_id) DO UPDATE SET nome = EXCLUDED.nome,
        cargo = EXCLUDED.cargo, limite_valor = EXCLUDED.limite_valor, ativo = TRUE
      RETURNING id`,
     [empresaId, n, nome || null, cargo || null, limite]);
@@ -124,20 +114,38 @@ async function remover(id) {
   await db.query('DELETE FROM contatos_whatsapp WHERE id = $1', [id]);
 }
 
-/* De quem é este número? Devolve o contato e a empresa, ou null.
-   É o que o recebedor do webhook precisa saber antes de aceitar um pedido. */
-async function resolver(telefone) {
+/* Por quais empresas este número pode pedir nota?
+   Lista, não um só: a mesma pessoa pode cuidar de várias empresas do grupo. */
+async function empresasDe(telefone) {
   const formas = variacoes(telefone);
-  if (!formas.length) return null;
+  if (!formas.length) return [];
   const r = await db.query(
-    `SELECT c.*, e.cnpj, e.razao_social, e.portal_liberado, e.portal_motivo
+    `SELECT c.*, e.cnpj, e.razao_social, e.nome_fantasia,
+            e.portal_liberado, e.portal_motivo
        FROM contatos_whatsapp c JOIN empresas e ON e.id = c.empresa_id
       WHERE c.telefone = ANY($1::text[]) AND c.ativo AND e.ativo
-      LIMIT 1`, [formas]);
-  if (!r.rows.length) return null;
-  const c = r.rows[0];
-  c.limite_valor = c.limite_valor === null ? null : Number(c.limite_valor);
-  return c;
+      ORDER BY e.razao_social`, [formas]);
+  return r.rows.map(c => Object.assign(c, {
+    limite_valor: c.limite_valor === null ? null : Number(c.limite_valor)
+  }));
+}
+
+/* Este número pode pedir por ESTA empresa?
+ *
+ * É a pergunta que o gateway faz antes de aceitar qualquer pedido de WhatsApp,
+ * e a resposta sai daqui — nunca do que veio junto com o pedido. O relay diz
+ * qual empresa o cliente escolheu; quem confere se ele podia escolher é este
+ * lado, que é o único com o cadastro de verdade.
+ */
+async function autorizadoPara(telefone, empresaId) {
+  const lista = await empresasDe(telefone);
+  return lista.find(c => Number(c.empresa_id) === Number(empresaId)) || null;
+}
+
+/* Compatibilidade: quando o número serve uma empresa só, é ela. */
+async function resolver(telefone) {
+  const lista = await empresasDe(telefone);
+  return lista.length === 1 ? lista[0] : null;
 }
 
 /* O teto por solicitação. Acima dele o pedido não é recusado — ele apenas
@@ -148,5 +156,6 @@ function acimaDoTeto(contato, valor) {
 }
 
 module.exports = {
-  normalizar, variacoes, ehValido, listar, acrescentar, remover, resolver, acimaDoTeto
+  normalizar, variacoes, ehValido, listar, acrescentar, remover,
+  empresasDe, autorizadoPara, resolver, acimaDoTeto
 };

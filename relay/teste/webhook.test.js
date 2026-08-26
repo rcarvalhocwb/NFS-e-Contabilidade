@@ -127,3 +127,14 @@ test('o relay não guarda nem toca em documento fiscal', () => {
     }
   }
 });
+
+test('a boca de teste não existe sem RELAY_TESTE', () => {
+  /* Ela enfileira pedido direto, sem conversa. Num servidor de verdade seria a
+     porta que o resto do desenho fecha. */
+  const s = require('fs').readFileSync(require.resolve('../servidor.js'), 'utf8');
+  const i = s.indexOf("u.pathname === '/_injetar'");
+  assert.ok(i > 0);
+  const corpo = s.slice(i, i + 400);
+  assert.match(corpo, /process\.env\.RELAY_TESTE !== 'true'/);
+  assert.match(corpo, /404/);
+});

@@ -61,11 +61,32 @@ function menu(opcoes) {
 /* Recebe a mensagem e devolve { resposta, estado, dados, pedido? }.
  * Função pura: não grava nem envia nada. Quem chama decide o que fazer com o
  * resultado — o que torna a conversa inteira testável sem WhatsApp nenhum. */
-function responder({ texto, quem, conversa, memoria }) {
-  const { contato, empresa } = quem;
+function responder({ texto, telefone, vinculos, conversa, memoria }) {
   const estado = conversa ? conversa.estado : 'inicio';
   const dados = conversa ? Object.assign({}, conversa.dados) : {};
   const t = String(texto || '').trim();
+
+  if (!vinculos || !vinculos.length) {
+    return {
+      resposta: 'Este número não está autorizado a pedir notas.\n\n' +
+                'Se você é cliente do escritório, peça para cadastrarem seu WhatsApp.',
+      estado: null
+    };
+  }
+
+  /* A empresa escolhida vive no estado da conversa, e é reconferida contra o
+     cadastro a cada passo. Guardar só o CNPJ e confiar nele depois deixaria uma
+     conversa antiga continuar valendo depois de o escritório tirar o número
+     daquela empresa. */
+  let escolhido = dados.cnpj ? memoria.conferirEscolha(telefone, dados.cnpj) : null;
+  if (dados.cnpj && !escolhido) {
+    return {
+      resposta: 'O acesso a essa empresa mudou. Vamos começar de novo.',
+      estado: null
+    };
+  }
+  const contato = escolhido ? escolhido.contato : vinculos[0].contato;
+  const empresa = escolhido ? escolhido.empresa : null;
 
   // ---------------------------------------------------- comandos universais
   if (CANCELAR.test(t)) {
@@ -75,7 +96,7 @@ function responder({ texto, quem, conversa, memoria }) {
      Colocada depois, um "oi" recebia a lista de opções de uma empresa que não
      pode emitir, e a pessoa só descobria o bloqueio na mensagem seguinte —
      depois de já ter escolhido o que queria. */
-  if (!empresa.liberado) {
+  if (empresa && !empresa.liberado) {
     return {
       resposta: 'A emissão para *' + empresa.razaoSocial + '* está pausada.\n\n' +
                 (empresa.motivoBloqueio || 'Fale com a contabilidade.'),
@@ -83,20 +104,97 @@ function responder({ texto, quem, conversa, memoria }) {
     };
   }
 
-  if (AJUDA.test(t) && estado === 'inicio') {
-    return abertura(empresa, contato, memoria);
-  }
-  if (VOLTAR.test(t)) {
-    return abertura(empresa, contato, memoria, 'Sem problema, vamos do começo.');
+  if (VOLTAR.test(t) || (AJUDA.test(t) && estado === 'inicio')) {
+    return escolherEmpresa(vinculos, telefone, memoria,
+      VOLTAR.test(t) ? 'Sem problema, vamos do começo.' : null);
   }
 
   switch (estado) {
+    case 'escolhendo_empresa': return doEmpresa(t, vinculos, telefone, memoria, dados);
     case 'inicio':          return doInicio(t, empresa, contato, memoria, dados);
     case 'escolhendo_valor':return doValor(t, empresa, contato, dados);
     case 'confirmando':     return doConfirmacao(t, empresa, contato, dados, memoria);
     case 'escolhendo_servico': return doServico(t, empresa, dados, memoria);
-    default:                return abertura(empresa, contato, memoria);
+    default:                return escolherEmpresa(vinculos, telefone, memoria);
   }
+}
+
+/* Por qual empresa?
+ *
+ * Com um vínculo só, não há o que perguntar — mas a empresa aparece escrita na
+ * abertura e de novo na conferência, porque no WhatsApp não existe barra fixa
+ * mostrando onde a pessoa está. Com dois ou mais, a pergunta é obrigatória e
+ * vem antes de tudo: emitir no CNPJ errado é nota fiscal no cliente errado.
+ */
+function escolherEmpresa(vinculos, telefone, memoria, prefixo) {
+  if (vinculos.length === 1) {
+    const { contato, empresa } = vinculos[0];
+    if (!empresa.liberado) {
+      return {
+        resposta: 'A emissão para *' + empresa.razaoSocial + '* está pausada.\n\n' +
+                  (empresa.motivoBloqueio || 'Fale com a contabilidade.'),
+        estado: null
+      };
+    }
+    const inicio = abertura(empresa, contato, memoria, prefixo);
+    return Object.assign(inicio, {
+      dados: Object.assign({}, inicio.dados, { cnpj: empresa.cnpj })
+    });
+  }
+
+  const lista = vinculos.map((v, i) =>
+    (i + 1) + ' — ' + (v.empresa.nomeFantasia || v.empresa.razaoSocial) +
+    '\n     ' + formatarCnpj(v.empresa.cnpj)).join('\n');
+
+  return {
+    resposta: (prefixo ? prefixo + '\n\n' : '') +
+      'Você emite por mais de uma empresa. Por qual será esta nota?\n\n' + lista +
+      '\n\n_Responda com o número, ou digite o CNPJ._',
+    estado: 'escolhendo_empresa',
+    dados: {}
+  };
+}
+
+function doEmpresa(t, vinculos, telefone, memoria, dados) {
+  const limpo = String(t).replace(/[^0-9A-Za-z]/g, '');
+  let alvo = null;
+
+  // Pelo número da lista
+  const n = Number(String(t).trim());
+  if (Number.isInteger(n) && n >= 1 && n <= vinculos.length) {
+    alvo = vinculos[n - 1];
+  } else if (limpo.length === 14) {
+    /* CNPJ digitado: conferido contra o cadastro DESTE número. Um CNPJ que
+       existe no escritório mas não está vinculado aqui recebe a mesma resposta
+       de um CNPJ inventado — senão a conversa vira um jeito de descobrir quais
+       empresas o escritório atende. */
+    alvo = memoria.conferirEscolha(telefone, limpo);
+  }
+
+  if (!alvo) {
+    return naoEntendi(dados, () => escolherEmpresa(vinculos, telefone, memoria,
+      'Não encontrei essa empresa entre as suas.'));
+  }
+  if (!alvo.empresa.liberado) {
+    return {
+      resposta: 'A emissão para *' + alvo.empresa.razaoSocial + '* está pausada.\n\n' +
+                (alvo.empresa.motivoBloqueio || 'Fale com a contabilidade.'),
+      estado: null
+    };
+  }
+
+  const inicio = abertura(alvo.empresa, alvo.contato, memoria);
+  return Object.assign(inicio, {
+    dados: Object.assign({}, inicio.dados, { cnpj: alvo.empresa.cnpj })
+  });
+}
+
+function formatarCnpj(c) {
+  const d = String(c || '');
+  return d.length === 14
+    ? d.slice(0, 2) + '.' + d.slice(2, 5) + '.' + d.slice(5, 8) + '/' +
+      d.slice(8, 12) + '-' + d.slice(12)
+    : d;
 }
 
 function abertura(empresa, contato, memoria, prefixo) {
@@ -109,15 +207,22 @@ function abertura(empresa, contato, memoria, prefixo) {
   }
   opcoes.push({ rotulo: 'Outra nota', chave: 'outra', sinonimos: ['outra', 'nova', 'diferente'] });
 
+  /* A empresa vai escrita por extenso, com CNPJ, e volta na conferência. É o
+     que substitui a barra fixa do painel: no WhatsApp a pessoa rola a tela e
+     perde a referência, e emitir no CNPJ errado é nota no cliente errado. */
   const cabeca = (prefixo ? prefixo + '\n\n' : '') +
     'Olá' + (contato.nome ? ', ' + contato.nome.split(' ')[0] : '') + '! ' +
-    'Emissão de notas de *' + (empresa.nomeFantasia || empresa.razaoSocial) + '*.';
+    'Emissão por *' + (empresa.nomeFantasia || empresa.razaoSocial) + '*' +
+    '\n' + formatarCnpj(empresa.cnpj) + '.';
 
   return {
     resposta: cabeca + '\n\n' + menu(opcoes) +
       '\n\n_Responda com o número. "cancelar" encerra a qualquer momento._',
     estado: 'inicio',
-    dados: { opcoes: opcoes.map(o => o.chave) }
+    /* O CNPJ escolhido acompanha TODA resposta a partir daqui. Sem ele, uma
+       recusa no meio ("nao entendi") devolvia o menu sem a empresa, e a
+       conversa recomecava do zero perdendo a escolha e a contagem de erros. */
+    dados: { cnpj: empresa.cnpj, opcoes: opcoes.map(o => o.chave) }
   };
 }
 
@@ -139,7 +244,7 @@ function doInicio(t, empresa, contato, memoria, dados) {
         '1 — Mesmo valor, ' + dinheiro(anterior.valor) + '\n' +
         '2 — Outro valor (digite quanto)',
       estado: 'escolhendo_valor',
-      dados: { base: anterior }
+      dados: { cnpj: empresa.cnpj, base: anterior }
     };
   }
 
@@ -156,7 +261,7 @@ function doInicio(t, empresa, contato, memoria, dados) {
     resposta: 'Qual serviço?\n\n' +
       servicos.slice(0, 8).map((s, i) => (i + 1) + ' — ' + (s.apelido || s.descricao)).join('\n'),
     estado: 'escolhendo_servico',
-    dados: { servicos: servicos.slice(0, 8).map(s => s.id) }
+    dados: { cnpj: empresa.cnpj, servicos: servicos.slice(0, 8).map(s => s.id) }
   };
 }
 
@@ -186,6 +291,7 @@ function doServico(t, empresa, dados, memoria) {
                   '. Para outro cliente, peça pela contabilidade.' : ''),
     estado: 'escolhendo_valor',
     dados: {
+      cnpj: empresa.cnpj,
       base: {
         tomador: anterior ? anterior.tomador : null,
         servico: { codigoTributacao: s.codigoTributacao, descricao: s.descricao },
@@ -234,7 +340,8 @@ function doValor(t, empresa, contato, dados) {
   const acimaDoTeto = contato.limiteValor != null && valor > contato.limiteValor;
   return {
     resposta: 'Confira antes de eu enviar:\n\n' +
-      '*Empresa:* ' + (empresa.nomeFantasia || empresa.razaoSocial) + '\n' +
+      '*Empresa:* ' + (empresa.nomeFantasia || empresa.razaoSocial) +
+        ' — ' + formatarCnpj(empresa.cnpj) + '\n' +
       '*Cliente:* ' + (base.tomador.nome || base.tomador.documento) + '\n' +
       '*Serviço:* ' + base.servico.descricao + '\n' +
       '*Valor:* ' + dinheiro(valor) + '\n\n' +

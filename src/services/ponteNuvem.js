@@ -175,6 +175,9 @@ async function chamar(caminho, opcoes = {}) {
    duas notas. */
 async function guardar(lista) {
   let novas = 0;
+  /* Quais pedidos desta rodada tiveram a identidade conferida por ESTE lado.
+     É o que decide quem pode sair no automático — ver sincronizar(). */
+  const verificados = new Set();
   for (const s of lista) {
     if (!s || !s.id) continue;
     const cnpj = String(s.cnpjEmpresa || '').replace(/[^0-9A-Za-z]/g, '');
@@ -201,23 +204,45 @@ async function guardar(lista) {
         'A contabilidade ainda não liberou a emissão pelo portal para esta empresa.';
     }
 
-    /* Pedido vindo do WhatsApp: o número é a identidade, e ele precisa estar
-       autorizado a falar por AQUELA empresa. Sem esta conferência, bastaria
-       mandar outro CNPJ no payload para pedir nota por qualquer cliente da
-       casa — o número identifica, mas quem decide o escopo é o cadastro. */
-    const origem = ORIGENS.includes(s.origem) ? s.origem : 'portal';
+    /* A ORIGEM É DEDUZIDA, NÃO ACEITA.
+     *
+     * O relay fica na internet e é o componente de menor confiança do conjunto.
+     * Se ele pudesse escolher a origem do pedido, bastaria dizer "portal" para
+     * pular a conferência do número — e um relay invadido enfileiraria pedido
+     * por qualquer cliente da casa. Então o gateway olha o remetente e decide
+     * sozinho: o que parece telefone é tratado como WhatsApp e conferido como
+     * tal, diga o payload o que disser.
+     */
     const remetente = s.remetente ? String(s.remetente).slice(0, 60) : null;
+    const pareceTelefone = /^[0-9]{10,15}$/.test(remetente || '');
+    const origem = pareceTelefone
+      ? 'whatsapp'
+      : (ORIGENS.includes(s.origem) && s.origem !== 'whatsapp' ? s.origem : 'portal');
 
+    /* Pedido que se diz do WhatsApp sem número não tem identidade nenhuma para
+       conferir — e identidade que não dá para conferir não passa. */
+    if (s.origem === 'whatsapp' && !pareceTelefone && situacao === 'aguardando') {
+      situacao = 'recusada';
+      motivo = 'Pedido de WhatsApp sem número de origem — não foi possível ' +
+               'conferir quem pediu.';
+    }
+
+    /* O número é a identidade, e precisa estar autorizado a falar por AQUELA
+       empresa. A pergunta é feita ao cadastro daqui, nunca ao payload: o relay
+       diz qual empresa o cliente escolheu; quem confere se ele podia escolher é
+       este lado, que é o único com o cadastro de verdade. */
+    let verificado = false;
     if (origem === 'whatsapp' && situacao === 'aguardando') {
-      const contato = await whatsapp.resolver(remetente);
+      const contato = e ? await whatsapp.autorizadoPara(remetente, e.id) : null;
       if (!contato) {
+        /* Mesma resposta para número desconhecido e para número que existe mas
+           não atende esta empresa: distinguir contaria a quem sondasse quais
+           números o escritório tem cadastrados. */
         situacao = 'recusada';
-        motivo = 'Este número não está autorizado a pedir notas. ' +
-                 'Fale com a contabilidade para cadastrá-lo.';
-      } else if (Number(contato.empresa_id) !== Number(e.id)) {
-        situacao = 'recusada';
-        motivo = 'Este número pede notas por outra empresa.';
+        motivo = 'Este número não está autorizado a pedir notas por esta empresa. ' +
+                 'Fale com a contabilidade.';
       } else {
+        verificado = true;
         const valor = (s.valores || {}).valorServico;
         if (whatsapp.acimaDoTeto(contato, valor)) {
           /* Não recusa: só garante que passe por gente. O teto existe para dar
@@ -239,8 +264,9 @@ async function guardar(lista) {
       [String(s.id).slice(0, 80), e ? e.id : null, cnpj || null,
        JSON.stringify(s), situacao, motivo, origem, remetente]);
     novas += r.rowCount;
+    if (r.rowCount && verificado) verificados.add(String(s.id).slice(0, 80));
   }
-  return novas;
+  return { novas, verificados };
 }
 
 /* Campos que uma solicitação vinda da internet pode preencher.
@@ -352,12 +378,27 @@ async function sincronizar({ forcar = false } = {}) {
   }
 
   const lista = (r.dados && r.dados.solicitacoes) || [];
-  const novas = await guardar(lista);
+  const { novas } = await guardar(lista);
 
   let emitidas = 0;
+  /* AUTOMÁTICO SÓ PARA IDENTIDADE QUE ESTE LADO CONFERIU.
+   *
+   * O modo automático emite sem ninguém olhar. Aplicá-lo a um pedido cuja
+   * identidade só a nuvem viu seria entregar ao relay — o componente exposto na
+   * internet — a capacidade de transformar qualquer texto em documento fiscal
+   * assinado com o certificado do cliente.
+   *
+   * WhatsApp o gateway confere sozinho: o número está no cadastro daqui e é
+   * autorizado para aquela empresa. Portal, não: quem autenticou a pessoa foi o
+   * site, e este lado não tem como saber. Então pedido de portal espera
+   * aprovação mesmo com o automático ligado — e um relay invadido que se diga
+   * portal recebe MENOS, não mais.
+   */
   if (c.emitir_automatico) {
     const liberadas = await db.query(
-      `SELECT * FROM solicitacoes WHERE situacao = 'aguardando' ORDER BY id LIMIT $1`, [c.lote]);
+      `SELECT * FROM solicitacoes
+        WHERE situacao = 'aguardando' AND origem = 'whatsapp'
+        ORDER BY id LIMIT $1`, [c.lote]);
     for (const s of liberadas.rows) {
       const saida = await emitirSolicitacao(s);
       if (saida.ok) emitidas++;

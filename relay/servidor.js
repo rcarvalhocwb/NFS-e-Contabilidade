@@ -78,14 +78,47 @@ function chaveDoGatewayConfere(req) {
    Assíncrono de propósito: a Meta espera HTTP 200 em até 20 segundos e desiste
    depois, reenviando. Responder primeiro e trabalhar depois é o que evita ela
    entregar a mesma mensagem três vezes. */
+/* Uma mensagem por vez, por número.
+ *
+ * Duas mensagens do mesmo cliente chegando juntas — o que acontece quando
+ * alguém manda "1" e "1" em sequência rápida — leriam o mesmo estado e
+ * avançariam os dois a partir dele. No melhor caso a segunda se perde; no pior,
+ * as duas passam pela confirmação e viram dois pedidos. A fila por número
+ * custa nada e fecha a corrida. */
+const emAndamento = new Map();
+
+function enfileirarPorNumero(numero, tarefa) {
+  const anterior = emAndamento.get(numero) || Promise.resolve();
+  const proxima = anterior.then(tarefa, tarefa);
+  emAndamento.set(numero, proxima.catch(() => {}));
+  proxima.finally(() => {
+    if (emAndamento.get(numero) === proxima.catch(() => {})) emAndamento.delete(numero);
+  });
+  return proxima;
+}
+
 async function tratarMensagem(m) {
+  /* Mensagem já processada não vale de novo: a assinatura da Meta continua
+     válida para sempre, e quem capturar um POST assinado pode reenviá-lo. */
+  if (memoria.jaVi(m.id)) {
+    console.warn('[webhook] mensagem repetida, ignorada:', m.id);
+    return;
+  }
+
+  /* Mensagem velha demais também não. Reenvio legítimo da Meta acontece em
+     minutos; horas depois é replay de alguém. */
+  if (m.recebidaEm && Date.now() - m.recebidaEm > 6 * 3600 * 1000) {
+    console.warn('[webhook] mensagem de', new Date(m.recebidaEm).toISOString(), '— velha demais');
+    return;
+  }
+
   if (!m.texto) {
     return responderAoCliente(m.de,
       'Por enquanto eu entendo só texto. Escreva "oi" para começar.');
   }
 
-  const quem = memoria.quemE(m.de);
-  if (!quem) {
+  const vinculos = memoria.empresasDe(m.de);
+  if (!vinculos.length) {
     /* Número desconhecido não recebe a lista de empresas nem sabe que o
        serviço existe: só uma resposta neutra. */
     return responderAoCliente(m.de,
@@ -97,7 +130,7 @@ async function tratarMensagem(m) {
   let saida;
   try {
     saida = conversa.responder({
-      texto: m.texto, quem, conversa: anterior, memoria
+      texto: m.texto, telefone: m.de, vinculos, conversa: anterior, memoria
     });
   } catch (e) {
     console.error('[conversa] quebrou:', e.message);
@@ -164,7 +197,8 @@ const servidor = http.createServer(async (req, res) => {
       json(res, 200, { ok: true });
 
       for (const m of meta.extrairMensagens(corpo)) {
-        tratarMensagem(m).catch(e => console.error('[webhook]', e.message));
+        enfileirarPorNumero(m.de, () => tratarMensagem(m))
+          .catch(e => console.error('[webhook]', e.message));
       }
       return;
     }
@@ -207,6 +241,16 @@ const servidor = http.createServer(async (req, res) => {
     }
 
     /* ------------------------------------------------------------ saúde */
+    /* Boca de teste: enfileira um pedido direto, como faria quem controlasse
+       este processo. Existe para provar que o GATEWAY se defende sozinho, e só
+       liga com RELAY_TESTE=true — num servidor de verdade ela não existe. */
+    if (req.method === 'POST' && u.pathname === '/_injetar') {
+      if (process.env.RELAY_TESTE !== 'true') return json(res, 404, { erro: 'não existe' });
+      const bruto = await lerCorpo(req);
+      memoria.enfileirar(JSON.parse(bruto));
+      return json(res, 201, { ok: true });
+    }
+
     if (req.method === 'GET' && u.pathname === '/saude') {
       const d = memoria.dados;
       return json(res, 200, {

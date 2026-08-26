@@ -21,6 +21,7 @@ const path = require('path');
 
 const VAZIO = {
   cadastro: null,           // último retrato recebido do gateway
+  vistas: {},               // wamid -> quando, contra reenvio de POST assinado
   conversas: {},            // telefone -> { estado, dados, em }
   pedidos: [],              // fila para o gateway buscar
   resultados: {},           // idPedido -> desfecho, até a resposta sair
@@ -65,19 +66,47 @@ class Memoria {
     this.salvar();
   }
 
-  /* Quem é este número, e por qual empresa ele fala.
-     O cadastro chega do gateway com os acessos por e-mail; o vínculo por
-     telefone é o que o escritório cadastrou em contatos_whatsapp e vem junto
-     no mesmo retrato. Sem vínculo, o número não é ninguém. */
-  quemE(telefone) {
+  /* Por quais empresas este número pode pedir nota?
+     Lista, não uma só: a mesma pessoa costuma cuidar de várias empresas do
+     grupo, e obrigá-la a três chips não é solução — é o que faz ela dar um
+     jeito por fora. Sem vínculo nenhum, o número não é ninguém. */
+  empresasDe(telefone) {
     const c = this.dados.cadastro;
-    if (!c) return null;
+    if (!c) return [];
     const formas = variacoesDoNumero(telefone);
-    const contato = (c.whatsapp || []).find(w => formas.includes(w.telefone));
-    if (!contato) return null;
-    const empresa = (c.empresas || []).find(e => e.cnpj === contato.cnpj);
-    if (!empresa || !empresa.ativo) return null;
-    return { contato, empresa };
+    return (c.whatsapp || [])
+      .filter(w => formas.includes(w.telefone))
+      .map(contato => {
+        const empresa = (c.empresas || []).find(e => e.cnpj === contato.cnpj);
+        return empresa && empresa.ativo ? { contato, empresa } : null;
+      })
+      .filter(Boolean);
+  }
+
+  /* Confere que a empresa escolhida é MESMO uma das que o número pode usar.
+     A escolha chega como texto do cliente — número da lista ou CNPJ digitado —
+     e texto de cliente nunca vira autorização sozinho. */
+  conferirEscolha(telefone, escolhaCnpj) {
+    return this.empresasDe(telefone)
+      .find(x => x.empresa.cnpj === String(escolhaCnpj || '').replace(/[^0-9A-Za-z]/g, '')) || null;
+  }
+
+  /* Mensagem já vista não vale de novo.
+   *
+   * A assinatura da Meta prova que o corpo veio dela — e continua provando para
+   * sempre. Quem capturar um POST assinado (log de proxy, backup mal guardado)
+   * pode reenviá-lo quantas vezes quiser. O wamid é único na Meta: visto uma
+   * vez, ignorado nas seguintes. */
+  jaVi(idMensagem) {
+    if (!idMensagem) return false;
+    const vistas = this.dados.vistas || (this.dados.vistas = {});
+    if (vistas[idMensagem]) return true;
+    vistas[idMensagem] = Date.now();
+    // Só o que é recente importa; o resto já não pode ser replay útil
+    const corte = Date.now() - 24 * 3600 * 1000;
+    for (const k of Object.keys(vistas)) if (vistas[k] < corte) delete vistas[k];
+    this.salvar();
+    return false;
   }
 
   servicosDa(cnpj) {

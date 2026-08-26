@@ -38,19 +38,37 @@ function memoriaFalsa(extra) {
   return m;
 }
 
-function quemDe(memoria, tel) { return memoria.quemE(tel); }
-
 function dialogo(memoria, tel, mensagens) {
   let estado = null;
   const saidas = [];
   for (const texto of mensagens) {
     const saida = conversa.responder({
-      texto, quem: quemDe(memoria, tel), conversa: estado, memoria
+      texto, telefone: tel, vinculos: memoria.empresasDe(tel),
+      conversa: estado, memoria
     });
     saidas.push(saida);
     estado = saida.estado ? { estado: saida.estado, dados: saida.dados, em: new Date().toISOString() } : null;
   }
   return saidas;
+}
+
+/* Segunda empresa para o mesmo número, para exercitar a escolha. */
+function comDuasEmpresas() {
+  const m = memoriaFalsa();
+  m.dados.cadastro.whatsapp.push({
+    telefone: '5541999998888', cnpj: '33333333000191',
+    nome: 'Maria Financeiro', limiteValor: 5000
+  });
+  m.dados.cadastro.empresas.push({
+    cnpj: '33333333000191', razaoSocial: 'BETA SERVICOS ME',
+    nomeFantasia: 'BETA', ativo: true, liberado: true, motivoBloqueio: null,
+    ultimoPedido: {
+      tomador: { documento: '44444444000191', nome: 'OUTRO CLIENTE SA' },
+      servico: { codigoTributacao: '020202', descricao: 'Servico da BETA' },
+      valor: 800
+    }
+  });
+  return m;
 }
 
 /* --------------------------------------------------------- o caminho curto */
@@ -95,22 +113,117 @@ test('valor diferente do de sempre', () => {
 test('número desconhecido não descobre nada do escritório', () => {
   /* Nem que empresas existem, nem que o serviço existe. */
   const m = memoriaFalsa();
-  assert.equal(m.quemE('5511888887777'), null);
+  assert.deepEqual(m.empresasDe('5511888887777'), []);
+  const [r] = dialogo(m, '5511888887777', ['oi']);
+  assert.match(r.resposta, /não está autorizado/);
+  assert.ok(!/ALFA|CLIENTE MENSAL|11111111/.test(r.resposta),
+    'sem revelar empresa nem cliente');
 });
 
-test('o número só fala pela empresa dele', () => {
+test('mensagem repetida não vira dois pedidos', () => {
+  /* A assinatura da Meta continua válida para sempre; quem capturar um POST
+     assinado pode reenviá-lo. O wamid visto uma vez não vale de novo. */
   const m = memoriaFalsa();
-  const quem = m.quemE('5541999998888');
-  assert.equal(quem.empresa.cnpj, '11111111000191');
+  assert.equal(m.jaVi('wamid.abc'), false, 'primeira vez passa');
+  assert.equal(m.jaVi('wamid.abc'), true, 'segunda é ignorada');
+  assert.equal(m.jaVi('wamid.xyz'), false, 'outra mensagem passa normalmente');
+});
+
+test('o número só fala pelas empresas dele', () => {
+  const m = memoriaFalsa();
+  const lista = m.empresasDe('5541999998888');
+  assert.equal(lista.length, 1);
+  assert.equal(lista[0].empresa.cnpj, '11111111000191');
   const saidas = dialogo(m, '5541999998888', ['oi', '1', '1', '1']);
   assert.equal(saidas[3].pedido.cnpjEmpresa, '11111111000191',
     'o CNPJ sai do cadastro, nunca do que a pessoa escreveu');
 });
 
+/* ------------------------------------------- o número que atende várias */
+
+test('com duas empresas, a primeira pergunta é qual delas', () => {
+  /* Emitir no CNPJ errado é nota fiscal no cliente errado. No WhatsApp não há
+     barra fixa mostrando onde a pessoa está, então a escolha vem antes de tudo
+     e o CNPJ aparece escrito. */
+  const m = comDuasEmpresas();
+  const [r] = dialogo(m, '5541999998888', ['oi']);
+  assert.equal(r.estado, 'escolhendo_empresa');
+  assert.match(r.resposta, /mais de uma empresa/);
+  assert.match(r.resposta, /ALFA/);
+  assert.match(r.resposta, /BETA/);
+  assert.match(r.resposta, /11\.111\.111\/0001-91/, 'com o CNPJ à vista');
+});
+
+test('escolher pelo número da lista', () => {
+  const m = comDuasEmpresas();
+  const saidas = dialogo(m, '5541999998888', ['oi', '2', '1', '1', '1']);
+  assert.match(saidas[1].resposta, /Emissão por \*BETA\*/);
+  assert.equal(saidas[4].pedido.cnpjEmpresa, '33333333000191');
+  assert.equal(saidas[4].pedido.valores.valorServico, 800);
+});
+
+test('escolher digitando o CNPJ', () => {
+  const m = comDuasEmpresas();
+  const saidas = dialogo(m, '5541999998888', ['oi', '33.333.333/0001-91', '1', '1', '1']);
+  assert.match(saidas[1].resposta, /BETA/);
+  assert.equal(saidas[4].pedido.cnpjEmpresa, '33333333000191');
+});
+
+test('CNPJ de empresa que não é dele recebe a mesma recusa de um inventado', () => {
+  /* Distinguir transformaria a conversa num jeito de descobrir quais empresas o
+     escritório atende. */
+  const m = comDuasEmpresas();
+  const real = dialogo(m, '5541999998888', ['oi', '99.999.999/0001-91']);
+  const inventado = dialogo(m, '5541999998888', ['oi', '12.345.678/0001-99']);
+  assert.match(real[1].resposta, /Não encontrei essa empresa entre as suas/);
+  assert.equal(real[1].resposta, inventado[1].resposta,
+    'as duas respostas precisam ser idênticas');
+});
+
+test('o CNPJ digitado não vira autorização sozinho', () => {
+  /* O texto vem do cliente; a autorização sai do cadastro. */
+  const m = comDuasEmpresas();
+  assert.ok(m.conferirEscolha('5541999998888', '33333333000191'));
+  assert.equal(m.conferirEscolha('5541999998888', '99999999000191'), null);
+  assert.equal(m.conferirEscolha('5511777776666', '11111111000191'), null,
+    'outro número não alcança a empresa nem sabendo o CNPJ');
+});
+
+test('perder o vínculo no meio da conversa interrompe o pedido', () => {
+  /* O escritório tira o número da empresa enquanto a pessoa responde. A
+     conversa guarda o CNPJ, mas reconfere a cada passo — senão ela seguiria
+     valendo com uma autorização que já não existe. */
+  const m = comDuasEmpresas();
+  let estado = null;
+  const passo = texto => {
+    const saida = conversa.responder({
+      texto, telefone: '5541999998888', vinculos: m.empresasDe('5541999998888'),
+      conversa: estado, memoria: m
+    });
+    estado = saida.estado ? { estado: saida.estado, dados: saida.dados, em: new Date().toISOString() } : null;
+    return saida;
+  };
+  passo('oi'); passo('2'); passo('1');
+
+  m.dados.cadastro.whatsapp = m.dados.cadastro.whatsapp
+    .filter(w => w.cnpj !== '33333333000191');
+
+  const depois = passo('1');
+  assert.match(depois.resposta, /acesso a essa empresa mudou/);
+  assert.ok(!depois.pedido, 'e nenhum pedido sai');
+});
+
+test('a empresa aparece escrita na conferência, com CNPJ', () => {
+  const m = comDuasEmpresas();
+  // com duas empresas, o primeiro '1' escolhe a ALFA
+  const saidas = dialogo(m, '5541999998888', ['oi', '1', '1', '1']);
+  assert.match(saidas[3].resposta, /\*Empresa:\* ALFA — 11\.111\.111\/0001-91/);
+});
+
 test('o nono dígito não separa a mesma pessoa', () => {
   const m = memoriaFalsa();
-  assert.ok(m.quemE('554199998888'), 'sem o nono dígito, é a mesma Maria');
-  assert.ok(m.quemE('5541999998888'), 'e com ele também');
+  assert.equal(m.empresasDe('554199998888').length, 1, 'sem o nono dígito');
+  assert.equal(m.empresasDe('5541999998888').length, 1, 'e com ele');
 });
 
 /* --------------------------------------------------------- empresa travada */
