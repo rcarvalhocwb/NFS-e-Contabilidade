@@ -30,10 +30,10 @@ function carregar(nome) {
   return new Function(resto.slice(0, fim + 4) + '; return ' + nome + ';')();
 }
 
-test('as duas telas carregam o mesmo arquivo de valores', () => {
+test('as tres telas carregam o mesmo arquivo de valores', () => {
   /* Se uma delas parar de carregar, parseValorBR vira undefined ali e o campo
      de dinheiro quebra sem erro visível. */
-  for (const pagina of ['nota.html', 'admin.html']) {
+  for (const pagina of ['nota.html', 'admin.html', 'emitir.html']) {
     const html = fs.readFileSync(
       path.join(__dirname, '..', 'src', 'public', pagina), 'utf8');
     assert.match(html, /<script src="\/assets\/valorbr\.js"><\/script>/,

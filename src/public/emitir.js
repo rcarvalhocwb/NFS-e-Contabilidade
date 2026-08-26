@@ -15,6 +15,55 @@
   var nota = {};
   var etapa = null;
 
+  /* Voltar uma resposta.
+   *
+   * Quem digita erra, e percebe uma pergunta depois. Sem caminho de volta, a
+   * única saída era recomeçar do zero — o que faz a pessoa preferir "deixa
+   * assim" e emitir uma nota que ela já sabe estar errada. Cada pergunta
+   * empilha como se refazê-la; voltar desempilha.
+   */
+  var historico = [];
+
+  function marcar(refazer) {
+    historico.push(refazer);
+  }
+
+  function podeVoltar() { return historico.length > 1; }
+
+  function voltar() {
+    if (!podeVoltar()) {
+      bot('Esta é a primeira pergunta — não há para onde voltar.',
+          'Use "Trocar empresa" lá em cima para recomeçar.');
+      return;
+    }
+    historico.pop();                       // a pergunta atual
+    var anterior = historico.pop();        // a que se quer refazer
+    usuario('voltar');
+    erros = 0;
+    anterior();
+  }
+
+  /* Palavras que significam "errei". A pessoa escreve antes de procurar botão. */
+  var PEDIDOS_DE_VOLTA = /^(voltar|volta|corrigir|corrige|errei|erro|desfazer|anterior)$/i;
+
+  /* Quantas vezes a resposta atual foi recusada. Insistir na mesma pergunta sem
+     oferecer saída é como o sistema trava a pessoa num canto. */
+  var erros = 0;
+
+  function naoEntendi(mensagem, exemplo) {
+    erros++;
+    bot(mensagem, exemplo);
+    if (erros >= 3) {
+      bot('Se preferir, dá para voltar uma pergunta ou recomeçar.');
+      opcoes([
+        { texto: 'Voltar uma pergunta', acao: voltar },
+        { texto: 'Recomeçar', acao: function () {
+            conversa.innerHTML = ''; nota = {}; historico = []; erros = 0;
+            el('barraEmpresa').hidden = true; iniciar(); } }
+      ]);
+    }
+  }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
@@ -273,6 +322,8 @@
   }
 
   function perguntarTomador() {
+    marcar(perguntarTomador);
+    erros = 0;
     bot('Para quem é a nota?');
     if (ctx.tomadores.length) {
       opcoes(ctx.tomadores.slice(0, 6).map(function (t) {
@@ -305,13 +356,24 @@
           pedir('Nome ou razão social do cliente');
         }
       }).catch(function (e) {
-        bot('Não deu certo: ' + esc(e.message));
+        /* O servidor confere o dígito verificador; aqui só se mostra o motivo
+           e se devolve a pergunta, em vez de deixar a pessoa no vazio. */
+        var digito = /dígitos|inválido/i.test(e.message || '');
+        bot('Não deu certo: ' + esc(e.message),
+            digito ? 'Confira o documento — um dígito trocado costuma ser a causa.'
+                   : 'Pode ser a base pública fora do ar; dá para seguir digitando os dados.');
+        erros++;
         etapa = 'tomador';
         pedir('CNPJ ou CPF do cliente');
+        if (erros >= 2) {
+          opcoes([{ texto: 'Voltar uma pergunta', acao: voltar }]);
+        }
       });
   }
 
   function perguntarServico() {
+    marcar(perguntarServico);
+    erros = 0;
     bot('Qual serviço foi prestado?');
     var lista = ctx.servicos.slice(0, 6).map(function (s) {
       return {
@@ -346,8 +408,10 @@
     } else {
       bot('Qual o valor do serviço?');
     }
+    marcar(perguntarValor);
+    erros = 0;
     etapa = 'valor';
-    pedir('Ex.: 1500,00', 'Use vírgula ou ponto para os centavos.');
+    pedir('Ex.: 1500,00', 'Use vírgula ou ponto para os centavos. Digite "voltar" para corrigir a resposta anterior.');
   }
 
   function revisar() {
@@ -406,14 +470,29 @@
       corpo.valores.aliquotaIss = Number(s.aliquota_iss);
     }
 
+    /* Clicar duas vezes em "Emitir nota" enviaria duas DPS. A referência
+       resolve no servidor, mas gastar uma ida e vir com dúvida é pior do que
+       simplesmente não deixar o segundo clique acontecer. */
+    if (nota.emitindo) return;
+    nota.emitindo = true;
+
     api('/nfse', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(corpo) })
       .then(function (r) {
         salvarAprendizado();
         acompanhar(r.notaId);
       })
       .catch(function (err) {
+        nota.emitindo = false;
         bot('<strong>Não foi possível emitir.</strong><br>' + esc(err.message));
-        opcoes([{ texto: 'Tentar de novo', acao: function () { conversa.innerHTML=''; nota={}; iniciar(); } }]);
+        /* Nada foi emitido: os dados continuam válidos, e obrigar a redigitar
+           tudo por um erro que não foi da pessoa é castigo sem motivo. */
+        opcoes([
+          { texto: 'Tentar emitir de novo', acao: function () { revisar(); } },
+          { texto: 'Corrigir o valor', acao: function () { nota.valorConfirmado = false; perguntarValor(); } },
+          { texto: 'Recomeçar', acao: function () {
+              conversa.innerHTML = ''; nota = {}; historico = [];
+              el('barraEmpresa').hidden = true; iniciar(); } }
+        ]);
       });
   }
 
@@ -470,7 +549,8 @@
               .map(function (x) { return x.Complemento || x.Descricao; }).join(' · ')) ||
             'sem detalhe informado';
           bot('<strong>A nota não foi autorizada.</strong><br>' + esc(motivo),
-              'Corrija o que for necessário e emita novamente.');
+              'O número desta DPS foi consumido — a próxima tentativa usa o seguinte. ' +
+              'Nenhuma nota existe com estes dados.');
         }
         /* A próxima nota quase sempre é da mesma empresa. Voltar ao começo
            obrigaria a procurá-la de novo na lista — e a chance de escolher a
@@ -518,14 +598,26 @@
 
   // ------------------------------------------------------- entrada de texto
 
+  /* Limite do campo de descrição na DPS. Cortar aqui é melhor do que a Sefin
+     recusar depois — e a pessoa vê o corte antes de confirmar. */
+  var MAX_DESCRICAO = 2000;
+
+  /* Acima disso, pergunta antes de aceitar. Não é um teto: é o dedo escorregando
+     no teclado numérico, que numa nota fiscal vira imposto a mais e um
+     cancelamento para desfazer. */
+  var VALOR_QUE_ASSUSTA = 100000;
+
   function processar(texto) {
     texto = (texto || '').trim();
     if (!texto) return;
 
+    if (PEDIDOS_DE_VOLTA.test(texto)) { voltar(); return; }
+
     if (etapa === 'tomador') {
       var doc = digits(texto);
       if (doc.length !== 11 && doc.length !== 14) {
-        bot('Esse documento não parece válido. CNPJ tem 14 dígitos e CPF tem 11.');
+        naoEntendi('Esse documento não parece válido.',
+          'CNPJ tem 14 dígitos e CPF tem 11 — você digitou ' + doc.length + '.');
         return;
       }
       usuario(fmtDoc(doc));
@@ -533,22 +625,46 @@
       return;
     }
     if (etapa === 'tomadorNome') {
+      if (texto.length < 3) {
+        naoEntendi('O nome ficou curto demais.', 'Escreva o nome ou a razão social do cliente.');
+        return;
+      }
       usuario(texto);
-      nota.tomador.razao_social = texto;
+      nota.tomador.razao_social = texto.slice(0, 300);
       perguntarServico();
       return;
     }
     if (etapa === 'servicoCodigo') {
       var cod = digits(texto);
-      if (cod.length !== 6) { bot('O código tem 6 dígitos. Tente de novo.'); return; }
+      if (cod.length !== 6) {
+        naoEntendi('O código de tributação nacional tem 6 dígitos.',
+          'Você digitou ' + cod.length + '. Ex.: 110201 (vigilância), 010101 (sistemas).');
+        return;
+      }
       usuario(cod);
       nota.servico = { codigo_tributacao: cod };
+      marcar(function () {
+        bot('Descreva o serviço como deve aparecer na nota.');
+        etapa = 'servicoDescricao';
+        pedir('Ex.: Servico de vigilancia patrimonial');
+      });
+      erros = 0;
       bot('Descreva o serviço como deve aparecer na nota.');
       etapa = 'servicoDescricao';
       pedir('Ex.: Servico de vigilancia patrimonial');
       return;
     }
     if (etapa === 'servicoDescricao') {
+      if (texto.length < 3) {
+        naoEntendi('A descrição ficou curta demais.',
+          'É o que o cliente vai ler na nota — escreva o serviço prestado.');
+        return;
+      }
+      if (texto.length > MAX_DESCRICAO) {
+        naoEntendi('A descrição passou de ' + MAX_DESCRICAO + ' caracteres.',
+          'Você escreveu ' + texto.length + '. Resuma — a Sefin recusa acima disso.');
+        return;
+      }
       usuario(texto);
       nota.servico.descricao = texto;
       nota.servico.apelido = texto.slice(0, 40);
@@ -556,10 +672,33 @@
       return;
     }
     if (etapa === 'valor') {
-      // Aceita "1.500,00" e "1500.00"
-      var limpo = texto.replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.');
-      var v = Number(limpo);
-      if (!Number.isFinite(v) || v <= 0) { bot('Não entendi o valor. Digite algo como 1500,00.'); return; }
+      /* Mesma leitura de dinheiro do painel e da tela de emissão, de
+         valorbr.js: três regras diferentes para o mesmo número seria uma
+         divergindo das outras. */
+      var v = window.parseValorBR(texto);
+      if (v === undefined || !isFinite(v)) {
+        naoEntendi('Não entendi o valor.',
+          'Digite algo como 1500,00 ou 1.234,56.');
+        return;
+      }
+      if (v <= 0) {
+        naoEntendi('O valor precisa ser maior que zero.',
+          'Nota de valor zero a Sefin não aceita.');
+        return;
+      }
+      if (v >= VALOR_QUE_ASSUSTA && !nota.valorConfirmado) {
+        usuario(fmtMoeda(v));
+        bot('Confirma <strong>' + fmtMoeda(v) + '</strong>?',
+            'É um valor alto — vale conferir antes, porque desfazer depois exige cancelamento.');
+        opcoes([
+          { texto: 'Sim, é esse valor', acao: function () {
+              nota.valorConfirmado = true; nota.valor = v; revisar(); } },
+          { texto: 'Não, digitar de novo', acao: function () {
+              nota.valorConfirmado = false; perguntarValor(); } }
+        ]);
+        travarEntrada();
+        return;
+      }
       usuario(fmtMoeda(v));
       nota.valor = v;
       revisar();

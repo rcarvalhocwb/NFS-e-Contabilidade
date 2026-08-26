@@ -91,11 +91,20 @@ async function emitir(cnpjEmpresa, dados, contexto = {}) {
   // (ABRASF etc.), o gateway não emite ali. Bloqueia com mensagem clara antes
   // de reservar número ou assinar. Município 'nacional' ou não classificado
   // ('desconhecido') segue o fluxo normal.
-  const modo = await municipios.modoDe(empresa.codigo_municipio);
-  if (modo === 'proprio') {
+  const mun = await municipios.obter(empresa.codigo_municipio);
+  if (mun && mun.modo_emissao === 'proprio') {
+    /* Dizer só "o município 4107652 não serve" deixa a pessoa com a nota na mão
+       e sem saída. O que resolve o problema dela é o nome do lugar e para onde
+       ir — por isso o emissor e o portal ficam no cadastro do município. */
+    const onde = [
+      mun.emissor ? `pelo ${mun.emissor}` : 'pelo sistema da prefeitura',
+      mun.url_portal ? `(${mun.url_portal})` : ''
+    ].filter(Boolean).join(' ');
+
     throw Object.assign(new Error(
-      `O município ${empresa.codigo_municipio} usa emissor próprio (não emite pelo Sistema Nacional). ` +
-      `Emita pela prefeitura ou aguarde a migração para o Nacional.`
+      `${mun.nome || 'Este município'} (${empresa.codigo_municipio}) não emite pelo ` +
+      `Sistema Nacional: mantém emissor próprio. A nota desta empresa sai ${onde}. ` +
+      (mun.observacao || 'Confira o credenciamento junto à prefeitura.')
     ), { status: 422 });
   }
 
