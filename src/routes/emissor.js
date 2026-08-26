@@ -57,11 +57,12 @@ router.get('/contexto', async (req, res, next) => {
 
         // A última nota autorizada diz o que essa empresa costuma emitir
         const ultima = await db.query(
-          `SELECT dps_xml FROM notas
+          `SELECT id, dps_xml, serie, numero, criado_em FROM notas
             WHERE empresa_id = $1 AND status = 'autorizada' AND dps_xml IS NOT NULL
             ORDER BY id DESC LIMIT 1`, [empresaId]);
 
         let ultimoServico = null;
+        let ultimaNota = null;
         if (ultima.rows.length) {
           const x = ultima.rows[0].dps_xml;
           const pega = t => (x.match(new RegExp('<' + t + '>([^<]*)</' + t + '>')) || [])[1] || null;
@@ -70,6 +71,36 @@ router.get('/contexto', async (req, res, next) => {
             descricao: pega('xDescServ'),
             codigoNbs: pega('cNBS'),
             aliquota: pega('pAliq') ? Number(pega('pAliq')) : null
+          };
+
+          /* A nota anterior inteira, para repetir num toque.
+             Escritório emite a mesma coisa para o mesmo cliente todo mês; fazer
+             a pessoa reconstruir seis respostas para chegar no mesmo lugar é
+             tempo perdido e chance de errar. O tomador sai do bloco <toma>,
+             que é onde o documento dele fica na DPS. */
+          const bloco = (x.match(/<toma>([\s\S]*?)<\/toma>/) || [])[1] || '';
+          const doToma = t => (bloco.match(new RegExp('<' + t + '>([^<]*)</' + t + '>')) || [])[1] || null;
+          const doc = doToma('CNPJ') || doToma('CPF');
+
+          const tom = doc
+            ? await db.query(
+                'SELECT * FROM tomadores WHERE empresa_id = $1 AND documento = $2',
+                [empresaId, doc])
+            : { rows: [] };
+
+          ultimaNota = {
+            notaId: ultima.rows[0].id,
+            serie: ultima.rows[0].serie,
+            numero: ultima.rows[0].numero,
+            emitidaEm: ultima.rows[0].criado_em,
+            valor: pega('vServ') ? Number(pega('vServ')) : null,
+            servico: ultimoServico,
+            /* Só serve para repetir se o tomador ainda estiver no cadastro:
+               reconstruir endereço a partir do XML daria uma nota parecida, não
+               a mesma. Sem ele, a tela não oferece a repetição. */
+            tomador: tom.rows[0] || null,
+            documentoTomador: doc,
+            nomeTomador: doToma('xNome') || (tom.rows[0] && tom.rows[0].razao_social) || null
           };
         }
 
@@ -80,6 +111,7 @@ router.get('/contexto', async (req, res, next) => {
           optanteSimples: [2, 3].includes(Number(emp.op_simp_nac)),
           competencia: dataLocalISO(),
           ultimoServico,
+          ultimaNota,
 
           /* Padrões cadastrados na empresa. Vêm antes da alíquota do município
              e da última nota: foi o contador quem os definiu, olhando o

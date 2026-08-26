@@ -27,6 +27,13 @@
     if (v.length === 11) return v.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
     return v;
   }
+  /* Data do jeito que se lê no Brasil. O que vem do servidor é ISO. */
+  function fmtData(d) {
+    if (!d) return '—';
+    var x = new Date(d);
+    return isNaN(x) ? '—' : x.toLocaleDateString('pt-BR');
+  }
+
   function fmtMoeda(v) {
     return Number(v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
   }
@@ -126,14 +133,7 @@
         escolherEmpresa(aptas[0]);
       } else {
         bot('Por qual empresa?');
-        opcoes(aptas.map(function (e) {
-          return {
-            texto: e.nome_fantasia || e.razao_social,
-            detalhe: fmtDoc(e.cnpj) + ' · ' + e.ambiente,
-            acao: function () { escolherEmpresa(e); }
-          };
-        }));
-        travarEntrada();
+        listarEmpresas(aptas);
       }
     }).catch(function (e) {
       bot('Não consegui carregar os dados: ' + esc(e.message));
@@ -141,16 +141,135 @@
     });
   }
 
+  /* Lista de empresas com busca.
+     Uma parede de trinta botões é pior do que nenhuma ajuda: a pessoa passa o
+     olho, não acha, e clica no que parece. Com o campo, ela digita três letras
+     do nome ou do CNPJ e sobra o que importa. */
+  function listarEmpresas(aptas) {
+    var caixa = document.createElement('div');
+    caixa.className = 'opcoes';
+
+    var busca = null;
+    if (aptas.length > 6) {
+      busca = document.createElement('input');
+      busca.className = 'busca-empresa';
+      busca.placeholder = 'Digite parte do nome ou do CNPJ (' + aptas.length + ' empresas)';
+      caixa.appendChild(busca);
+    }
+
+    var lista = document.createElement('div');
+    caixa.appendChild(lista);
+
+    function desenhar(filtro) {
+      var termo = (filtro || '').toLowerCase().replace(/[^\w\sà-ú]/gi, '');
+      var vistas = aptas.filter(function (e) {
+        if (!termo) return true;
+        var alvo = ((e.nome_fantasia || '') + ' ' + e.razao_social + ' ' + e.cnpj).toLowerCase();
+        return alvo.replace(/[^\w\sà-ú]/gi, '').indexOf(termo) !== -1;
+      });
+      lista.innerHTML = '';
+      if (!vistas.length) {
+        var vazio = document.createElement('div');
+        vazio.className = 'dica';
+        vazio.textContent = 'Nenhuma empresa com esse nome ou CNPJ.';
+        lista.appendChild(vazio);
+        return;
+      }
+      vistas.slice(0, 30).forEach(function (e) {
+        var b = document.createElement('button');
+        // Mesma marcacao dos outros botoes de opcao: o CSS estiliza
+        // `.opcoes button` e `.det`, nao uma classe propria.
+        b.innerHTML = esc(e.nome_fantasia || e.razao_social) +
+          '<span class="det">' + esc(fmtDoc(e.cnpj)) + ' · ' + esc(e.ambiente) + '</span>';
+        b.onclick = function () { caixa.remove(); escolherEmpresa(e); };
+        lista.appendChild(b);
+      });
+    }
+
+    desenhar('');
+    if (busca) {
+      busca.oninput = function () { desenhar(busca.value); };
+    }
+    conversa.appendChild(caixa);
+    rolar();
+    travarEntrada();
+    if (busca) busca.focus();
+  }
+
+  /* A barra fica na tela o tempo todo. A conversa rola, e depois de três
+     respostas o nome da empresa já saiu de vista — num escritório que atende
+     dezenas de CNPJs, isso é nota emitida no cliente errado, com o certificado
+     dele. */
+  function mostrarBarraEmpresa(e) {
+    var barra = el('barraEmpresa');
+    barra.hidden = false;
+    barra.classList.toggle('producao', e.ambiente === 'producao');
+    el('beNome').textContent = e.nome_fantasia || e.razao_social;
+    el('beDoc').textContent = fmtDoc(e.cnpj);
+    el('beAmbiente').textContent = e.ambiente === 'producao'
+      ? 'produção · valor fiscal' : 'homologação · teste';
+  }
+
+  el('beTrocar').onclick = function () {
+    if (nota.notaEmAndamento) return;
+    conversa.innerHTML = '';
+    nota = {};
+    el('barraEmpresa').hidden = true;
+    iniciar();
+  };
+
   function escolherEmpresa(e) {
     nota.empresa = e;
     usuario(e.nome_fantasia || e.razao_social);
-    el('avisoProd').hidden = e.ambiente !== 'producao';
+    mostrarBarraEmpresa(e);
     // Recarrega tomadores e serviços já usados por esta empresa.
     api('/emissor/contexto?empresaId=' + e.id).then(function (d) {
       ctx.tomadores = d.tomadores || [];
       ctx.servicos = d.servicos || [];
-      perguntarTomador();
+      ctx.ultimaNota = (d.sugestoes || {}).ultimaNota || null;
+      oferecerRepeticao();
     }).catch(function () { perguntarTomador(); });
+  }
+
+  /* Escritório emite a mesma coisa para o mesmo cliente todo mês. Reconstruir
+     seis respostas para chegar no mesmo lugar é tempo perdido — e cada resposta
+     digitada de novo é uma chance a mais de errar. */
+  function oferecerRepeticao() {
+    var u = ctx.ultimaNota;
+    if (!u || !u.tomador || !u.servico || !u.servico.codigoTributacao || u.valor == null) {
+      return perguntarTomador();
+    }
+    bot('A última nota desta empresa foi para <strong>' + esc(u.nomeTomador || '—') +
+        '</strong>, de ' + fmtMoeda(u.valor) + '.',
+        esc(u.servico.descricao || '') + ' · série ' + esc(u.serie) + '/' + esc(u.numero) +
+        ' em ' + fmtData(u.emitidaEm));
+    opcoes([
+      { texto: 'Repetir essa nota', detalhe: 'mesmo cliente, serviço e valor',
+        acao: function () { repetirUltima(u); } },
+      { texto: 'Mesmo cliente, outro valor',
+        acao: function () { nota.tomador = u.tomador; usuario(u.nomeTomador || '—');
+                            aplicarServico(u.servico); perguntarValor(); } },
+      { texto: 'Começar do zero', acao: function () { perguntarTomador(); } }
+    ]);
+    travarEntrada();
+  }
+
+  function repetirUltima(u) {
+    nota.tomador = u.tomador;
+    usuario('Repetir a última nota');
+    aplicarServico(u.servico);
+    nota.valor = u.valor;
+    revisar();
+  }
+
+  /* O serviço da nota anterior, no formato que o resto do fluxo espera. */
+  function aplicarServico(s) {
+    nota.servico = {
+      codigo_tributacao: s.codigoTributacao,
+      descricao: s.descricao,
+      aliquota_iss: s.aliquota,
+      codigo_nbs: s.codigoNbs
+    };
   }
 
   function perguntarTomador() {
@@ -353,7 +472,23 @@
           bot('<strong>A nota não foi autorizada.</strong><br>' + esc(motivo),
               'Corrija o que for necessário e emita novamente.');
         }
-        opcoes([{ texto: 'Emitir outra nota', acao: function () { conversa.innerHTML=''; nota={}; iniciar(); } }]);
+        /* A próxima nota quase sempre é da mesma empresa. Voltar ao começo
+           obrigaria a procurá-la de novo na lista — e a chance de escolher a
+           errada nasce aí. */
+        var empresaAtual = nota.empresa;
+        opcoes([
+          { texto: 'Outra nota para ' + esc(empresaAtual.nome_fantasia || empresaAtual.razao_social),
+            acao: function () {
+              conversa.innerHTML = ''; nota = {};
+              escolherEmpresa(empresaAtual);
+            } },
+          { texto: 'Trocar de empresa',
+            acao: function () {
+              conversa.innerHTML = ''; nota = {};
+              el('barraEmpresa').hidden = true;
+              iniciar();
+            } }
+        ]);
       }).catch(function () { clearInterval(timer); });
     }, 2500);
   }
