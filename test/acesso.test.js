@@ -43,15 +43,25 @@ test('e-mail é normalizado para minúsculas e validado', () => {
 
 /* Escopo por empresa ------------------------------------------------------ */
 
-const usuarioCom = empresasIds => ({ auth: { tipo: 'usuario', empresasIds } });
+const usuarioCom = (empresasIds, perfil = 'operador') =>
+  ({ auth: { tipo: 'usuario', perfil, empresasIds } });
 
-test('usuário sem vínculo enxerga todas as empresas', () => {
-  // null é "todas", não "nenhuma" — confundir os dois esconderia o sistema
-  // inteiro de quem deveria ver tudo.
-  const req = usuarioCom(null);
+test('administrador sem vínculo enxerga todas as empresas', () => {
+  /* null é "todas". Vale só para quem administra: é quem cadastra empresa, e
+     sem isso não conseguiria enxergar a que acabou de criar. */
+  const req = usuarioCom(null, 'admin');
   assert.equal(empresasVisiveis(req), null);
   assert.equal(empresaVisivel(req, 7), true);
   assert.equal(filtroSqlEmpresas(req, 'n.empresa_id', 2).sql, '');
+});
+
+test('operador sem vínculo não enxerga nenhuma empresa', () => {
+  /* Mudou em 26/08/2026, a pedido: antes, vínculo vazio dava a ele a vida
+     fiscal de todos os clientes do escritório, sem nenhum sinal na tela. */
+  const req = usuarioCom(null);
+  assert.deepEqual(empresasVisiveis(req), []);
+  assert.equal(empresaVisivel(req, 7), false);
+  assert.equal(filtroSqlEmpresas(req, 'n.empresa_id', 2).sql, ' AND FALSE');
 });
 
 test('usuário vinculado só enxerga as empresas marcadas', () => {

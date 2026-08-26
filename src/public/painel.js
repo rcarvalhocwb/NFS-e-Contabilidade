@@ -313,6 +313,7 @@
     email:       { titulo:'E-mail e avisos', sub:'Envio de notas e resumo de prazos', carregar: carregarEmail },
     identidade:  { titulo:'Identidade visual', sub:'A marca do escritório no painel e nos relatórios', carregar: carregarIdentidade },
     manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: function () { carregarManutencao(); carregarAtualizacao(); carregarCopias(); } },
+    rede:        { titulo:'Rede e conexão', sub:'As saídas do gateway e a emissão sem internet', carregar: carregarRede },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
     webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks },
     portal:      { titulo:'Portal do cliente', sub:'Pedidos de nota que chegam pelo site', carregar: carregarPonte }
@@ -678,6 +679,78 @@
       .then(function () { b.disabled = false; });
   };
 
+
+  /* ------------------------------------------------------- rede e conexão */
+
+  /* A pergunta que sempre volta é "que porta eu abro no roteador?". A resposta
+     é nenhuma, e ela precisa estar na tela — não só na documentação. O que esta
+     tela faz é o contrário de configurar exposição: confere se as duas saídas
+     funcionam e mostra onde parou quando não funcionam. */
+
+  function carregarRede() {
+    return api('/manutencao/rede').then(function (d) {
+      var falhou = d.saidas.filter(function (s) { return s.alcancavel === false; });
+      var selo = el('rdSelo');
+      selo.className = 'selo-status ' + (falhou.length ? 's-erro' : 's-ok');
+      selo.textContent = falhou.length ? 'Sem saída' : 'Saídas funcionando';
+
+      el('rdSaidas').innerHTML = d.saidas.map(function (s) {
+        var estado = s.alcancavel === null
+          ? '<span class="selo-status s-neutro">não configurado</span>'
+          : s.alcancavel
+            ? '<span class="selo-status s-ok">' + s.ms + ' ms</span>'
+            : '<span class="selo-status s-erro">não respondeu</span>';
+        return '<tr><td>' + esc(s.nome) + '</td>' +
+          '<td><span class="mono">' + esc(s.endereco || '—') + '</span></td>' +
+          '<td>' + estado + '<div class="ajuda">' + esc(s.detalhe) + '</div></td></tr>';
+      }).join('');
+
+      el('rdPorta').textContent = d.rede.porta;
+      el('rdHost').textContent = d.rede.aceitaRedeLocal
+        ? 'Sim — outras máquinas do escritório conseguem abrir'
+        : 'Não — só este computador (HOST=' + d.rede.host + ')';
+
+      el('rdEnderecos').innerHTML = d.rede.enderecos.length
+        ? d.rede.enderecos.map(function (e) {
+            return '<div style="margin-bottom:6px">' +
+              '<span class="mono">' + esc(e.url) + '</span> ' +
+              '<span class="ajuda">(' + esc(e.interface) + ')</span></div>';
+          }).join('')
+        : '<div class="ajuda">Nenhum endereço de rede encontrado — a máquina pode estar sem rede.</div>';
+
+      var f = d.fila;
+      var fs = el('rdFilaSelo');
+      fs.className = 'selo-status ' +
+        (f.esperandoConexao ? (f.alerta ? 's-erro' : 's-alerta') : 's-ok');
+      fs.textContent = f.esperandoConexao
+        ? f.esperandoConexao + ' esperando' : 'Nada parado';
+
+      var av = el('rdFilaAviso');
+      if (f.alerta) { av.className = 'aviso erro'; av.textContent = f.alerta; }
+      else if (f.esperandoConexao) {
+        av.className = 'aviso info';
+        av.textContent = 'A linha caiu e as notas estão prontas e assinadas, ' +
+          'esperando. Elas saem sozinhas quando a conexão voltar — não é preciso ' +
+          'emitir de novo, e o número não se perde.';
+      } else { av.className = 'aviso'; av.textContent = ''; }
+
+      el('rdEsperando').textContent = f.esperandoConexao;
+      el('rdNaFila').textContent = f.naFila;
+      el('rdMaisAntiga').textContent = f.maisAntiga
+        ? fmtDataHora(f.maisAntiga) + ' (há ' + f.horasEsperando + ' h)' : '—';
+      el('rdUltimoErro').textContent = f.ultimoErro ? 'Último erro: ' + f.ultimoErro : '';
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('btnTestarRede').onclick = function () {
+    var b = el('btnTestarRede');
+    b.disabled = true;
+    el('rdTestado').textContent = 'Testando…';
+    carregarRede().then(function () {
+      el('rdTestado').textContent = 'Testado em ' + fmtDataHora(new Date());
+    }).then(function () { b.disabled = false; });
+  };
+
   window.addEventListener('hashchange', function () {
     navegar(location.hash.replace('#','') || 'inicio');
   });
@@ -691,6 +764,16 @@
       : api('/painel/resumo');
     estado.resumoInicial = null;
     pronto.then(function (d) {
+      /* Zero por falta de acesso é diferente de zero por não haver nada. Sem
+         esta frase, quem foi criado sem vínculo conclui que o sistema quebrou. */
+      var av = el('avisoSemVinculo');
+      if (d.semVinculo) {
+        av.className = 'aviso info';
+        av.textContent = 'Sua conta ainda não está vinculada a nenhuma empresa, ' +
+          'por isso as telas aparecem vazias. Peça ao administrador do gateway ' +
+          'para vincular as empresas que você atende.';
+      } else { av.className = 'aviso'; av.textContent = ''; }
+
       el('mTotal').textContent = d.mes.total;
       el('mTotalNota').textContent = d.mes.total === 1 ? 'nota neste mês' : 'notas neste mês';
       el('mAut').textContent = d.mes.autorizadas;

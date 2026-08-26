@@ -29,13 +29,26 @@ function exigirUsuario(req, res, next) {
 }
 
 /* Empresas que quem chamou pode enxergar.
-   `null` = todas. O chamador PRECISA distinguir null de lista vazia: um usuário
-   sem vínculo enxerga tudo, e tratar isso como "nenhuma" esconderia o sistema
-   inteiro de quem deveria ver tudo. */
+   `null` = todas; lista vazia = nenhuma. O chamador PRECISA distinguir os dois.
+
+   QUEM ENXERGA TUDO É SÓ QUEM ADMINISTRA. Até 26/08/2026 um usuário sem vínculo
+   enxergava todas as empresas, qualquer que fosse o perfil — regra pensada para
+   uma instalação de um CNPJ só. Num escritório com dezenas de clientes, criar um
+   operador e esquecer de vincular dava a ele a vida fiscal da casa inteira, sem
+   nenhum sinal na tela. Agora o vínculo vazio significa o que parece significar:
+   nenhuma empresa.
+
+   admin    → todas (é quem cadastra empresa; sem isso não conseguiria criar a
+              primeira nem enxergar o que acabou de criar)
+   operador → só as vinculadas
+   cliente  → só as vinculadas, e o vínculo é obrigatório no cadastro */
 function empresasVisiveis(req) {
   if (!req.auth) return [];
   if (req.auth.tipo === 'empresa') return [req.auth.empresaId];
-  if (req.auth.tipo === 'usuario') return req.auth.empresasIds; // null = todas
+  if (req.auth.tipo === 'usuario') {
+    if (req.auth.perfil === 'admin') return null;
+    return req.auth.empresasIds || [];
+  }
   return null; // máquina
 }
 

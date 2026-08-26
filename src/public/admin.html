@@ -149,6 +149,7 @@
       <a href="#webhooks" data-tela="webhooks" data-admin hidden><span class="ico">⇄</span> Webhooks</a>
       <a href="#identidade" data-tela="identidade" data-admin hidden><span class="ico">◈</span> Identidade visual</a>
       <a href="#email" data-tela="email" data-admin hidden><span class="ico">✉</span> E-mail e avisos</a>
+      <a href="#rede" data-tela="rede" data-admin hidden><span class="ico">⇅</span> Rede e conexão</a>
       <a href="#manutencao" data-tela="manutencao" data-admin hidden><span class="ico">▤</span> Backup e migração</a>
     </nav>
 
@@ -180,6 +181,7 @@
 
       <!-- ---------------- INÍCIO ---------------- -->
       <section data-tela-conteudo="inicio">
+        <div id="avisoSemVinculo" class="aviso" style="margin-bottom:18px"></div>
         <!-- Aviso de versão nova. Fica antes dos alertas porque uma correção
              de regra da Sefin costuma ser a explicação de uma rejeição que a
              pessoa está vendo logo abaixo. -->
@@ -1320,6 +1322,97 @@
               <button id="btnResumoAgora">Enviar o resumo agora</button>
             </div>
             <div id="emResumoResultado" class="ajuda" style="margin-top:12px"></div>
+          </div>
+        </div>
+      </section>
+
+      <section data-tela-conteudo="rede" hidden>
+        <div class="cartao" style="margin:0 0 18px">
+          <div class="cartao-cab">
+            <h2>Saídas do gateway</h2>
+            <span id="rdSelo" class="selo-status s-neutro">—</span>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:14px">
+              Estas são as duas conversas que o gateway inicia. Se as duas
+              respondem, a parte de rede está resolvida.
+            </div>
+            <div class="tabela-area">
+              <table>
+                <thead><tr><th>Destino</th><th>Endereço</th><th>Situação</th></tr></thead>
+                <tbody id="rdSaidas"></tbody>
+              </table>
+            </div>
+            <div class="linha-botoes" style="margin-top:14px">
+              <button id="btnTestarRede">Testar agora</button>
+              <span class="ajuda" id="rdTestado"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0 0 18px">
+          <div class="cartao-cab"><h2>Porta, IP público e DNS</h2></div>
+          <div class="cartao-corpo">
+            <div class="aviso ok" style="display:block">
+              <strong>Não há nada para configurar aqui — e é de propósito.</strong>
+              Todas as conexões partem desta máquina: o gateway procura a Sefin e
+              procura o portal. Nenhum dos dois inicia conexão para cá, então não
+              existe porta para encaminhar no roteador, nem IP fixo ou DNS para
+              contratar.
+            </div>
+            <div class="ajuda" style="margin-top:12px">
+              Encaminhar porta para "o portal enxergar o gateway" exporia à
+              internet justamente o computador que guarda os certificados A1 e as
+              notas de todos os clientes do escritório — sem resolver nada que o
+              laço de saída já não resolva. Se um dia o portal precisar mesmo
+              alcançar esta máquina, o caminho é mudar a arquitetura de propósito,
+              não abrir uma porta.
+            </div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0 0 18px">
+          <div class="cartao-cab"><h2>Rede do escritório</h2></div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:14px">
+              Isto sim é configuração de rede local: os endereços por onde outro
+              computador do escritório abre o painel. Nada aqui envolve roteador
+              nem internet.
+            </div>
+            <div id="rdEnderecos"></div>
+            <dl class="kv" style="margin-top:14px">
+              <dt>Porta</dt><dd class="mono" id="rdPorta">—</dd>
+              <dt>Aceita conexão da rede</dt><dd id="rdHost">—</dd>
+            </dl>
+            <div class="ajuda" style="margin-top:12px">
+              Se outra máquina não abrir, o que costuma faltar é a regra no
+              firewall do Windows liberando a porta para a rede privada. Para
+              trancar o gateway só neste computador, ponha
+              <span class="mono">HOST=127.0.0.1</span> no <span class="mono">.env</span>.
+            </div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0">
+          <div class="cartao-cab">
+            <h2>Emissão sem internet</h2>
+            <span id="rdFilaSelo" class="selo-status s-neutro">—</span>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:14px">
+              O certificado está nesta máquina, então a nota é
+              <strong>numerada, montada e assinada aqui, sem internet</strong>.
+              Só a entrega à Sefin precisa de linha. Caindo a conexão, a nota
+              entra na fila e sai sozinha quando a linha voltar — o número já
+              está reservado e não se perde.
+            </div>
+            <div id="rdFilaAviso" class="aviso"></div>
+            <dl class="kv">
+              <dt>Esperando conexão</dt><dd id="rdEsperando">—</dd>
+              <dt>Na fila (total)</dt><dd id="rdNaFila">—</dd>
+              <dt>Mais antiga</dt><dd id="rdMaisAntiga">—</dd>
+            </dl>
+            <div class="ajuda" id="rdUltimoErro" style="margin-top:10px"></div>
           </div>
         </div>
       </section>

@@ -32,9 +32,11 @@ const LEASE_SEGUNDOS = Number(process.env.FILA_LEASE_SEGUNDOS || 120);
 let timer = null;
 let rodando = false;
 
-/* Backoff exponencial: 5s, 20s, 45s, 80s... limitado a 10 min. */
-function proximaTentativaSegundos(tentativas) {
-  return Math.min(5 * tentativas * tentativas, 600);
+/* Backoff exponencial: 5s, 20s, 45s, 80s... limitado a 10 min.
+   Para falha de rede o teto é menor: quando a internet volta, ninguém quer
+   esperar mais dez minutos para a nota sair. */
+function proximaTentativaSegundos(tentativas, transitoria) {
+  return Math.min(5 * tentativas * tentativas, transitoria ? 120 : 600);
 }
 
 /**
@@ -66,21 +68,42 @@ async function reivindicar() {
   return r.rows[0] || null;
 }
 
-async function marcarFalha(nota, mensagem) {
-  const desiste = nota.tentativas >= MAX_TENTATIVAS;
+/* Registra a falha e decide se ainda vale insistir.
+ *
+ * `tipo` é o que separa "a Sefin não foi alcançada" de "a Sefin recusou a
+ * credencial". A primeira não é julgamento nenhum sobre a nota, e desistir dela
+ * queima um número da sequência fiscal por causa de um cabo solto — que foi
+ * exatamente o que acontecia com qualquer queda de internet acima de cinco
+ * minutos. Falha transitória fica na fila para sempre; a tela mostra a espera. */
+async function marcarFalha(nota, mensagem, tipo = 'definitiva') {
+  const transitoria = tipo === 'rede' || tipo === 'sefin';
+  const desiste = !transitoria && nota.tentativas >= MAX_TENTATIVAS;
+
+  if (transitoria) {
+    const espera = proximaTentativaSegundos(nota.tentativas, true);
+    await db.query(
+      `UPDATE notas SET ultimo_erro=$2, falha_tipo=$3, bloqueado_ate=NULL,
+              processar_apos = now() + ($4 || ' seconds')::interval, atualizado_em=now()
+       WHERE id=$1`, [nota.id, mensagem, tipo, String(espera)]);
+    console.warn(`[fila] nota ${nota.id} esperando conexão (tentativa ${nota.tentativas}), ` +
+                 `nova tentativa em ${espera}s: ${mensagem}`);
+    return;
+  }
+
   if (desiste) {
     // Esgotou as tentativas: vira 'erro' e sai da fila. A nota NÃO foi
     // confirmada pela Sefin — a numeração reservada fica com esse buraco,
     // que é o comportamento correto (não reaproveitar número de DPS).
     await db.query(
-      `UPDATE notas SET status='erro', ultimo_erro=$2, bloqueado_ate=NULL, atualizado_em=now()
+      `UPDATE notas SET status='erro', ultimo_erro=$2, falha_tipo='definitiva',
+              bloqueado_ate=NULL, atualizado_em=now()
        WHERE id=$1`, [nota.id, mensagem]);
     console.error(`[fila] nota ${nota.id} desistiu após ${nota.tentativas} tentativas: ${mensagem}`);
     await notificar(nota.id);
   } else {
-    const espera = proximaTentativaSegundos(nota.tentativas);
+    const espera = proximaTentativaSegundos(nota.tentativas, false);
     await db.query(
-      `UPDATE notas SET ultimo_erro=$2, bloqueado_ate=NULL,
+      `UPDATE notas SET ultimo_erro=$2, falha_tipo='definitiva', bloqueado_ate=NULL,
               processar_apos = now() + ($3 || ' seconds')::interval, atualizado_em=now()
        WHERE id=$1`, [nota.id, mensagem, String(espera)]);
     console.warn(`[fila] nota ${nota.id} falhou (tentativa ${nota.tentativas}), nova tentativa em ${espera}s: ${mensagem}`);
@@ -90,7 +113,7 @@ async function marcarFalha(nota, mensagem) {
 async function transmitir(nota) {
   const emp = await db.query('SELECT * FROM empresas WHERE id = $1', [nota.empresa_id]);
   if (!emp.rows.length) {
-    return marcarFalha(nota, 'Empresa não encontrada');
+    return marcarFalha(nota, 'Empresa não encontrada', 'definitiva');
   }
   const empresa = emp.rows[0];
 
@@ -98,22 +121,25 @@ async function transmitir(nota) {
   try {
     cert = await carregarCertificadoAtivo(empresa.id);
   } catch (e) {
-    return marcarFalha(nota, 'Certificado: ' + e.message);
+    return marcarFalha(nota, 'Certificado: ' + e.message, 'definitiva');
   }
 
   let resp;
   try {
     resp = await sefin.enviarDps(nota.ambiente || empresa.ambiente, nota.dps_xml, cert);
   } catch (e) {
-    // Falha de rede/transporte: pode ser transitória, então retenta.
-    return marcarFalha(nota, 'Comunicação com a Sefin: ' + e.message);
+    /* Não chegou a falar com a Sefin: DNS, timeout, cabo, roteador reiniciando.
+       A nota está pronta e assinada aqui — só falta a linha. Fica na fila. */
+    return marcarFalha(nota, 'Sem conexão com a Sefin: ' + e.message, 'rede');
   }
 
   const autorizada = resp.status >= 200 && resp.status < 300 && resp.json && resp.json.chaveAcesso;
 
-  // 5xx da Sefin é transitório: retenta em vez de rejeitar a nota.
+  // 5xx da Sefin é transitório: retenta em vez de rejeitar a nota. Em janeiro
+  // de 2026 a Receita reconheceu indisponibilidade do Emissor Nacional por
+  // volume de acesso — dias assim não podem queimar numeração.
   if (!autorizada && resp.status >= 500) {
-    return marcarFalha(nota, `Sefin retornou HTTP ${resp.status}`);
+    return marcarFalha(nota, `A Sefin respondeu HTTP ${resp.status} (indisponível)`, 'sefin');
   }
 
   // 401/403 não são julgamento da nota: são credencial recusada (certificado
@@ -123,7 +149,8 @@ async function transmitir(nota) {
   if (!autorizada && (resp.status === 401 || resp.status === 403)) {
     await db.query(
       `UPDATE notas SET status='erro', ultimo_erro=$2, mensagens=$3,
-              bloqueado_ate=NULL, processar_apos=NULL, atualizado_em=now()
+              falha_tipo='definitiva', bloqueado_ate=NULL, processar_apos=NULL,
+              atualizado_em=now()
        WHERE id=$1`,
       [nota.id,
        `Sefin recusou a credencial (HTTP ${resp.status}). Verifique se o certificado é ICP-Brasil, está válido e se a empresa está habilitada neste ambiente.`,
@@ -136,7 +163,8 @@ async function transmitir(nota) {
 
   await db.query(
     `UPDATE notas SET status=$2, chave_acesso=$3, nfse_xml=$4, mensagens=$5,
-            ultimo_erro=NULL, bloqueado_ate=NULL, processar_apos=NULL, atualizado_em=now()
+            ultimo_erro=NULL, falha_tipo=NULL, bloqueado_ate=NULL,
+            processar_apos=NULL, atualizado_em=now()
      WHERE id=$1`,
     [
       nota.id,
@@ -233,4 +261,6 @@ function parar() {
   if (timer) { clearInterval(timer); timer = null; }
 }
 
-module.exports = { iniciar, parar, processarRodada, reivindicar };
+/* marcarFalha sai exportada porque a queda de internet e o unico caminho
+   que nao da para exercitar de fora sem derrubar a rede da maquina. */
+module.exports = { iniciar, parar, processarRodada, reivindicar, marcarFalha };

@@ -13,9 +13,19 @@ const router = express.Router();
  */
 router.get('/resumo', async (req, res, next) => {
   try {
-    // null = todas as empresas. Cada consulta abaixo repassa isso como $1, e o
-    // `IS NULL OR` deixa o filtro inerte nesse caso.
+    /* null = todas as empresas (só administrador); lista vazia = nenhuma.
+       Cada consulta abaixo repassa isso como $1 no par
+       `$1::int[] IS NULL OR coluna = ANY($1::int[])`: com null o filtro fica
+       inerte, com lista vazia não casa com nada. Os dois casos precisam
+       funcionar — um operador sem vínculo enxerga zero, não tudo. */
     const ids = empresasVisiveis(req);
+
+    /* Tela zerada tem duas causas muito diferentes: não há nada, ou você não
+       tem acesso a nada. Sem distinguir, o operador recém-criado conclui que o
+       sistema está quebrado — e quem pode resolver (o administrador) não fica
+       sabendo. */
+    const semVinculo = Array.isArray(ids) && ids.length === 0 &&
+      req.auth && req.auth.tipo === 'usuario';
     const [notasMes, porStatus, empresas, certificados, ultimas, pendencias] = await Promise.all([
       // Volume e faturamento do mês corrente
       db.query(`
@@ -70,6 +80,7 @@ router.get('/resumo', async (req, res, next) => {
 
     res.json({
       versao: version,
+      semVinculo,
       mes: {
         total: notasMes.rows[0].total,
         autorizadas: notasMes.rows[0].autorizadas,

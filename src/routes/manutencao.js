@@ -79,6 +79,13 @@ router.post('/backup', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* Diagnóstico de rede. De administrador porque mostra os endereços da máquina
+   na rede do escritório. */
+router.get('/rede', async (_req, res, next) => {
+  try { res.json(await require('../services/diagnosticoRede').completo()); }
+  catch (e) { next(e); }
+});
+
 /* ------------------------------------------- cópia para fora da máquina */
 
 router.get('/copias', async (_req, res, next) => {

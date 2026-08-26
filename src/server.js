@@ -183,7 +183,13 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ erro: err.message || 'Erro interno' });
 });
 
-const servidor = app.listen(config.port, () => {
+/* HOST controla de onde o gateway aceita conexão.
+   Sem a variável, ouve em todas as interfaces — que é como sempre funcionou, e
+   é o que permite outra máquina do escritório abrir o painel. Quem quiser
+   trancar no próprio computador põe HOST=127.0.0.1 no .env. Isso é rede local:
+   nada aqui tem a ver com expor o gateway na internet, que o desenho não pede
+   e a tela de Rede explica. */
+const servidor = app.listen(config.port, process.env.HOST || '0.0.0.0', () => {
   console.log(`nfse-gateway ouvindo na porta ${config.port}`);
   // O worker roda no mesmo processo. Como o estado da fila vive no banco e a
   // reivindicação usa FOR UPDATE SKIP LOCKED, subir várias instâncias do
