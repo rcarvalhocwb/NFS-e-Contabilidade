@@ -20,6 +20,7 @@ const painelRouter = require('./routes/painel');
 const atualizacaoRouter = require('./routes/atualizacao');
 const identidadeRouter = require('./routes/identidade');
 const emailRouter = require('./routes/email');
+const ponteRouter = require('./routes/ponte');
 const identidadeServico = require('./services/identidade');
 const obrigacoesRouter = require('./routes/obrigacoes');
 const emissorRouter = require('./routes/emissor');
@@ -166,6 +167,7 @@ app.use('/atualizacao', atualizacaoRouter);
 app.use('/obrigacoes', obrigacoesRouter);
 app.use('/identidade', identidadeRouter);
 app.use('/email', emailRouter);
+app.use('/ponte', ponteRouter);
 app.use('/usuarios', usuariosRouter);
 app.use('/manutencao', manutencaoRouter);
 app.use('/lote', loteRouter);
@@ -195,6 +197,7 @@ const servidor = app.listen(config.port, () => {
   /* Gera as ocorrências de obrigações à frente. Idempotente: rodar de novo não
      duplica nem mexe no que já foi concluído. */
   if (process.env.RESUMO_ATIVO !== 'false') require('./services/resumoPrazos').iniciar();
+  if (process.env.PONTE_ATIVA !== 'false') require('./services/ponteNuvem').iniciar();
 
   require('./services/obrigacoes').gerar({ meses: 3 })
     .then(r => { if (r.criadas) console.log(`[obrigacoes] ${r.criadas} ocorrência(s) criada(s)`); })

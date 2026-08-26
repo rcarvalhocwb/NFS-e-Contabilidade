@@ -134,6 +134,8 @@
       <a href="/emitir"><span class="ico">◗</span> Emitir por conversa</a>
       <a href="#notas" data-tela="notas"><span class="ico">▦</span> Notas emitidas</a>
       <a href="#lotes" data-tela="lotes"><span class="ico">▤</span> Emissão em lote</a>
+      <a href="#portal" data-tela="portal"><span class="ico">☁</span> Portal do cliente
+        <span class="selo-status s-alerta sem-ponto" id="seloFila" hidden></span></a>
       <a href="#relatorios" data-tela="relatorios"><span class="ico">◲</span> Relatórios</a>
 
       <div class="menu-grupo">Cadastros</div>
@@ -847,6 +849,110 @@
       </section>
 
       <!-- ---------------- RELATÓRIOS ---------------- -->
+
+      <section data-tela-conteudo="portal" hidden>
+        <div class="cartao" style="margin:0 0 18px" data-admin hidden>
+          <div class="cartao-cab">
+            <h2>Ligação com o portal</h2>
+            <span id="ptEstado" class="selo-status s-neutro"></span>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:16px">
+              O cliente pede a nota pelo site; quem emite é este computador, com
+              o certificado que já está aqui.
+              <strong>Quem procura é sempre o gateway</strong> — ele busca as
+              solicitações no portal de tempos em tempos. O portal nunca alcança
+              esta máquina, então não é preciso abrir porta no roteador nem
+              expor o computador do escritório na internet.
+            </div>
+
+            <div class="grade c2" style="margin-bottom:16px">
+              <div>
+                <label for="ptUrl">Endereço do portal</label>
+                <input id="ptUrl" maxlength="300" placeholder="https://portal.exemplo.com.br/api"
+                       autocomplete="off">
+                <div class="ajuda">Precisa ser https: as solicitações levam CNPJ,
+                  valores e descrição de serviço.</div>
+              </div>
+              <div>
+                <label for="ptChave">Chave desta instalação</label>
+                <input id="ptChave" type="password" autocomplete="new-password"
+                       placeholder="deixe em branco para manter a atual">
+                <div class="ajuda" id="ptChaveEstado"></div>
+              </div>
+            </div>
+
+            <div class="grade c3">
+              <div><label for="ptIntervalo">Procurar a cada</label>
+                <select id="ptIntervalo">
+                  <option value="30">30 segundos</option>
+                  <option value="60">1 minuto</option>
+                  <option value="300">5 minutos</option>
+                  <option value="900">15 minutos</option>
+                  <option value="3600">1 hora</option>
+                </select></div>
+              <div><label for="ptLote">Trazer por vez</label>
+                <input id="ptLote" type="number" min="1" max="100" value="10">
+                <div class="ajuda">Teto por rodada.</div></div>
+              <div><label for="ptUltimo">Último contato</label>
+                <input id="ptUltimo" readonly class="mono"></div>
+            </div>
+
+            <label style="display:flex;align-items:center;gap:9px;margin-top:16px;font-weight:400">
+              <input type="checkbox" id="ptAtivo" style="width:auto">
+              Manter a ligação ativa
+            </label>
+            <label style="display:flex;align-items:center;gap:9px;margin-top:10px;font-weight:400">
+              <input type="checkbox" id="ptAuto" style="width:auto">
+              Emitir sem esperar aprovação
+            </label>
+            <div class="ajuda" style="margin-top:6px">
+              Desligado, cada pedido espera alguém do escritório aprovar aqui embaixo.
+              Ligado, a nota sai sozinha assim que chega — com valor fiscal e imposto,
+              sem ninguém conferir.
+            </div>
+
+            <div class="linha-botoes" style="margin-top:18px">
+              <button class="primario" id="btnSalvarPonte">Salvar</button>
+              <button id="btnTestarPonte">Procurar agora</button>
+            </div>
+            <div id="ptResultado" class="ajuda" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0">
+          <div class="cartao-cab">
+            <h2>Solicitações</h2>
+            <div class="linha-botoes" style="margin:0">
+              <select id="ptFiltro" style="max-width:200px">
+                <option value="aguardando">Esperando aprovação</option>
+                <option value="">Todas</option>
+                <option value="emitida">Emitidas</option>
+                <option value="recusada">Recusadas</option>
+                <option value="erro">Com erro</option>
+              </select>
+              <button id="btnRecarregarPonte">Atualizar</button>
+            </div>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr>
+                  <th>Chegou</th><th>Empresa</th><th>Tomador</th>
+                  <th>Valor</th><th>Situação</th><th></th>
+                </tr></thead>
+                <tbody id="ptLista"></tbody>
+              </table>
+            </div>
+            <div id="ptVazio" class="vazio" hidden>
+              <div class="icone">☁</div>
+              <div class="titulo">Nenhuma solicitação</div>
+              <div>Quando um cliente pedir uma nota pelo site, ela aparece aqui.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section data-tela-conteudo="relatorios" hidden>
         <div class="cartao">
           <div class="cartao-cab"><h2>Período</h2></div>

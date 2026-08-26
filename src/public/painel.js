@@ -20,6 +20,9 @@
     });
   }
   function digitos(v) { return String(v || '').replace(/\D/g, ''); }
+  /* O perfil sai do estado, não de uma variável local de abrirPainel: as
+     telas carregam a qualquer momento, e uma delas já tentou ler a local. */
+  function souAdmin() { return !!(estado.usuario && estado.usuario.perfil === 'admin'); }
   /* CNPJ aceita letra desde julho/2026 — limpar com /\D/g apagaria o documento. */
   function docLimpo(v) { return String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, ''); }
   function fmtDoc(v) {
@@ -166,7 +169,7 @@
   /* Entrou: monta a interface conforme o perfil e o escopo do usuário. */
   function abrirPainel(usuario) {
     estado.usuario = usuario;
-    var ehAdmin = usuario.perfil === 'admin';
+    var ehAdmin = souAdmin();
 
     el('btnMinhaConta').textContent = usuario.nome;
     el('btnMinhaConta').title = usuario.email + ' · trocar minha senha';
@@ -311,7 +314,8 @@
     identidade:  { titulo:'Identidade visual', sub:'A marca do escritório no painel e nos relatórios', carregar: carregarIdentidade },
     manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: function () { carregarManutencao(); carregarAtualizacao(); } },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
-    webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks }
+    webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks },
+    portal:      { titulo:'Portal do cliente', sub:'Pedidos de nota que chegam pelo site', carregar: carregarPonte }
   };
 
   function navegar(tela) {
@@ -329,6 +333,169 @@
     el('sidebar').classList.remove('aberta');
     if (TELAS[tela].carregar) TELAS[tela].carregar();
   }
+
+
+  /* --------------------------------------------------- portal do cliente */
+
+  /* A tela tem dois donos. A configuração é do administrador: endereço, chave
+     e o modo de emissão, que valem para o escritório inteiro. A fila é de quem
+     opera — e cada um só enxerga as solicitações das empresas às quais está
+     vinculado, porque a rota filtra pelo escopo antes de responder. */
+
+  var SITUACAO = {
+    aguardando: ['s-alerta', 'Esperando aprovação'],
+    aprovada:   ['s-info',   'Aprovada, emitindo'],
+    emitida:    ['s-ok',     'Emitida'],
+    recusada:   ['s-neutro', 'Recusada'],
+    erro:       ['s-erro',   'Com erro']
+  };
+
+  function valorDaSolicitacao(p) {
+    var v = p && p.valores;
+    if (!v) return null;
+    return v.valorServico != null ? v.valorServico : v.vServ;
+  }
+
+  function nomeDoTomador(p) {
+    var t = p && p.tomador;
+    if (!t) return '—';
+    return t.razaoSocial || t.nome || t.cnpj || t.cpf || '—';
+  }
+
+  function carregarPonte() {
+    if (souAdmin()) {
+      api('/ponte/config').then(function (c) {
+        el('ptUrl').value = c.url || '';
+        el('ptIntervalo').value = String(c.intervalo_seg || 60);
+        el('ptLote').value = c.lote || 10;
+        el('ptAtivo').checked = !!c.ativo;
+        el('ptAuto').checked = !!c.emitir_automatico;
+        el('ptChave').value = '';
+        el('ptUltimo').value = c.ultimo_contato ? fmtDataHora(c.ultimo_contato) : 'nunca';
+        el('ptChaveEstado').textContent = c.tem_chave
+          ? 'Uma chave já está guardada. Deixe em branco para mantê-la.'
+          : 'Nenhuma chave guardada.';
+
+        var selo = el('ptEstado');
+        if (!c.ativo) { selo.className = 'selo-status s-neutro'; selo.textContent = 'Desligada'; }
+        else if (c.ultimo_erro) { selo.className = 'selo-status s-erro'; selo.textContent = 'Com erro'; }
+        else if (c.ultimo_contato) { selo.className = 'selo-status s-ok'; selo.textContent = 'Ligada'; }
+        else { selo.className = 'selo-status s-alerta'; selo.textContent = 'Sem contato ainda'; }
+
+        el('ptResultado').textContent = c.ultimo_erro
+          ? 'Última falha em ' + fmtDataHora(c.erro_em) + ': ' + c.ultimo_erro : '';
+      }).catch(function (e) { aviso(e.message, 'erro'); });
+    }
+    listarSolicitacoes();
+  }
+
+  function listarSolicitacoes() {
+    var f = el('ptFiltro').value;
+    return api('/ponte/solicitacoes' + (f ? '?situacao=' + f : '')).then(function (lista) {
+      el('ptVazio').hidden = lista.length > 0;
+      el('ptLista').innerHTML = lista.map(function (s) {
+        var sit = SITUACAO[s.situacao] || ['s-neutro', s.situacao];
+        var v = valorDaSolicitacao(s.payload);
+        var acoes = '';
+        if (s.situacao === 'aguardando' || s.situacao === 'erro') {
+          acoes = '<button class="pequeno primario" data-aprovar="' + s.id + '">' +
+                  (s.situacao === 'erro' ? 'Tentar de novo' : 'Aprovar e emitir') + '</button> ' +
+                  '<button class="pequeno" data-recusar="' + s.id + '">Recusar</button>';
+        } else if (s.chave_acesso) {
+          acoes = '<a class="botao pequeno" href="#notas" data-tela="notas">Ver nota</a>';
+        }
+        var empresa = s.razao_social
+          ? esc(s.razao_social)
+          : '<span class="s-erro">CNPJ ' + esc(s.cnpj_informado || '?') + ' não cadastrado</span>';
+        return '<tr>' +
+          '<td>' + fmtDataHora(s.recebida_em) + '</td>' +
+          '<td>' + empresa + '</td>' +
+          '<td>' + esc(nomeDoTomador(s.payload)) + '</td>' +
+          '<td>' + (v != null ? fmtMoeda(v) : '—') + '</td>' +
+          '<td><span class="selo-status ' + sit[0] + '">' + sit[1] + '</span>' +
+              (s.motivo ? '<div class="ajuda">' + esc(s.motivo) + '</div>' : '') +
+              (s.serie ? '<div class="ajuda mono">' + esc(s.serie) + '/' + esc(String(s.numero)) + '</div>' : '') +
+          '</td>' +
+          '<td>' + acoes + '</td>' +
+        '</tr>';
+      }).join('');
+      atualizarSeloFila();
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  /* O número no menu existe para o pedido não ficar esperando sem ninguém
+     saber. Sem ele, a fila só apareceria para quem abrisse a tela. */
+  function atualizarSeloFila() {
+    return api('/ponte/solicitacoes?situacao=aguardando&limite=200').then(function (l) {
+      var selo = el('seloFila');
+      selo.hidden = l.length === 0;
+      selo.textContent = l.length;
+    }).catch(function () { /* menu não é lugar de mostrar erro de rede */ });
+  }
+
+  el('ptFiltro').onchange = listarSolicitacoes;
+  el('btnRecarregarPonte').onclick = listarSolicitacoes;
+
+  el('ptLista').onclick = function (ev) {
+    var b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.aprovar) aprovarSolicitacao(b.dataset.aprovar, b);
+    if (b.dataset.recusar) recusarSolicitacao(b.dataset.recusar);
+  };
+
+  function aprovarSolicitacao(id, botao) {
+    if (!confirm('Emitir a nota desta solicitação?\n\n' +
+                 'A nota vai para a Sefin com valor fiscal. Confira empresa, ' +
+                 'tomador e valor antes de continuar.')) return;
+    botao.disabled = true;
+    api('/ponte/solicitacoes/' + id + '/aprovar', { method: 'POST' })
+      .then(function () { aviso('Solicitação aprovada; a nota entrou na fila.', 'ok'); })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(listarSolicitacoes);
+  }
+
+  function recusarSolicitacao(id) {
+    var motivo = prompt('Por que está recusando?\n\nO motivo volta para o cliente no portal.');
+    if (!motivo) return;
+    api('/ponte/solicitacoes/' + id + '/recusar',
+        { method: 'POST', body: JSON.stringify({ motivo: motivo }) })
+      .then(function () { aviso('Solicitação recusada.', 'ok'); })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(listarSolicitacoes);
+  }
+
+  el('btnSalvarPonte').onclick = function () {
+    var b = el('btnSalvarPonte');
+    b.disabled = true;
+    api('/ponte/config', { method: 'PUT', body: JSON.stringify({
+      url: el('ptUrl').value,
+      intervaloSeg: Number(el('ptIntervalo').value),
+      lote: Number(el('ptLote').value),
+      ativo: el('ptAtivo').checked,
+      emitirAutomatico: el('ptAuto').checked,
+      // Vazio mantém a chave guardada, não apaga
+      chave: el('ptChave').value || undefined
+    }) })
+      .then(function () { aviso('Ligação salva.', 'ok'); carregarPonte(); })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
+
+  el('btnTestarPonte').onclick = function () {
+    var b = el('btnTestarPonte');
+    b.disabled = true;
+    el('ptResultado').textContent = 'Procurando…';
+    api('/ponte/sincronizar', { method: 'POST' })
+      .then(function (r) {
+        el('ptResultado').textContent = r.pulado
+          ? 'Nada feito: ' + r.pulado
+          : 'Trouxe ' + r.recebidas + ' (' + r.novas + ' nova(s)), emitiu ' +
+            r.emitidas + ', devolveu ' + r.devolvidas + ' — modo ' + r.modo + '.';
+        carregarPonte();
+      })
+      .catch(function (e) { el('ptResultado').textContent = e.message; })
+      .then(function () { b.disabled = false; });
+  };
 
   window.addEventListener('hashchange', function () {
     navegar(location.hash.replace('#','') || 'inicio');
