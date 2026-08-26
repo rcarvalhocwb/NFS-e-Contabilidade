@@ -8,6 +8,7 @@ const { somenteAdmin, empresasVisiveis, empresaVisivel } = require('../middlewar
 const { extrairValores } = require('../nfse/extrairValores');
 
 const auditoria = require('../services/auditoria');
+const whatsapp = require('../services/contatosWhatsapp');
 
 const router = express.Router();
 
@@ -272,6 +273,49 @@ router.get('/:cnpj/resumo', exigirEmpresaVisivel, async (req, res, next) => {
    Rota própria, e não um campo no meio do cadastro: passar para produção muda
    o que a próxima nota significa — vira documento fiscal e gera imposto. Ter
    endereço próprio deixa a ação explícita e permite exigir a confirmação. */
+/* ------------------------------------------- WhatsApp autorizado da empresa */
+
+router.get('/:cnpj/whatsapp', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) => {
+  try {
+    const e = await db.query('SELECT id FROM empresas WHERE cnpj = $1',
+      [limparCnpj(req.params.cnpj)]);
+    res.json(await whatsapp.listar(e.rows[0].id));
+  } catch (e) { next(e); }
+});
+
+router.post('/:cnpj/whatsapp', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) => {
+  try {
+    const e = await db.query('SELECT id, razao_social FROM empresas WHERE cnpj = $1',
+      [limparCnpj(req.params.cnpj)]);
+    const b = req.body || {};
+    await whatsapp.acrescentar({
+      empresaId: e.rows[0].id, telefone: b.telefone, nome: b.nome,
+      cargo: b.cargo, limiteValor: b.limiteValor
+    });
+    await auditoria.registrar(req, e.rows[0].id, 'empresa.whatsapp',
+      'Autorizou o WhatsApp ' + whatsapp.normalizar(b.telefone) +
+      ' a pedir notas por ' + e.rows[0].razao_social);
+    res.status(201).json(await whatsapp.listar(e.rows[0].id));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ erro: err.message });
+    next(err);
+  }
+});
+
+router.delete('/:cnpj/whatsapp/:id', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) => {
+  try {
+    const e = await db.query('SELECT id FROM empresas WHERE cnpj = $1',
+      [limparCnpj(req.params.cnpj)]);
+    /* O id vem da URL, mas a empresa vem do CNPJ conferido pelo middleware:
+       sem isso, trocar o id apagaria o contato de outra empresa. */
+    await db.query('DELETE FROM contatos_whatsapp WHERE id = $1 AND empresa_id = $2',
+      [req.params.id, e.rows[0].id]);
+    await auditoria.registrar(req, e.rows[0].id, 'empresa.whatsapp',
+      'Removeu um WhatsApp autorizado');
+    res.json(await whatsapp.listar(e.rows[0].id));
+  } catch (err) { next(err); }
+});
+
 /* Quem emite as notas desta empresa, e se o cliente já pode usar o portal.
  *
  * Rota própria, como a de ambiente, e pelo mesmo motivo: são as duas chaves que

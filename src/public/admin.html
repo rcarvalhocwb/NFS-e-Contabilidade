@@ -748,6 +748,42 @@
               </div>
             </div>
 
+            <div class="caixa-amb">
+              <h4>WhatsApp autorizado</h4>
+              <div class="ajuda" style="margin-bottom:12px">
+                Números que podem pedir nota desta empresa pelo WhatsApp.
+                <strong>Um número fala por uma empresa só</strong> — do outro lado
+                não há tela mostrando qual está selecionada. O pedido segue as
+                mesmas regras do portal: a empresa precisa estar liberada acima, e
+                alguém do escritório aprova antes de virar nota.
+              </div>
+              <div class="tabela-area">
+                <table>
+                  <thead><tr>
+                    <th>Número</th><th>Quem é</th><th>Teto por nota</th>
+                    <th>Último uso</th><th></th>
+                  </tr></thead>
+                  <tbody id="waLista"></tbody>
+                </table>
+              </div>
+              <div id="waVazio" class="ajuda" hidden>Nenhum número autorizado.</div>
+              <div class="grade c4" style="margin-top:14px;align-items:end">
+                <div><label for="waTelefone">Número</label>
+                  <input id="waTelefone" maxlength="24" placeholder="(41) 99999-8888"></div>
+                <div><label for="waNome">Nome</label>
+                  <input id="waNome" maxlength="120" placeholder="Maria"></div>
+                <div><label for="waCargo">Cargo</label>
+                  <input id="waCargo" maxlength="80" placeholder="financeiro"></div>
+                <div><label for="waLimite">Teto (R$)</label>
+                  <input id="waLimite" data-moeda placeholder="opcional">
+                  <div class="ajuda">Acima disso, sempre passa por aprovação.</div></div>
+              </div>
+              <div class="linha-botoes" style="margin-top:12px">
+                <button class="pequeno primario" id="btnAddWhatsapp">Autorizar número</button>
+                <span class="ajuda" id="waResultado"></span>
+              </div>
+            </div>
+
             <div class="ajuda" style="margin:16px 0 14px">
               Dados para conectar um sistema externo. O token identifica
               <strong>a empresa e o ambiente</strong>.
@@ -1875,6 +1911,7 @@
   </form>
 </div></dialog>
 
+<script src="/assets/valorbr.js"></script>
 <script src="/assets/painel.js"></script>
 </body>
 </html>

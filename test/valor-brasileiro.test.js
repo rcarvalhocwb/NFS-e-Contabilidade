@@ -17,14 +17,29 @@ const path = require('path');
  * A função vive no navegador; o teste extrai a fonte para que os dois lados
  * não divirjam. */
 
+/* A função mora em valorbr.js, carregado pela tela de emissão e pelo painel.
+   Ficava dentro do nota.js até o painel precisar dela também — duas cópias de
+   regra de dinheiro seriam uma que diverge da outra. */
 function carregar(nome) {
-  const fonte = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'nota.js'), 'utf8');
+  const fonte = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'public', 'valorbr.js'), 'utf8');
   const inicio = fonte.indexOf('function ' + nome);
-  assert.ok(inicio > 0, nome + ' não encontrada');
+  assert.ok(inicio > 0, nome + ' não encontrada em valorbr.js');
   const resto = fonte.slice(inicio);
   const fim = resto.indexOf('\n  }\n');
   return new Function(resto.slice(0, fim + 4) + '; return ' + nome + ';')();
 }
+
+test('as duas telas carregam o mesmo arquivo de valores', () => {
+  /* Se uma delas parar de carregar, parseValorBR vira undefined ali e o campo
+     de dinheiro quebra sem erro visível. */
+  for (const pagina of ['nota.html', 'admin.html']) {
+    const html = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'public', pagina), 'utf8');
+    assert.match(html, /<script src="\/assets\/valorbr\.js"><\/script>/,
+      pagina + ' precisa carregar valorbr.js');
+  }
+});
 
 const parseValorBR = carregar('parseValorBR');
 

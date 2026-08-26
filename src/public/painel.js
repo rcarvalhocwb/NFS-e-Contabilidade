@@ -23,6 +23,8 @@
   /* O perfil sai do estado, não de uma variável local de abrirPainel: as
      telas carregam a qualquer momento, e uma delas já tentou ler a local. */
   function souAdmin() { return !!(estado.usuario && estado.usuario.perfil === 'admin'); }
+  /* Leitura de dinheiro em formato brasileiro, de valorbr.js. */
+  var parseValorBR = window.parseValorBR;
   /* CNPJ aceita letra desde julho/2026 — limpar com /\D/g apagaria o documento. */
   function docLimpo(v) { return String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, ''); }
   function fmtDoc(v) {
@@ -413,9 +415,15 @@
         var empresa = s.razao_social
           ? esc(s.razao_social)
           : '<span class="s-erro">CNPJ ' + esc(s.cnpj_informado || '?') + ' não cadastrado</span>';
+        /* De onde veio o pedido importa na hora de aprovar: no WhatsApp a
+           identidade é o número, e o contador precisa saber disso. */
+        var origem = s.origem === 'whatsapp'
+          ? '<div class="ajuda">WhatsApp ' + esc(fmtTelefone(s.remetente)) + '</div>'
+          : (s.origem && s.origem !== 'portal'
+              ? '<div class="ajuda">' + esc(s.origem) + '</div>' : '');
         return '<tr>' +
           '<td>' + fmtDataHora(s.recebida_em) + '</td>' +
-          '<td>' + empresa + '</td>' +
+          '<td>' + empresa + origem + '</td>' +
           '<td>' + esc(nomeDoTomador(s.payload)) + '</td>' +
           '<td>' + (v != null ? fmtMoeda(v) : '—') + '</td>' +
           '<td><span class="selo-status ' + sit[0] + '">' + sit[1] + '</span>' +
@@ -749,6 +757,79 @@
     carregarRede().then(function () {
       el('rdTestado').textContent = 'Testado em ' + fmtDataHora(new Date());
     }).then(function () { b.disabled = false; });
+  };
+
+
+  /* ------------------------------------------------- WhatsApp por empresa */
+
+  /* O gateway não fala com o WhatsApp: a API da Meta entrega por webhook, num
+     endereço público, e esta máquina não recebe conexão de fora. O que se
+     cadastra aqui é só quem pode pedir por qual CNPJ — a mensagem chega pela
+     mesma fila do portal, com a origem marcada. */
+
+  function carregarWhatsapp() {
+    if (!estado.editando) return Promise.resolve();
+    return api('/empresas/' + estado.editando + '/whatsapp').then(mostrarWhatsapp)
+      .catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  function mostrarWhatsapp(lista) {
+    el('waVazio').hidden = lista.length > 0;
+    el('waLista').innerHTML = lista.map(function (c) {
+      return '<tr>' +
+        '<td><span class="mono">' + esc(fmtTelefone(c.telefone)) + '</span></td>' +
+        '<td>' + esc(c.nome || '—') +
+          (c.cargo ? '<div class="ajuda">' + esc(c.cargo) + '</div>' : '') + '</td>' +
+        '<td>' + (c.limite_valor == null ? 'sem teto' : fmtMoeda(c.limite_valor)) + '</td>' +
+        '<td>' + (c.ultimo_uso ? fmtDataHora(c.ultimo_uso) : 'nunca') + '</td>' +
+        '<td><button class="pequeno perigo" data-remover-wa="' + c.id + '">Remover</button></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  /* 5541999998888 é ilegível para quem confere. */
+  function fmtTelefone(t) {
+    var d = String(t || '');
+    if (d.length === 13 && d.indexOf('55') === 0) {
+      return '(' + d.slice(2,4) + ') ' + d.slice(4,9) + '-' + d.slice(9);
+    }
+    if (d.length === 12 && d.indexOf('55') === 0) {
+      return '(' + d.slice(2,4) + ') ' + d.slice(4,8) + '-' + d.slice(8);
+    }
+    return '+' + d;
+  }
+
+  el('waLista').onclick = function (ev) {
+    var b = ev.target.closest('button');
+    if (!b || !b.dataset.removerWa) return;
+    if (!confirm('Remover este número? Ele deixa de conseguir pedir notas.')) return;
+    api('/empresas/' + estado.editando + '/whatsapp/' + b.dataset.removerWa,
+        { method: 'DELETE' })
+      .then(mostrarWhatsapp)
+      .catch(function (e) { aviso(e.message, 'erro'); });
+  };
+
+  el('btnAddWhatsapp').onclick = function () {
+    var b = el('btnAddWhatsapp');
+    b.disabled = true;
+    el('waResultado').textContent = '';
+    api('/empresas/' + estado.editando + '/whatsapp', {
+      method: 'POST',
+      body: JSON.stringify({
+        telefone: el('waTelefone').value,
+        nome: el('waNome').value,
+        cargo: el('waCargo').value,
+        limiteValor: parseValorBR(el('waLimite').value)
+      })
+    })
+      .then(function (lista) {
+        mostrarWhatsapp(lista);
+        el('waTelefone').value = ''; el('waNome').value = '';
+        el('waCargo').value = ''; el('waLimite').value = '';
+        aviso('Número autorizado.', 'ok');
+      })
+      .catch(function (e) { el('waResultado').textContent = e.message; })
+      .then(function () { b.disabled = false; });
   };
 
   window.addEventListener('hashchange', function () {
@@ -1797,6 +1878,7 @@
       el('f_contador').value = e.contador_doc || '';
       el('f_email_tom').value = e.email_tomador_ativo ? 'true' : 'false';
       preencherPortalEmpresa(e);
+      carregarWhatsapp();
 
       var lista = estado.empresas.filter(function (x) { return x.cnpj === cnpj; })[0];
       el('certAtual').innerHTML = 'Certificado atual: ' +

@@ -29,30 +29,10 @@
    *                      caso contrário é decimal (aceita "1234.56" colado de
    *                      planilha em inglês)
    */
-  function parseValorBR(texto) {
-    var v = String(texto == null ? '' : texto).trim().replace(/\s|R\$| /g, '');
-    if (v === '') return undefined;
-
-    var negativo = /^-/.test(v);
-    v = v.replace(/^[+-]/, '');
-    if (!/^[\d.,]+$/.test(v)) return NaN;
-
-    if (v.indexOf(',') >= 0) {
-      // Mais de uma vírgula não é número, é engano de digitação
-      if (v.split(',').length > 2) return NaN;
-      v = v.replace(/\./g, '').replace(',', '.');
-    } else if (v.indexOf('.') >= 0) {
-      var grupos = v.split('.');
-      var ultimo = grupos[grupos.length - 1];
-      var milhar = ultimo.length === 3 &&
-                   (grupos.length > 2 || grupos[0].length <= 3);
-      if (milhar) v = grupos.join('');
-    }
-
-    var n = Number(v);
-    if (!isFinite(n)) return NaN;
-    return negativo ? -n : n;
-  }
+  /* parseValorBR vem de valorbr.js, carregado antes deste arquivo: a mesma
+     regra de dinheiro vale para a tela de emissão e para o painel, e duas
+     cópias seriam uma que diverge da outra. */
+  var parseValorBR = window.parseValorBR;
 
   /* Escreve de volta no formato brasileiro, para a pessoa conferir o que o
      sistema entendeu — é o retorno visual que faltava. */

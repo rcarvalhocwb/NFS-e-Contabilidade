@@ -31,6 +31,9 @@ const db = require('../db');
 const config = require('../config');
 const { encrypt, decrypt } = require('../secretbox');
 const auditoria = require('./auditoria');
+const whatsapp = require('./contatosWhatsapp');
+
+const ORIGENS = ['portal', 'whatsapp', 'api'];
 
 const TIMEOUT_MS = 20000;
 let timer = null;
@@ -198,13 +201,43 @@ async function guardar(lista) {
         'A contabilidade ainda não liberou a emissão pelo portal para esta empresa.';
     }
 
+    /* Pedido vindo do WhatsApp: o número é a identidade, e ele precisa estar
+       autorizado a falar por AQUELA empresa. Sem esta conferência, bastaria
+       mandar outro CNPJ no payload para pedir nota por qualquer cliente da
+       casa — o número identifica, mas quem decide o escopo é o cadastro. */
+    const origem = ORIGENS.includes(s.origem) ? s.origem : 'portal';
+    const remetente = s.remetente ? String(s.remetente).slice(0, 60) : null;
+
+    if (origem === 'whatsapp' && situacao === 'aguardando') {
+      const contato = await whatsapp.resolver(remetente);
+      if (!contato) {
+        situacao = 'recusada';
+        motivo = 'Este número não está autorizado a pedir notas. ' +
+                 'Fale com a contabilidade para cadastrá-lo.';
+      } else if (Number(contato.empresa_id) !== Number(e.id)) {
+        situacao = 'recusada';
+        motivo = 'Este número pede notas por outra empresa.';
+      } else {
+        const valor = (s.valores || {}).valorServico;
+        if (whatsapp.acimaDoTeto(contato, valor)) {
+          /* Não recusa: só garante que passe por gente. O teto existe para dar
+             corda curta a quem emite valores rotineiros, não para barrar. */
+          motivo = 'Acima do teto combinado para este número (' +
+            contato.limite_valor.toFixed(2).replace('.', ',') + ') — confira antes de aprovar.';
+        }
+        await db.query(
+          'UPDATE contatos_whatsapp SET ultimo_uso = now() WHERE id = $1', [contato.id]);
+      }
+    }
+
     const r = await db.query(
-      `INSERT INTO solicitacoes (id_externo, empresa_id, cnpj_informado, payload, situacao, motivo)
-       VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO solicitacoes (id_externo, empresa_id, cnpj_informado, payload,
+                                 situacao, motivo, origem, remetente)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        ON CONFLICT (id_externo) DO NOTHING
        RETURNING id`,
       [String(s.id).slice(0, 80), e ? e.id : null, cnpj || null,
-       JSON.stringify(s), situacao, motivo]);
+       JSON.stringify(s), situacao, motivo, origem, remetente]);
     novas += r.rowCount;
   }
   return novas;
