@@ -30,3 +30,10 @@ atualizacoes/
 
 # artefatos de análise gerados durante o desenvolvimento
 .artefatos/
+
+# scripts descartáveis de edição
+.patch.py
+.p.py
+.p2.py
+.fix.py
+.e2e-*.js
