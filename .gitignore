@@ -27,3 +27,6 @@ logs/
 .notas-tecnicas/
 versao.iss
 atualizacoes/
+
+# artefatos de análise gerados durante o desenvolvimento
+.artefatos/

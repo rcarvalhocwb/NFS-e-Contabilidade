@@ -175,18 +175,35 @@ async function guardar(lista) {
     if (!s || !s.id) continue;
     const cnpj = String(s.cnpjEmpresa || '').replace(/[^0-9A-Za-z]/g, '');
     const emp = cnpj
-      ? await db.query('SELECT id FROM empresas WHERE cnpj = $1 AND ativo', [cnpj])
+      ? await db.query(
+          `SELECT id, portal_liberado, portal_motivo
+             FROM empresas WHERE cnpj = $1 AND ativo`, [cnpj])
       : { rows: [] };
+    const e = emp.rows[0];
+
+    /* Três desfechos possíveis na chegada, e cada um com o motivo escrito.
+       A trava é conferida AQUI, e não no portal: o portal pode até esconder o
+       botão, mas quem responde pela nota é este lado — e uma solicitação que
+       chegou por caminho torto não pode virar documento fiscal só porque a
+       tela de lá deixou passar. */
+    let situacao = 'aguardando';
+    let motivo = null;
+    if (!e) {
+      situacao = 'erro';
+      motivo = `Nenhuma empresa ativa com o CNPJ ${cnpj || '(não informado)'}.`;
+    } else if (!e.portal_liberado) {
+      situacao = 'recusada';
+      motivo = e.portal_motivo ||
+        'A contabilidade ainda não liberou a emissão pelo portal para esta empresa.';
+    }
 
     const r = await db.query(
       `INSERT INTO solicitacoes (id_externo, empresa_id, cnpj_informado, payload, situacao, motivo)
        VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (id_externo) DO NOTHING
        RETURNING id`,
-      [String(s.id).slice(0, 80), emp.rows[0] ? emp.rows[0].id : null, cnpj || null,
-       JSON.stringify(s),
-       emp.rows[0] ? 'aguardando' : 'erro',
-       emp.rows[0] ? null : `Nenhuma empresa ativa com o CNPJ ${cnpj || '(não informado)'}.`]);
+      [String(s.id).slice(0, 80), e ? e.id : null, cnpj || null,
+       JSON.stringify(s), situacao, motivo]);
     novas += r.rowCount;
   }
   return novas;

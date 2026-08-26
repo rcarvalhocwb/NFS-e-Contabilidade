@@ -711,7 +711,42 @@
           </div>
 
           <div class="painel-aba" id="aba-integracao">
-            <div class="ajuda" style="margin-bottom:14px">
+            <div class="caixa-amb" style="margin-top:0">
+              <h4>Portal do cliente</h4>
+              <div class="ajuda" style="margin-bottom:12px">
+                Enquanto estiver bloqueado, o pedido que o cliente fizer no
+                portal é recusado e ele lê o motivo na tela dele. Libere depois
+                de conferir código de tributação, alíquota e a lista de serviços
+                — nota emitida com parâmetro errado sai válida e dá trabalho
+                para desfazer.
+              </div>
+              <div class="grade c2" style="align-items:start">
+                <div>
+                  <label for="empModoEmissao">Quem emite as notas</label>
+                  <select id="empModoEmissao">
+                    <option value="gateway">O escritório, por aqui</option>
+                    <option value="portal">O cliente, pelo portal</option>
+                  </select>
+                  <div class="ajuda" id="empModoAjuda"></div>
+                </div>
+                <div>
+                  <label for="empPortalMotivo">Motivo do bloqueio</label>
+                  <input id="empPortalMotivo" maxlength="200"
+                         placeholder="o que falta para liberar">
+                  <div class="ajuda">Some quando o portal é liberado.</div>
+                </div>
+              </div>
+              <label style="display:flex;align-items:center;gap:9px;margin-top:14px;font-weight:400">
+                <input type="checkbox" id="empPortalLiberado" style="width:auto">
+                Liberado para usar o portal
+              </label>
+              <div class="linha-botoes" style="margin-top:14px">
+                <button class="pequeno primario" id="btnSalvarPortalEmp">Salvar</button>
+                <span class="ajuda" id="empPortalEstado"></span>
+              </div>
+            </div>
+
+            <div class="ajuda" style="margin:16px 0 14px">
               Dados para conectar um sistema externo. O token identifica
               <strong>a empresa e o ambiente</strong>.
             </div>

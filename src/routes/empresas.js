@@ -272,6 +272,73 @@ router.get('/:cnpj/resumo', exigirEmpresaVisivel, async (req, res, next) => {
    Rota própria, e não um campo no meio do cadastro: passar para produção muda
    o que a próxima nota significa — vira documento fiscal e gera imposto. Ter
    endereço próprio deixa a ação explícita e permite exigir a confirmação. */
+/* Quem emite as notas desta empresa, e se o cliente já pode usar o portal.
+ *
+ * Rota própria, como a de ambiente, e pelo mesmo motivo: são as duas chaves que
+ * mudam o que acontece no mundo real, e passar despercebido dentro de um PUT de
+ * cadastro seria fácil demais. Aqui a mudança é deliberada e fica na auditoria.
+ */
+router.put('/:cnpj/portal', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const campos = [];
+    const valores = [limparCnpj(req.params.cnpj)];
+    const põe = (coluna, valor) => {
+      valores.push(valor);
+      campos.push(`${coluna} = $${valores.length}`);
+    };
+
+    if (b.modoEmissao !== undefined) {
+      if (!['gateway', 'portal'].includes(b.modoEmissao)) {
+        return res.status(400).json({ erro: "modoEmissao deve ser 'gateway' ou 'portal'" });
+      }
+      /* Trocar o lado que emite move junto a numeração e a custódia do
+         certificado — não é um campo de cadastro. Enquanto o outro lado não
+         existir, o gateway não deixa a empresa ficar sem emissor. */
+      if (b.modoEmissao === 'portal') {
+        return res.status(422).json({
+          erro: 'Emissão pelo portal ainda não está disponível: exige mover para lá o ' +
+                'certificado e a numeração desta empresa, e o portal ainda não foi construído. ' +
+                'Por enquanto o escritório emite, e o cliente solicita.'
+        });
+      }
+      põe('modo_emissao', b.modoEmissao);
+    }
+
+    if (b.liberado !== undefined) {
+      põe('portal_liberado', !!b.liberado);
+      // Liberado não carrega motivo; bloqueado sem motivo ganha um padrão,
+      // porque o texto volta para o cliente na tela dele.
+      põe('portal_motivo', b.liberado ? null :
+        (b.motivo || 'A contabilidade ainda não liberou a emissão pelo portal para esta empresa.'));
+      põe('portal_decidido_por', auditoria.autorDe(req).autor);
+      põe('portal_decidido_em', new Date());
+    }
+
+    if (!campos.length) {
+      return res.status(400).json({ erro: 'Nada para alterar.' });
+    }
+
+    const r = await db.query(
+      `UPDATE empresas SET ${campos.join(', ')}, atualizado_em = now()
+        WHERE cnpj = $1
+        RETURNING id, cnpj, razao_social, modo_emissao, portal_liberado,
+                  portal_motivo, portal_decidido_por, portal_decidido_em`, valores);
+    if (!r.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });
+
+    const e = r.rows[0];
+    await auditoria.registrar(req, e.id, 'empresa.portal',
+      b.liberado === undefined
+        ? `Definiu a emissão de ${e.razao_social} como "${e.modo_emissao}"`
+        : (e.portal_liberado
+            ? `Liberou o portal para ${e.razao_social}`
+            : `Bloqueou o portal para ${e.razao_social} — ${e.portal_motivo}`),
+      { detalhe: { modo: e.modo_emissao, liberado: e.portal_liberado } });
+
+    res.json(e);
+  } catch (e) { next(e); }
+});
+
 router.put('/:cnpj/ambiente', somenteAdmin, exigirEmpresaVisivel, async (req, res, next) => {
   try {
     const b = req.body || {};

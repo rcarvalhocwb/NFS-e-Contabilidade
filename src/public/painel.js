@@ -497,6 +497,56 @@
       .then(function () { b.disabled = false; });
   };
 
+
+  /* ------------------------------------------- portal, na ficha da empresa */
+
+  /* Salvo por rota própria, e não junto com o "Salvar empresa": liberar o
+     portal muda o que o cliente consegue fazer lá fora, e isso não devia sair
+     de carona num salvamento de cadastro. */
+
+  function preencherPortalEmpresa(e) {
+    el('empModoEmissao').value = e.modo_emissao || 'gateway';
+    el('empPortalLiberado').checked = !!e.portal_liberado;
+    el('empPortalMotivo').value = e.portal_liberado ? '' : (e.portal_motivo || '');
+    el('empModoAjuda').textContent = (e.modo_emissao === 'portal')
+      ? 'O certificado e a numeração desta empresa ficam no portal.'
+      : 'O certificado e a numeração ficam nesta máquina. O cliente solicita; o escritório emite.';
+    el('empPortalEstado').textContent = e.portal_decidido_em
+      ? (e.portal_liberado ? 'Liberado' : 'Bloqueado') + ' em ' +
+        fmtDataHora(e.portal_decidido_em) + ' por ' + (e.portal_decidido_por || '—')
+      : '';
+    atualizarMotivoPortal();
+  }
+
+  function atualizarMotivoPortal() {
+    var liberado = el('empPortalLiberado').checked;
+    el('empPortalMotivo').disabled = liberado;
+    if (liberado) el('empPortalMotivo').value = '';
+  }
+  el('empPortalLiberado').onchange = atualizarMotivoPortal;
+
+  el('btnSalvarPortalEmp').onclick = function () {
+    if (!estado.editando) return;
+    var b = el('btnSalvarPortalEmp');
+    b.disabled = true;
+    api('/empresas/' + estado.editando + '/portal', {
+      method: 'PUT',
+      body: JSON.stringify({
+        modoEmissao: el('empModoEmissao').value,
+        liberado: el('empPortalLiberado').checked,
+        motivo: el('empPortalMotivo').value || undefined
+      })
+    })
+      .then(function (e) {
+        preencherPortalEmpresa(e);
+        aviso(e.portal_liberado
+          ? 'Portal liberado para esta empresa.'
+          : 'Portal bloqueado; o cliente vê o motivo.', 'ok');
+      })
+      .catch(function (err) { aviso(err.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
+
   window.addEventListener('hashchange', function () {
     navegar(location.hash.replace('#','') || 'inicio');
   });
@@ -1532,6 +1582,7 @@
       el('f_respcpf').value = e.responsavel_cpf || '';
       el('f_contador').value = e.contador_doc || '';
       el('f_email_tom').value = e.email_tomador_ativo ? 'true' : 'false';
+      preencherPortalEmpresa(e);
 
       var lista = estado.empresas.filter(function (x) { return x.cnpj === cnpj; })[0];
       el('certAtual').innerHTML = 'Certificado atual: ' +
