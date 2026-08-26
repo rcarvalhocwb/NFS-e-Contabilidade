@@ -312,7 +312,7 @@
     agenda:      { titulo:'Agenda do escritório', sub:'Obrigações e prazos dos clientes', carregar: function () { carregarAgenda(); carregarModelos(); } },
     email:       { titulo:'E-mail e avisos', sub:'Envio de notas e resumo de prazos', carregar: carregarEmail },
     identidade:  { titulo:'Identidade visual', sub:'A marca do escritório no painel e nos relatórios', carregar: carregarIdentidade },
-    manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: function () { carregarManutencao(); carregarAtualizacao(); } },
+    manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: function () { carregarManutencao(); carregarAtualizacao(); carregarCopias(); } },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
     webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks },
     portal:      { titulo:'Portal do cliente', sub:'Pedidos de nota que chegam pelo site', carregar: carregarPonte }
@@ -384,6 +384,11 @@
 
         el('ptResultado').textContent = c.ultimo_erro
           ? 'Última falha em ' + fmtDataHora(c.erro_em) + ': ' + c.ultimo_erro : '';
+
+        el('ptCadastroEstado').textContent = c.cadastro_erro
+          ? 'Último envio falhou: ' + c.cadastro_erro
+          : c.cadastro_em ? 'Enviado em ' + fmtDataHora(c.cadastro_em) + '.'
+          : 'Nunca enviado.';
       }).catch(function (e) { aviso(e.message, 'erro'); });
     }
     listarSolicitacoes();
@@ -544,6 +549,132 @@
           : 'Portal bloqueado; o cliente vê o motivo.', 'ok');
       })
       .catch(function (err) { aviso(err.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
+
+
+  /* --------------------------------------------- cópia fora da máquina */
+
+  /* O selo e o aviso existem para a falha aparecer. Um backup que falha em
+     silêncio é pior do que não ter backup: dá segurança falsa, e a conta só
+     chega no dia da restauração. */
+
+  function carregarCopias() {
+    return api('/manutencao/copias').then(function (d) {
+      var selo = el('cpSelo');
+      selo.className = 'selo-status ' +
+        (d.nivel === 'ok' ? 's-ok' : d.nivel === 'alerta' ? 's-alerta' : 's-erro');
+      selo.textContent = d.nivel === 'ok' ? 'Protegido'
+        : d.nivel === 'alerta' ? 'Cópia atrasada' : 'Sem cópia externa';
+
+      var av = el('cpAviso');
+      av.className = 'aviso ' + (d.nivel === 'ok' ? 'ok' : d.nivel === 'alerta' ? 'info' : 'erro');
+      av.textContent = d.texto;
+
+      el('cpVazio').hidden = d.destinos.length > 0;
+      el('cpLista').innerHTML = d.destinos.map(function (x) {
+        var estado = x.ultimo_erro
+          ? '<span class="selo-status s-erro">falhou</span>' +
+            '<div class="ajuda">' + esc(x.ultimo_erro) + '</div>'
+          : x.ultimo_ok
+            ? '<span class="selo-status s-ok">' + fmtDataHora(x.ultimo_ok) + '</span>' +
+              (x.ultimo_arquivo ? '<div class="ajuda mono">' + esc(x.ultimo_arquivo) + '</div>' : '')
+            : '<span class="selo-status s-neutro">nunca</span>';
+        return '<tr>' +
+          '<td><span class="mono">' + esc(x.caminho) + '</span>' +
+            (x.mesmo_disco
+              ? '<div class="ajuda" style="color:var(--erro)">mesmo disco do banco — não protege contra o disco morrer</div>'
+              : '') +
+            (x.ativo ? '' : '<div class="ajuda">desligado</div>') + '</td>' +
+          '<td>' + x.manter + '</td>' +
+          '<td>' + estado + '</td>' +
+          '<td><button class="pequeno" data-copiar-destino="' + x.id + '">Copiar</button> ' +
+              '<button class="pequeno perigo" data-remover-destino="' + x.id + '">Remover</button></td>' +
+        '</tr>';
+      }).join('');
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('cpLista').onclick = function (ev) {
+    var b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.removerDestino) {
+      if (!confirm('Remover este destino? As cópias já gravadas lá continuam onde estão.')) return;
+      api('/manutencao/copias/' + b.dataset.removerDestino, { method: 'DELETE' })
+        .then(function () { aviso('Destino removido.', 'ok'); carregarCopias(); })
+        .catch(function (e) { aviso(e.message, 'erro'); });
+    }
+    if (b.dataset.copiarDestino) copiarBackup(Number(b.dataset.copiarDestino), b);
+  };
+
+  el('btnAddDestino').onclick = function () {
+    var b = el('btnAddDestino');
+    b.disabled = true;
+    api('/manutencao/copias', { method: 'POST', body: JSON.stringify({
+      caminho: el('cpCaminho').value,
+      manter: Number(el('cpManter').value)
+    }) })
+      .then(function () {
+        el('cpCaminho').value = '';
+        aviso('Destino cadastrado e testado.', 'ok');
+        carregarCopias();
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
+
+  function copiarBackup(id, botao) {
+    var b = botao || el('btnCopiarAgora');
+    b.disabled = true;
+    el('cpResultado').textContent = 'Copiando…';
+    api('/manutencao/copias/copiar', { method: 'POST', body: JSON.stringify(id ? { id: id } : {}) })
+      .then(function (r) {
+        var bons = r.destinos.filter(function (d) { return d.ok; }).length;
+        el('cpResultado').textContent = r.destinos.length
+          ? bons + ' de ' + r.destinos.length + ' destino(s) receberam ' +
+            r.arquivo + ' (' + r.registros + ' registros, conferidos no destino).'
+          : 'Nenhum destino ativo para copiar.';
+        carregarCopias();
+      })
+      .catch(function (e) { el('cpResultado').textContent = e.message; })
+      .then(function () { b.disabled = false; });
+  }
+
+  el('btnCopiarAgora').onclick = function () { copiarBackup(null, null); };
+
+
+  /* ------------------------------------------- réplica e perfil de cliente */
+
+  /* O formulário muda de significado conforme o perfil. Uma pessoa do cliente
+     não entra no painel — então não tem senha aqui — e o vínculo com empresa
+     deixa de ser opcional: sem ele, ela enxergaria a vida fiscal de todos os
+     clientes do escritório, num sistema que fica na internet. */
+  function ajustarFormularioPorPerfil() {
+    var ehCliente = el('u_perfil').value === 'cliente';
+    el('u_blocoSenha').hidden = ehCliente;
+    el('u_blocoCargo').hidden = !ehCliente;
+    el('u_perfilAjuda').textContent = ehCliente
+      ? 'Acessa o portal do cliente, nunca este painel. A senha é definida por ela mesma, lá.'
+      : '';
+    el('u_empresasAjuda').textContent = ehCliente
+      ? 'Obrigatório marcar ao menos uma — e ela verá só o que estiver marcado.'
+      : 'Sem nenhuma marcada, o usuário enxerga todas as empresas.';
+    el('u_empresasAjuda').style.color = ehCliente ? 'var(--alerta)' : '';
+  }
+  el('u_perfil').onchange = ajustarFormularioPorPerfil;
+
+  el('btnEnviarCadastro').onclick = function () {
+    var b = el('btnEnviarCadastro');
+    b.disabled = true;
+    el('ptCadastroEstado').textContent = 'Enviando…';
+    api('/ponte/cadastro', { method: 'POST' })
+      .then(function (r) {
+        el('ptCadastroEstado').textContent = r.pulado
+          ? r.pulado
+          : r.empresas + ' empresa(s), ' + r.servicos + ' serviço(s) e ' +
+            r.acessos + ' acesso(s) enviados.';
+      })
+      .catch(function (e) { el('ptCadastroEstado').textContent = e.message; })
       .then(function () { b.disabled = false; });
   };
 
@@ -2520,8 +2651,10 @@
     el('u_senhaAjuda').textContent = u
       ? 'Deixe em branco para manter a senha atual. Ao preencher, a pessoa troca no próximo acesso.'
       : 'Ao menos 8 caracteres. A pessoa troca no primeiro acesso.';
+    el('u_cargo').value = (u && u.cliente_cargo) || '';
     el('usuEncerrar').hidden = !u;
     montarCaixasEmpresa(u ? u.empresas_ids : []);
+    ajustarFormularioPorPerfil();
     el('dlgUsuario').showModal();
   }
 
@@ -2540,16 +2673,28 @@
   el('formUsuario').onsubmit = function (ev) {
     ev.preventDefault();
     var senha = el('u_senha').value;
-    if (!estado.usuarioEditando && !senha) return aviso('Defina uma senha para o novo usuário.', 'erro');
+    var ehCliente = el('u_perfil').value === 'cliente';
+    if (!estado.usuarioEditando && !senha && !ehCliente) {
+      return aviso('Defina uma senha para o novo usuário.', 'erro');
+    }
+
+    var empresas = $$('#u_empresas input:checked').map(function (c) { return Number(c.value); });
+    /* A conferência de verdade é do servidor; esta aqui é para a pessoa não
+       descobrir o problema depois de preencher o formulário inteiro. */
+    if (ehCliente && !empresas.length) {
+      return aviso('Marque ao menos uma empresa: sem vínculo, essa pessoa ' +
+                   'enxergaria todas as empresas do escritório.', 'erro');
+    }
 
     var corpo = {
       nome: el('u_nome').value.trim(),
       email: el('u_email').value.trim(),
       perfil: el('u_perfil').value,
       ativo: el('u_ativo').value === 'true',
-      empresasIds: $$('#u_empresas input:checked').map(function (c) { return Number(c.value); })
+      empresasIds: empresas
     };
-    if (senha) corpo.senha = senha;
+    if (ehCliente) corpo.clienteCargo = el('u_cargo').value.trim() || null;
+    if (senha && !ehCliente) corpo.senha = senha;
 
     var botao = ev.target.querySelector('button[type=submit]');
     botao.disabled = true;

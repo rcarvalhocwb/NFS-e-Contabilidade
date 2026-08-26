@@ -48,28 +48,66 @@ function normalizarEmail(email) {
   return e;
 }
 
-const CAMPOS = 'id, nome, email, perfil, ativo, trocar_senha, ultimo_acesso, criado_em';
+const CAMPOS = 'id, nome, email, perfil, ativo, trocar_senha, ultimo_acesso, criado_em, cliente_cargo';
+
+/* Três perfis, e o terceiro não entra aqui.
+   'cliente' identifica uma pessoa da empresa cliente: existe para ser
+   replicada ao portal, com os CNPJs que ela enxerga, e é barrada no login
+   do painel. A senha dela não mora no gateway — quem guarda o segredo é o
+   portal, onde a pessoa define a própria pelo convite. */
+const PERFIS = ['admin', 'operador', 'cliente'];
+function normalizarPerfil(p) { return PERFIS.includes(p) ? p : 'operador'; }
+
+/* Vínculo vazio significa "enxerga todas as empresas" — regra antiga, pensada
+   para o pessoal do escritório. Para o perfil de cliente ela seria desastrosa:
+   uma pessoa da empresa X cadastrada sem vínculo enxergaria a vida fiscal de
+   todos os clientes da casa, E ESSE CADASTRO É REPLICADO PARA UM PORTAL NA
+   INTERNET. Então aqui o vínculo é obrigatório. */
+function conferirVinculoDeCliente(perfil, empresasIds) {
+  if (perfil !== 'cliente') return;
+  if (!Array.isArray(empresasIds) || !empresasIds.length) {
+    throw Object.assign(new Error(
+      'Uma pessoa do cliente precisa estar vinculada a pelo menos uma empresa. ' +
+      'Sem vínculo, ela enxergaria todas as empresas do escritório.'), { status: 400 });
+  }
+}
+
+/* Senha impossível de adivinhar e que ninguém conhece — nem quem cadastrou.
+   O perfil de cliente não entra no painel do gateway, e a senha do portal é
+   definida lá pela própria pessoa, pelo convite. A coluna existe porque é NOT
+   NULL; o valor não serve para nada, e é assim que tem de ser. */
+function senhaInutilizavel() {
+  return require('crypto').randomBytes(32).toString('hex');
+}
 
 async function existeAlgum() {
   const r = await db.query('SELECT 1 FROM usuarios LIMIT 1');
   return r.rows.length > 0;
 }
 
-async function criar({ nome, email, senha, perfil, empresasIds, trocarSenha }) {
+async function criar({ nome, email, senha, perfil, empresasIds, trocarSenha, clienteCargo }) {
   if (!nome || !String(nome).trim()) {
     throw Object.assign(new Error('nome é obrigatório'), { status: 400 });
   }
   const emailNorm = normalizarEmail(email);
-  validarSenha(senha);
-  const perfilNorm = perfil === 'admin' ? 'admin' : 'operador';
+  const perfilNorm = normalizarPerfil(perfil);
+  conferirVinculoDeCliente(perfilNorm, empresasIds);
+
+  if (perfilNorm === 'cliente') {
+    senha = senhaInutilizavel();
+  } else {
+    validarSenha(senha);
+  }
 
   const cliente = await db.pool.connect();
   try {
     await cliente.query('BEGIN');
     const r = await cliente.query(
-      `INSERT INTO usuarios (nome, email, senha_hash, perfil, trocar_senha)
-       VALUES ($1,$2,$3,$4,$5) RETURNING ${CAMPOS}`,
-      [String(nome).trim(), emailNorm, await gerarHash(senha), perfilNorm, !!trocarSenha]);
+      `INSERT INTO usuarios (nome, email, senha_hash, perfil, trocar_senha, cliente_cargo)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING ${CAMPOS}`,
+      [String(nome).trim(), emailNorm, await gerarHash(senha), perfilNorm,
+       perfilNorm === 'cliente' ? false : !!trocarSenha,
+       perfilNorm === 'cliente' ? (clienteCargo || null) : null]);
 
     await vincularEmpresas(cliente, r.rows[0].id, empresasIds);
     await cliente.query('COMMIT');
@@ -120,7 +158,7 @@ async function empresasDoUsuario(usuarioId) {
   return r.rows.length ? r.rows.map(x => x.empresa_id) : null;
 }
 
-async function atualizar(id, { nome, email, perfil, ativo, empresasIds, senha, trocarSenha }) {
+async function atualizar(id, { nome, email, perfil, ativo, empresasIds, senha, trocarSenha, clienteCargo }) {
   const cliente = await db.pool.connect();
   try {
     await cliente.query('BEGIN');
@@ -131,7 +169,14 @@ async function atualizar(id, { nome, email, perfil, ativo, empresasIds, senha, t
 
     if (nome !== undefined) põe('nome', String(nome).trim());
     if (email !== undefined) põe('email', normalizarEmail(email));
-    if (perfil !== undefined) põe('perfil', perfil === 'admin' ? 'admin' : 'operador');
+    if (clienteCargo !== undefined) põe('cliente_cargo', clienteCargo || null);
+    if (perfil !== undefined) {
+      const p = normalizarPerfil(perfil);
+      /* Virar cliente sem vínculo abriria todas as empresas para alguém que
+         acessa pela internet — a mesma regra do cadastro vale na edição. */
+      conferirVinculoDeCliente(p, empresasIds !== undefined ? empresasIds : await empresasDoUsuario(id));
+      põe('perfil', p);
+    }
     if (ativo !== undefined) põe('ativo', !!ativo);
     if (trocarSenha !== undefined) põe('trocar_senha', !!trocarSenha);
     if (senha !== undefined && senha !== '') {

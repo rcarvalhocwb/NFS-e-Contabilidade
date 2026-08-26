@@ -78,6 +78,7 @@ router.post('/', async (req, res, next) => {
       senha: b.senha,
       perfil: b.perfil,
       empresasIds: b.empresasIds,
+      clienteCargo: b.clienteCargo,
       // Senha definida por outra pessoa é provisória: o dono troca ao entrar
       trocarSenha: b.trocarSenha !== undefined ? b.trocarSenha : true
     }));

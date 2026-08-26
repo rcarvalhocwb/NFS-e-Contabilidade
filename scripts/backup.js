@@ -29,7 +29,9 @@ function argumento(nome) {
   return i !== -1 ? process.argv[i + 1] : undefined;
 }
 
-/* Ordem importa na hora de restaurar: quem é referenciado vem antes. */
+/* Ordem importa na hora de restaurar: quem é referenciado vem antes.
+   Tabela que fica de fora só se descobre no dia da restauração, quando o
+   calendário de obrigações ou a marca do escritório não voltam. */
 const TABELAS = [
   'empresas',
   'certificados',
@@ -41,6 +43,12 @@ const TABELAS = [
   'webhooks',
   'tomadores',
   'servicos',
+  'obrigacao_modelos',
+  'empresa_obrigacoes',
+  'obrigacoes',
+  'identidade',
+  'regra_im_dps',
+  'backup_destinos',
   'notas'
 ];
 

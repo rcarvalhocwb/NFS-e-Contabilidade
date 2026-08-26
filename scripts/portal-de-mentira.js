@@ -14,6 +14,7 @@ const CHAVE = process.env.PORTAL_CHAVE || 'chave-de-teste';
 // A fila que o portal "tem para entregar", e o que voltou do gateway
 const pendentes = new Map();
 const resultados = [];
+let cadastro = null;
 
 function json(res, status, corpo) {
   const texto = JSON.stringify(corpo);
@@ -49,6 +50,20 @@ const servidor = http.createServer((req, res) => {
       json(res, 200, { ok: true });
     });
     return;
+  }
+
+  // Cadastro replicado: o portal guarda o retrato inteiro que chegou
+  if (req.method === 'POST' && u.pathname === '/cadastro') {
+    let corpo = '';
+    req.on('data', (p) => { corpo += p; });
+    req.on('end', () => {
+      try { cadastro = JSON.parse(corpo); } catch (_) { cadastro = { bruto: corpo }; }
+      json(res, 200, { ok: true, versao: cadastro && cadastro.versao });
+    });
+    return;
+  }
+  if (req.method === 'GET' && u.pathname === '/_cadastro') {
+    return json(res, 200, cadastro || {});
   }
 
   // Bocas de controle do teste (o portal de verdade não teria)

@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const { somenteAdmin } = require('../middleware/escopo');
 const registro = require('../services/registro');
+const copia = require('../services/copiaBackup');
+const auditoria = require('../services/auditoria');
 
 const router = express.Router();
 
@@ -62,8 +64,57 @@ router.post('/backup', async (_req, res, next) => {
   try {
     const saida = await rodarScript('backup.js', []);
     const linha = saida.split('\n').find(l => l.includes('registros em')) || '';
-    res.json({ ok: true, resumo: linha.trim(), backups: listarArquivos(/^nfse-backup-.*\.json$/).slice(0, 20) });
+
+    /* Gerar e levar para fora são um gesto só. Separar deixaria o backup de pé
+       na tela com a cópia externa três dias atrasada e ninguém percebendo. */
+    let externa = null;
+    try {
+      externa = await copia.copiar();
+    } catch (e) {
+      externa = { erro: e.message, destinos: [] };
+    }
+
+    res.json({ ok: true, resumo: linha.trim(), externa,
+      backups: listarArquivos(/^nfse-backup-.*\.json$/).slice(0, 20) });
   } catch (e) { next(e); }
+});
+
+/* ------------------------------------------- cópia para fora da máquina */
+
+router.get('/copias', async (_req, res, next) => {
+  try { res.json(await copia.situacao()); } catch (e) { next(e); }
+});
+
+router.post('/copias', async (req, res, next) => {
+  try {
+    const d = await copia.acrescentar(req.body || {});
+    await auditoria.registrar(req, null, 'backup.destino',
+      'Cadastrou o destino de backup ' + (req.body || {}).caminho);
+    res.status(201).json(await copia.situacao());
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    next(e);
+  }
+});
+
+router.delete('/copias/:id', async (req, res, next) => {
+  try {
+    await copia.remover(req.params.id);
+    await auditoria.registrar(req, null, 'backup.destino',
+      'Removeu um destino de backup');
+    res.json(await copia.situacao());
+  } catch (e) { next(e); }
+});
+
+/* Copia agora, sem esperar o backup do dia. É como se confere que o pen drive
+   está conectado e que a pasta de rede responde. */
+router.post('/copias/copiar', async (req, res, next) => {
+  try {
+    res.json(await copia.copiar({ apenas: req.body && req.body.id ? Number(req.body.id) : undefined }));
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    next(e);
+  }
 });
 
 /* Pacote de migração: leva dados E chaves para outra máquina. A senha vai por

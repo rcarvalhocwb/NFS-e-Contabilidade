@@ -56,6 +56,18 @@ function executar() {
     if (codigo === 0) {
       const ultima = saida.trim().split('\n').filter(l => l.includes('registros em')).pop();
       console.log('[backup]', ultima || 'concluído');
+
+      /* Gerado o arquivo, ele precisa sair deste disco. Cópia que fica ao lado
+         do banco não protege contra o disco morrer — que é justamente o que
+         aconteceu em 17/08. */
+      require('./copiaBackup').copiar()
+        .then(r => {
+          const bons = r.destinos.filter(d => d.ok).length;
+          if (r.destinos.length) {
+            console.log(`[backup] cópia externa: ${bons}/${r.destinos.length} destino(s)`);
+          }
+        })
+        .catch(e => console.error('[backup] cópia externa falhou:', e.message));
     } else {
       // Falhar o backup não interrompe nada, mas precisa aparecer: um backup
       // que falha em silêncio é pior que não ter backup, porque dá segurança

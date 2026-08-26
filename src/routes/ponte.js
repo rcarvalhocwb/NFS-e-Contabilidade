@@ -40,6 +40,27 @@ router.post('/sincronizar', somenteAdmin, async (req, res, next) => {
   }
 });
 
+/* Manda o cadastro agora, mesmo sem mudança. Serve para conferir a ligação e
+   para depois de o portal ser restaurado de um backup velho. */
+router.post('/cadastro', somenteAdmin, async (req, res, next) => {
+  try {
+    const r = await require('../services/replicaCadastro').enviar({ forcar: true });
+    await auditoria.registrar(req, null, 'ponte.cadastro',
+      'Enviou o cadastro ao portal: ' + JSON.stringify(r));
+    res.json(r);
+  } catch (e) {
+    res.status(e.status || 502).json({ erro: e.message });
+  }
+});
+
+/* O retrato exatamente como o portal vai recebê-lo. Existe para conferir o que
+   sai daqui antes de ligar a réplica — e para provar que certificado e senha
+   não estão nele. */
+router.get('/cadastro/previa', somenteAdmin, async (_req, res, next) => {
+  try { res.json(await require('../services/replicaCadastro').montar()); }
+  catch (e) { next(e); }
+});
+
 /* ----------------------------------------------------------- solicitações */
 
 router.get('/solicitacoes', async (req, res, next) => {

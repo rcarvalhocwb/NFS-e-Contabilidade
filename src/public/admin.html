@@ -933,6 +933,22 @@
                 <input id="ptUltimo" readonly class="mono"></div>
             </div>
 
+            <div class="caixa-amb" style="margin-top:16px">
+              <h4>Cadastro enviado ao portal</h4>
+              <div class="ajuda" style="margin-bottom:10px">
+                Empresas, serviços e quem acessa cada CNPJ são escritos aqui e
+                copiados para lá. <strong>Um sentido só</strong> — o portal não
+                escreve cadastro de volta. Certificado, senha e token nunca vão
+                junto: a senha do portal é definida lá pela própria pessoa.
+              </div>
+              <div class="linha-botoes">
+                <button id="btnEnviarCadastro">Enviar agora</button>
+                <a class="botao" id="lnkPreviaCadastro" href="/ponte/cadastro/previa"
+                   target="_blank" rel="noopener">Ver o que sai daqui</a>
+                <span class="ajuda" id="ptCadastroEstado"></span>
+              </div>
+            </div>
+
             <label style="display:flex;align-items:center;gap:9px;margin-top:16px;font-weight:400">
               <input type="checkbox" id="ptAtivo" style="width:auto">
               Manter a ligação ativa
@@ -1310,6 +1326,55 @@
 
       <section data-tela-conteudo="manutencao" hidden>
         <div class="cartao" style="margin:0 0 18px">
+          <div class="cartao-cab">
+            <h2>Cópia fora da máquina</h2>
+            <span id="cpSelo" class="selo-status s-neutro">—</span>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:14px">
+              O backup diário grava numa pasta deste computador. Enquanto a única
+              cópia estiver no mesmo disco do banco, <strong>não é backup</strong>:
+              disco que morre leva os dois. Cadastre um pen drive, um disco
+              externo, uma pasta de rede do escritório ou uma pasta sincronizada
+              com nuvem — quantos quiser.
+            </div>
+            <div id="cpAviso" class="aviso" style="margin-bottom:14px"></div>
+
+            <div class="tabela-area">
+              <table>
+                <thead><tr>
+                  <th>Destino</th><th>Manter</th><th>Última cópia</th><th></th>
+                </tr></thead>
+                <tbody id="cpLista"></tbody>
+              </table>
+            </div>
+            <div id="cpVazio" class="vazio" hidden>
+              <div class="icone">▤</div>
+              <div class="titulo">Nenhum destino externo</div>
+              <div>A cópia de hoje está só neste disco.</div>
+            </div>
+
+            <div class="grade c3" style="margin-top:16px;align-items:end">
+              <div style="grid-column:span 2">
+                <label for="cpCaminho">Pasta de destino</label>
+                <input id="cpCaminho" maxlength="300" class="mono"
+                       placeholder="E:\backup-nfse  ou  \\servidor\contabil\backup">
+                <div class="ajuda">A pasta é criada e testada agora — caminho errado falha aqui, e não às três da manhã.</div>
+              </div>
+              <div>
+                <label for="cpManter">Cópias a manter</label>
+                <input id="cpManter" type="number" min="1" max="365" value="7">
+              </div>
+            </div>
+            <div class="linha-botoes" style="margin-top:14px">
+              <button class="primario" id="btnAddDestino">Cadastrar destino</button>
+              <button id="btnCopiarAgora">Copiar agora</button>
+            </div>
+            <div id="cpResultado" class="ajuda" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0 0 18px">
           <div class="cartao-cab"><h2>Versão do sistema</h2></div>
           <div class="cartao-corpo">
             <div class="ajuda" style="margin-bottom:14px">
@@ -1661,14 +1726,21 @@
         <select id="u_perfil">
           <option value="operador">Operador — emite e consulta</option>
           <option value="admin">Administrador — acesso total</option>
+          <option value="cliente">Pessoa do cliente — só o portal</option>
         </select>
+        <div class="ajuda" id="u_perfilAjuda"></div>
       </div>
       <div>
         <label for="u_ativo">Situação</label>
         <select id="u_ativo"><option value="true">Ativo</option><option value="false">Inativo</option></select>
       </div>
     </div>
-    <div style="margin-top:14px">
+    <div style="margin-top:14px" id="u_blocoCargo" hidden>
+      <label for="u_cargo">Cargo na empresa</label>
+      <input id="u_cargo" maxlength="80" placeholder="Ex.: sócio, financeiro, secretária">
+      <div class="ajuda">Só para o contador saber com quem está falando.</div>
+    </div>
+    <div style="margin-top:14px" id="u_blocoSenha">
       <label for="u_senha">Senha <span id="u_senhaObs" class="ajuda" style="display:inline">*</span></label>
       <input id="u_senha" type="password" autocomplete="new-password">
       <div class="ajuda" id="u_senhaAjuda">Ao menos 8 caracteres. A pessoa troca no primeiro acesso.</div>
@@ -1677,7 +1749,7 @@
       <label>Empresas que pode acessar</label>
       <div id="u_empresas" style="border:1px solid var(--linha);border-radius:var(--raio-sm);
            padding:11px 13px;max-height:170px;overflow-y:auto"></div>
-      <div class="ajuda">Sem nenhuma marcada, o usuário enxerga todas as empresas.</div>
+      <div class="ajuda" id="u_empresasAjuda">Sem nenhuma marcada, o usuário enxerga todas as empresas.</div>
     </div>
     <div class="acoes-form">
       <button type="button" id="usuEncerrar" class="perigo" hidden>Encerrar sessões</button>

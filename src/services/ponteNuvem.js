@@ -78,6 +78,7 @@ async function ler() {
   const r = await db.query(
     `SELECT id, ativo, url, intervalo_seg, lote, emitir_automatico,
             ultimo_contato, ultimo_erro, erro_em, atualizado_em,
+            cadastro_hash, cadastro_em, cadastro_erro,
             (chave_cifrada IS NOT NULL) AS tem_chave
        FROM config_nuvem WHERE id = TRUE`);
   return r.rows[0] || {};
@@ -332,11 +333,22 @@ async function sincronizar({ forcar = false } = {}) {
 
   const devolvidas = await devolverResultados();
 
+  /* A réplica do cadastro pega carona na mesma rodada. Só sai quando o retrato
+     muda, então o custo normal é o de calcular uma impressão digital. E vai
+     depois de devolver os resultados de propósito: se o portal estiver fora do
+     ar, o que já foi decidido é mais urgente que a lista de serviços. */
+  let cadastro = null;
+  try {
+    cadastro = await require('./replicaCadastro').enviar();
+  } catch (e) {
+    cadastro = { erro: e.message };
+  }
+
   await db.query(
     `UPDATE config_nuvem SET ultimo_contato = now(), ultimo_erro = NULL, erro_em = NULL
       WHERE id = TRUE`);
 
-  return { recebidas: lista.length, novas, emitidas, devolvidas,
+  return { recebidas: lista.length, novas, emitidas, devolvidas, cadastro,
            modo: c.emitir_automatico ? 'automático' : 'aguardando aprovação' };
 }
 

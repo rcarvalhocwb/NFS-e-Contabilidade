@@ -75,9 +75,11 @@ router.post('/login', limitarLogin, async (req, res, next) => {
       // E-mail malformado cai aqui; a resposta é a mesma de credencial errada
     }
 
-    // Mesma resposta para e-mail inexistente, senha errada e conta desativada:
-    // distinguir permitiria descobrir quem tem conta no sistema.
-    const ok = usuario && usuario.ativo &&
+    /* Mesma resposta para e-mail inexistente, senha errada, conta desativada e
+       perfil de cliente: distinguir permitiria descobrir quem tem conta no
+       sistema. O perfil 'cliente' existe para ser replicado ao portal — a
+       pessoa da empresa cliente acessa lá, nunca o painel do escritório. */
+    const ok = usuario && usuario.ativo && usuario.perfil !== 'cliente' &&
       await usuarios.conferirSenha(b.senha, usuario.senha_hash);
     if (!ok) {
       registrarFalhaLogin(req);
