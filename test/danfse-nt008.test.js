@@ -161,9 +161,13 @@ test('2.4 — DIVERGÊNCIA CONHECIDA: Helvetica no lugar de Arial', async () => 
      são proprietárias da Microsoft: não acompanham o gateway e não podem ser
      embutidas e redistribuídas num instalador.
 
-     Helvetica é fonte base do PDF (não precisa ser embutida, abre em qualquer
-     leitor) e é metricamente compatível com Arial — mesma largura de caractere,
-     então o layout fica idêntico ao da NT.
+     Helvetica é uma das catorze fontes base do PDF: não é embutida (conferido —
+     o arquivo não tem FontFile) e cabe ao leitor resolvê-la. No Windows, onde a
+     contabilidade abre e imprime o documento, Helvetica não existe e o leitor a
+     substitui justamente por Arial, que é metricamente idêntica.
+
+     Ou seja: o DANFSe impresso sai em Arial. A divergência é no nome declarado
+     dentro do arquivo, não no que chega ao papel.
 
      Esta é a única divergência conhecida em relação à NT 008, e é deliberada.
      O teste existe para que ela continue sendo uma escolha registrada, e não

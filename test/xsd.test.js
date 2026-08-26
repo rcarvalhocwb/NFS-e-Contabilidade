@@ -143,6 +143,14 @@ const CASOS = {
   'não incidência': { valores: { tributacaoIssqn: 4 } },
   'exigibilidade suspensa': { valores: { aliquotaIss: 5,
     exigibilidadeSuspensa: { tipo: 1, numeroProcesso: '000123456202681600010000000000' } } },
+  'com intermediário': { intermediario: {
+    cnpj: '11222333000181', razaoSocial: 'PLATAFORMA INTERMEDIARIA LTDA',
+    inscricaoMunicipal: '987654', telefone: '4133335555', email: 'contato@exemplo.com',
+    endereco: { codigoMunicipio: '4106902', cep: '80010000', logradouro: 'Av Sete',
+                numero: '200', bairro: 'Centro' } } },
+  'intermediário pessoa física': { intermediario: {
+    cpf: '11144477735', razaoSocial: 'REPRESENTANTE AUTONOMO' } },
+  'prestador com CAEPF': { __empresa: { caepf: '12345678901234' } },
   'tudo junto': { valores: { aliquotaIss: 5, issRetido: true,
     descontoIncondicionado: 50, valorDeducoes: 100,
     beneficioMunicipal: { tipo: 2, numero: '12345678901234', percentualReducao: 10 },

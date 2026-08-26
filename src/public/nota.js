@@ -574,6 +574,17 @@
         codigoPaisPrestacao: natureza === '3' ? (el('fPais').value.trim().toUpperCase() || undefined) : undefined,
         obra: montarObra()
       },
+      /* Intermediário: só entra quando preenchido. O documento define se é
+         CNPJ ou CPF pelo tamanho, como no tomador. */
+      intermediario: (function () {
+        var doc = docLimpo(el('fDocInterm').value);
+        var nome = el('fNomeInterm').value.trim();
+        if (!doc && !nome) return undefined;
+        var i = { razaoSocial: nome || undefined,
+                  inscricaoMunicipal: el('fImInterm').value.trim() || undefined };
+        if (doc.length === 11) i.cpf = doc; else if (doc) i.cnpj = doc;
+        return i;
+      })(),
       valores: valores
     };
     if (doc) {
@@ -628,6 +639,13 @@
     }
     if (el('fSuspensa').checked && !el('fNumProcesso').value.trim()) {
       return 'Exigibilidade suspensa exige o número do processo.';
+    }
+    var docInterm = docLimpo(el('fDocInterm').value);
+    if (docInterm && docInterm.length !== 11 && docInterm.length !== 14) {
+      return 'Documento do intermediário inválido: informe CNPJ (14) ou CPF (11).';
+    }
+    if (docInterm && !el('fNomeInterm').value.trim()) {
+      return 'Informe o nome do intermediário.';
     }
     if (digitos(el('fBmNumero').value) && !el('fBmTipo').value) {
       return 'Escolha o tipo do benefício municipal (alíquota diferenciada, redução da base ou isenção).';

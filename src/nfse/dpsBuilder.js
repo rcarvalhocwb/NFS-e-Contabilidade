@@ -423,6 +423,13 @@ function montarDps(empresa, dados, opts) {
   const docTomador = t.cnpj ? limparDocumento(t.cnpj) : (t.cpf || '').replace(/\D/g, '');
   const tagDocTomador = t.cnpj ? tag('CNPJ', docTomador) : (t.cpf ? tag('CPF', docTomador) : '');
 
+  /* Intermediário da operação (bloco interm, opcional no leiaute).
+     Mesma forma do tomador: TCInfoPessoa. Aparece quando alguém intermedeia a
+     prestação — plataforma, agência, representante. */
+  const im = dados.intermediario || {};
+  const docInterm = im.cnpj ? limparDocumento(im.cnpj) : (im.cpf || '').replace(/\D/g, '');
+  const endInterm = im.endereco || {};
+
   const issRetido = v.issRetido === true;
   // 2 = MEI, 3 = ME/EPP do Simples Nacional. Muda como os tributos são
   // declarados (ver totalTributos e o pAliq mais abaixo).
@@ -476,6 +483,9 @@ function montarDps(empresa, dados, opts) {
     //          complementares registradas no CNC" — quando sobra
     // Curitiba exige em produção restrita e proíbe em produção. Quem decide é
     // a tabela regra_im_dps; sem regra conhecida, envia (comportamento antigo).
+    // CAEPF: cadastro de atividade econômica de pessoa física, para o
+    // prestador que é PF equiparada a empresa. Vem antes da IM no leiaute.
+    tag('CAEPF', empresa.caepf) +
     tag('IM', empresa.omitir_im ? undefined : empresa.inscricao_municipal) +
     // O endereço do prestador NÃO vai na DPS quando o emitente é o próprio
     // prestador (tpEmit=1, nosso caso): a Sefin recusa com
@@ -510,6 +520,26 @@ function montarDps(empresa, dados, opts) {
     tag('fone', t.telefone) +
     tag('email', t.email) +
   `</toma>` : '') +
+  (docInterm || im.razaoSocial ?
+  `<interm>` +
+    (im.cnpj ? tag('CNPJ', docInterm) : (im.cpf ? tag('CPF', docInterm) : '')) +
+    tag('CAEPF', im.caepf) +
+    tag('IM', im.inscricaoMunicipal) +
+    tag('xNome', im.razaoSocial) +
+    (endInterm.logradouro ?
+    `<end>` +
+      `<endNac>` +
+        tag('cMun', endInterm.codigoMunicipio) +
+        tag('CEP', (endInterm.cep || '').replace(/\D/g, '')) +
+      `</endNac>` +
+      tag('xLgr', endInterm.logradouro) +
+      tag('nro', endInterm.numero) +
+      tag('xCpl', endInterm.complemento) +
+      tag('xBairro', endInterm.bairro) +
+    `</end>` : '') +
+    tag('fone', im.telefone) +
+    tag('email', im.email) +
+  `</interm>` : '') +
   `<serv>` +
     `<locPrest>` +
       // cLocPrestacao e cPaisPrestacao sao alternativos no leiaute (CE): o
