@@ -389,6 +389,7 @@
           ? 'Última falha em ' + fmtDataHora(c.erro_em) + ': ' + c.ultimo_erro : '';
 
         preencherCanal(c);
+        conferirWhatsapp();
         el('ptCadastroEstado').textContent = c.cadastro_erro
           ? 'Último envio falhou: ' + c.cadastro_erro
           : c.cadastro_em ? 'Enviado em ' + fmtDataHora(c.cadastro_em) + '.'
@@ -918,6 +919,42 @@
       .then(function (c) { preencherCanal(c); aviso('WhatsApp do escritório salvo.', 'ok'); })
       .catch(function (e) { aviso(e.message, 'erro'); })
       .then(function () { b.disabled = false; });
+  };
+
+
+  /* ------------------------------------------- o que falta para funcionar */
+
+  /* A mesma conferência do relay/conferir.js, na tela — para quem não vai abrir
+     terminal. O que este lado não alcança fica escrito, em vez de omitido: dar
+     "tudo certo" quando não se conferiu tudo é pior do que não conferir. */
+  function conferirWhatsapp() {
+    return api('/ponte/diagnostico').then(function (d) {
+      var selo = el('dgSelo');
+      selo.className = 'selo-status ' + (d.pronto ? 's-ok' : 's-erro');
+      selo.textContent = d.resumo;
+
+      el('dgLista').innerHTML = d.itens.map(function (i) {
+        var marca = i.estado === 'ok' ? '<span class="s-ok">●</span>'
+                  : i.estado === 'falta' ? '<span class="s-erro">●</span>'
+                  : '<span class="s-alerta">●</span>';
+        return '<div style="display:flex;gap:10px;padding:7px 0;' +
+          'border-bottom:1px solid var(--linha)">' +
+          '<div style="flex:none;width:14px">' + marca + '</div>' +
+          '<div><div>' + esc(i.o_que) + '</div>' +
+          (i.detalhe ? '<div class="ajuda mono">' + esc(i.detalhe) + '</div>' : '') +
+          (i.resolver ? '<div class="ajuda" style="color:var(--acento)">→ ' +
+                        esc(i.resolver) + '</div>' : '') +
+          '</div></div>';
+      }).join('');
+
+      el('dgCego').textContent = ' ' + d.naoConfiro.join(' ');
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('btnConferirWa').onclick = function () {
+    var b = el('btnConferirWa');
+    b.disabled = true;
+    conferirWhatsapp().then(function () { b.disabled = false; });
   };
 
   window.addEventListener('hashchange', function () {

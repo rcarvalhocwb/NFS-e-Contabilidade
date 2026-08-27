@@ -3,6 +3,25 @@
 Do zero até o primeiro "oi" respondido. Cerca de uma hora de trabalho, mais o
 tempo que a Meta leva para verificar o negócio — que não depende de você.
 
+## Conferir a qualquer momento
+
+```bash
+cd relay && node conferir.js https://seu-dominio.com.br
+```
+
+Percorre a corrente inteira -- configuracao, gateway, Meta, endereco publico --
+e para na primeira peca que falta, dizendo o que fazer. O mesmo esta na tela
+"Portal do cliente" do gateway, em "O que falta para funcionar".
+
+Use antes de mexer no painel da Meta: cadastrar webhook com o repassador meio
+configurado so rende erro dificil de ler.
+
+## Sem servidor, para testar hoje
+
+Da para chegar ao primeiro "oi" respondido sem contratar VPS, usando um tunel:
+[SEM-SERVIDOR.md](SEM-SERVIDOR.md). Serve para ver funcionando; para producao,
+siga o roteiro abaixo.
+
 ## Antes de gastar com servidor
 
 Rode o **ensaio** e veja a conversa funcionando na sua máquina:

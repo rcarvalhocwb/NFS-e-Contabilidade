@@ -61,6 +61,19 @@ router.get('/cadastro/previa', somenteAdmin, async (_req, res, next) => {
   catch (e) { next(e); }
 });
 
+/* O que falta para o WhatsApp funcionar.
+ *
+ * "Não funciona" tem umas quinze causas possíveis — token vencido, campo
+ * `messages` não assinado, empresa não liberada, cadastro nunca enviado.
+ * Descobrir qual delas é, um palpite por vez, custa uma tarde. Esta rota
+ * percorre a corrente e devolve a lista do que está de pé e do que falta.
+ */
+router.get('/diagnostico', somenteAdmin, async (_req, res, next) => {
+  try {
+    res.json(await require('../services/diagnosticoWhatsapp').conferir());
+  } catch (e) { next(e); }
+});
+
 /* ----------------------------------------------------------- solicitações */
 
 router.get('/solicitacoes', async (req, res, next) => {

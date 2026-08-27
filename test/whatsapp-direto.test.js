@@ -151,3 +151,54 @@ test('sem documentos, o link continua sendo o caminho', () => {
   const corpo = conv.slice(i, conv.indexOf('\n}', i));
   assert.match(corpo, /PDF e XML em:/);
 });
+
+/* ------------------------------------------------ o que falta para funcionar */
+
+test('o diagnóstico percorre a corrente na ordem em que ela quebra', () => {
+  /* "Não funciona" tem umas quinze causas. Descobrir qual, um palpite por vez,
+     custa uma tarde. */
+  const d = fonte('src', 'services', 'diagnosticoWhatsapp.js');
+  for (const peca of ['Endereço do repassador', 'Chave da ponte',
+                      'Phone number ID', 'Token da Meta',
+                      'empresa', 'número de WhatsApp',
+                      'Cadastro', 'Repassador respondendo']) {
+    assert.ok(d.includes(peca), 'o diagnóstico precisa cobrir: ' + peca);
+  }
+});
+
+test('cada falta vem com o que fazer, não só com o que falta', () => {
+  const d = fonte('src', 'services', 'diagnosticoWhatsapp.js');
+  const faltas = d.match(/item\('falta',[\s\S]{0,400}?\)\)/g) || [];
+  assert.ok(faltas.length >= 6, 'esperava várias verificações');
+  /* Uma ou outra é auto-explicativa (o HTTP 500 do repassador); o resto tem de
+     dizer onde resolver. */
+  const comSaida = faltas.filter(f => /'[^']{25,}'\s*\)\)/.test(f) || f.includes('→') ||
+    /aba Integração|tela |Meta →|Clique|Ponha|Invente|Gere/.test(f));
+  assert.ok(comSaida.length >= faltas.length - 2,
+    'quase toda falta precisa dizer como resolver');
+});
+
+test('o que o gateway não consegue ver é dito, não omitido', () => {
+  /* Dar "tudo certo" quando não se conferiu tudo é pior do que não conferir. */
+  const d = fonte('src', 'services', 'diagnosticoWhatsapp.js');
+  assert.match(d, /naoConfiro/);
+  assert.match(d, /Meta está entregando o webhook/);
+  assert.match(d, /messages" foi assinado/);
+});
+
+test('o verificador de linha de comando cobre o que a tela não alcança', () => {
+  /* O gateway não consegue provar que o webhook responde de fora nem que o
+     token vale — as duas coisas precisam ser perguntadas de onde dá. */
+  const c = fonte('relay', 'conferir.js');
+  assert.match(c, /hub\.mode=subscribe/, 'refaz a verificação como a Meta faz');
+  assert.match(c, /POST sem assinatura/, 'e confere que corpo sem assinatura é recusado');
+  assert.match(c, /verified_name/, 'e pergunta à Meta se o número é dela');
+});
+
+test('token vencido tem mensagem própria', () => {
+  /* É a causa mais comum de "parou de funcionar no dia seguinte": o token que
+     aparece na tela da API dura 24 horas. */
+  const c = fonte('relay', 'conferir.js');
+  assert.match(c, /expired\|session has expired/);
+  assert.match(c, /dura 24 horas/);
+});
