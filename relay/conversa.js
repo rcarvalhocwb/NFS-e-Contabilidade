@@ -374,6 +374,10 @@ function doConfirmacao(t, empresa, contato, dados, memoria) {
     id: 'wa-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
     origem: 'whatsapp',
     remetente: contato.telefone,
+    /* A conversa inteira vai junto. É o que responde "eu não pedi essa nota":
+       o pedido pronto não prova nada, o diálogo prova. Fica no gateway, ao lado
+       da solicitação, e some daqui quando o pedido é buscado. */
+    transcricao: (dados.transcricao || []).slice(-60),
     cnpjEmpresa: empresa.cnpj,
     tomador: { cnpj: base.tomador.documento, razaoSocial: base.tomador.nome },
     servico: {

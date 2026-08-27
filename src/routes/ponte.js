@@ -81,7 +81,7 @@ router.get('/solicitacoes', async (req, res, next) => {
     const r = await db.query(
       `SELECT s.id, s.id_externo, s.cnpj_informado, s.situacao, s.motivo,
               s.decidido_por, s.decidido_em, s.recebida_em, s.devolvida_em,
-              s.payload, s.origem, s.remetente,
+              s.payload, s.origem, s.remetente, s.transcricao,
               e.razao_social, n.chave_acesso, n.serie, n.numero,
               n.status AS status_nota
          FROM solicitacoes s

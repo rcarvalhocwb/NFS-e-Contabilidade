@@ -17,21 +17,40 @@ function fonte(...partes) {
   return fs.readFileSync(path.join(__dirname, '..', 'src', ...partes), 'utf8');
 }
 
-test('o retrato não leva certificado, senha nem token', () => {
+test('o retrato não leva certificado nem senha de ninguém', () => {
   /* O portal precisa saber quem entra e o que a pessoa vê. O segredo que prova
      a identidade dela é dele, definido lá pelo convite — assim uma invasão do
-     portal não expõe credencial do escritório. */
+     portal não expõe credencial do escritório.
+
+     UMA EXCEÇÃO, e só uma: o token de envio da Meta. Ele não é segredo do
+     escritório nem de cliente nenhum — é a credencial do próprio canal, e o
+     repassador não consegue mandar uma única mensagem sem ela. Guardá-la só no
+     .env significaria o contador entrar num servidor por SSH para configurar o
+     WhatsApp, que é o oposto do que este sistema faz. Quem invadir o
+     repassador teria essa credencial de todo jeito, porque ela mora lá para
+     funcionar. */
   const servico = fonte('services', 'replicaCadastro.js');
   const i = servico.indexOf('async function montar');
   const corpo = servico.slice(i, servico.indexOf('\nasync function enviar', i));
 
   for (const proibido of ['pfx_cifrado', 'senha_cifrada', 'senha_hash',
-                          'chave_cifrada', 'token', 'certificado']) {
+                          'chave_cifrada', 'certificado']) {
     assert.ok(!new RegExp(proibido, 'i').test(corpo),
       proibido + ' não pode entrar na consulta do retrato');
   }
   assert.ok(!/FROM certificados/i.test(corpo) && !/FROM empresa_tokens/i.test(corpo),
     'as tabelas de segredo não são lidas');
+
+  /* O que o canal PROVA continua fora: App Secret e verify token são o que
+     autentica a Meta e o webhook. Mandá-los pelo canal que eles protegem
+     fecharia o círculo — esses ficam no .env do repassador. */
+  assert.ok(!/appSecret|app_secret|verifyToken|verify_token/i.test(servico),
+    'o que autentica o canal não viaja por ele');
+
+  // E a única credencial presente é a de envio, nomeada como tal
+  const tokens = corpo.match(/\btoken\w*/gi) || [];
+  assert.deepEqual([...new Set(tokens.map(t => t.toLowerCase()))], ['token'],
+    'só o token de envio da Meta: ' + tokens.join(', '));
 });
 
 test('a réplica anda num sentido só', () => {

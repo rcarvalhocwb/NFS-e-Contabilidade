@@ -388,6 +388,7 @@
         el('ptResultado').textContent = c.ultimo_erro
           ? 'Última falha em ' + fmtDataHora(c.erro_em) + ': ' + c.ultimo_erro : '';
 
+        preencherCanal(c);
         el('ptCadastroEstado').textContent = c.cadastro_erro
           ? 'Último envio falhou: ' + c.cadastro_erro
           : c.cadastro_em ? 'Enviado em ' + fmtDataHora(c.cadastro_em) + '.'
@@ -411,6 +412,11 @@
                   '<button class="pequeno" data-recusar="' + s.id + '">Recusar</button>';
         } else if (s.chave_acesso) {
           acoes = '<a class="botao pequeno" href="#notas" data-tela="notas">Ver nota</a>';
+        }
+        /* A conversa fica ao alcance de um clique em toda linha: na hora de
+           conferir um pedido estranho, é ela que responde o que aconteceu. */
+        if (s.transcricao && s.transcricao.length) {
+          acoes += ' <button class="pequeno" data-conversa="' + s.id + '">Ver conversa</button>';
         }
         var empresa = s.razao_social
           ? esc(s.razao_social)
@@ -455,6 +461,7 @@
     if (!b) return;
     if (b.dataset.aprovar) aprovarSolicitacao(b.dataset.aprovar, b);
     if (b.dataset.recusar) recusarSolicitacao(b.dataset.recusar);
+    if (b.dataset.conversa) verTranscricao(b.dataset.conversa);
   };
 
   function aprovarSolicitacao(id, botao) {
@@ -829,6 +836,58 @@
         aviso('Número autorizado.', 'ok');
       })
       .catch(function (e) { el('waResultado').textContent = e.message; })
+      .then(function () { b.disabled = false; });
+  };
+
+
+  /* ------------------------------- WhatsApp do escritório e a conversa */
+
+  /* As credenciais da Meta ficam no gateway e viajam com o cadastro. O contador
+     configura na tela dele, não por SSH num servidor. */
+  function preencherCanal(c) {
+    el('waNumero').value = c.wa_numero ? fmtTelefone(c.wa_numero) : '';
+    el('waPhoneId').value = c.wa_phone_number_id || '';
+    el('waCanalAtivo').checked = !!c.wa_ativo;
+    el('waToken').value = '';
+    el('waTokenEstado').textContent = c.tem_wa_token
+      ? 'Um token já está guardado. Deixe em branco para mantê-lo.'
+      : 'Nenhum token guardado.';
+  }
+
+  /* A conversa que gerou o pedido. É o que responde "eu não pedi essa nota":
+     o pedido pronto não prova nada, o diálogo prova. */
+  function verTranscricao(id) {
+    api('/ponte/solicitacoes?limite=200').then(function (lista) {
+      var s = lista.filter(function (x) { return String(x.id) === String(id); })[0];
+      if (!s) return aviso('Solicitação não encontrada.', 'erro');
+      var linhas = (s.transcricao || []).map(function (m) {
+        var quem = m.de === 'cliente' ? 'Cliente' : 'Sistema';
+        return '<div style="margin-bottom:10px">' +
+          '<div class="ajuda"><strong>' + quem + '</strong> · ' + fmtDataHora(m.em) + '</div>' +
+          '<div style="white-space:pre-wrap">' + esc(m.texto) + '</div></div>';
+      }).join('');
+      el('trTitulo').textContent = 'Pedido ' + s.id_externo;
+      el('trSub').textContent = (s.razao_social || s.cnpj_informado || '') +
+        (s.remetente ? ' · ' + fmtTelefone(s.remetente) : '') +
+        ' · ' + fmtDataHora(s.recebida_em);
+      el('trCorpo').innerHTML = linhas ||
+        '<div class="ajuda">Este pedido não veio de conversa — não há transcrição.</div>';
+      el('dlgTranscricao').showModal();
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+  el('trFechar').onclick = function () { el('dlgTranscricao').close(); };
+
+  el('btnSalvarCanal').onclick = function () {
+    var b = el('btnSalvarCanal');
+    b.disabled = true;
+    api('/ponte/config', { method: 'PUT', body: JSON.stringify({
+      waNumero: el('waNumero').value,
+      waPhoneNumberId: el('waPhoneId').value,
+      waAtivo: el('waCanalAtivo').checked,
+      waToken: el('waToken').value || undefined
+    }) })
+      .then(function (c) { preencherCanal(c); aviso('WhatsApp do escritório salvo.', 'ok'); })
+      .catch(function (e) { aviso(e.message, 'erro'); })
       .then(function () { b.disabled = false; });
   };
 

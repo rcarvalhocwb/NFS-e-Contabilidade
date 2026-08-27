@@ -139,6 +139,15 @@ if (process.env.ADMIN_ATIVO === 'false') {
   app.get('/admin', (_req, res) =>
     res.status(404).json({ erro: 'Painel desativado neste servidor (ADMIN_ATIVO=false)' }));
 } else {
+  /* As telas nunca vêm do cache.
+     Depois de uma atualização, o navegador servia a versão antiga por conta
+     própria e o escritório continuava vendo a tela de ontem — sem erro nenhum,
+     só um sistema que "não mudou". Revalidar sempre custa um 304 numa rede
+     local. */
+  app.use(['/admin', '/emitir', '/nota'], (_req, res, next) => {
+    res.set('Cache-Control', 'no-cache, must-revalidate');
+    next();
+  });
   app.get('/admin', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
   // Duas formas de emitir sem sistema integrado, para dois jeitos de trabalhar:
   // a conversa guia quem emite de vez em quando; o formulário mostra tudo de

@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const db = require('../db');
+const { decrypt } = require('../secretbox');
 
 /* Réplica do cadastro para o portal.
  *
@@ -91,8 +92,28 @@ async function montar() {
        FROM contatos_whatsapp c JOIN empresas e ON e.id = c.empresa_id
       WHERE c.ativo AND e.ativo ORDER BY c.telefone`);
 
+  /* As credenciais do número do escritório viajam com o cadastro, para o
+     contador não precisar editar arquivo num servidor. App Secret e token de
+     verificação NÃO vêm aqui: são eles que protegem este canal, e mandá-los
+     por ele fecharia o círculo. */
+  const cfg = await db.query(
+    `SELECT wa_numero, wa_phone_number_id, wa_ativo, wa_token_cifrado
+       FROM config_nuvem WHERE id = TRUE`);
+  const c = cfg.rows[0] || {};
+  let waToken = null;
+  if (c.wa_token_cifrado) {
+    try { waToken = decrypt(c.wa_token_cifrado).toString('utf8'); }
+    catch (_) { waToken = null; }
+  }
+
   const retrato = {
     geradoEm: new Date().toISOString(),
+    canal: {
+      numero: c.wa_numero || null,
+      phoneNumberId: c.wa_phone_number_id || null,
+      token: waToken,
+      ativo: !!c.wa_ativo
+    },
     whatsapp: whats.rows.map(w => ({
       telefone: w.telefone,
       cnpj: w.cnpj,

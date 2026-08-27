@@ -82,7 +82,9 @@ async function ler() {
     `SELECT id, ativo, url, intervalo_seg, lote, emitir_automatico,
             ultimo_contato, ultimo_erro, erro_em, atualizado_em,
             cadastro_hash, cadastro_em, cadastro_erro,
-            (chave_cifrada IS NOT NULL) AS tem_chave
+            wa_numero, wa_phone_number_id, wa_ativo,
+            (chave_cifrada IS NOT NULL) AS tem_chave,
+            (wa_token_cifrado IS NOT NULL) AS tem_wa_token
        FROM config_nuvem WHERE id = TRUE`);
   return r.rows[0] || {};
 }
@@ -130,6 +132,20 @@ async function salvar(dados = {}) {
   // Vazio significa "manter a chave guardada", não apagá-la
   if (dados.chave) põe('chave_cifrada', encrypt(String(dados.chave)));
   if (dados.removerChave) põe('chave_cifrada', null);
+
+  /* O WhatsApp do escritório. O token é da Meta e vale como senha do número:
+     cifrado aqui, e nunca devolvido pela API — a tela só informa se existe. */
+  if (dados.waNumero !== undefined) {
+    /* Mesma normalizacao dos numeros dos clientes: guardar (41) 3000-0000 como
+       4130000000 faria a tela devolver "+4130000000", que nao e numero nenhum. */
+    põe('wa_numero', dados.waNumero ? whatsapp.normalizar(dados.waNumero) : null);
+  }
+  if (dados.waPhoneNumberId !== undefined) {
+    põe('wa_phone_number_id', String(dados.waPhoneNumberId || '').trim() || null);
+  }
+  if (dados.waAtivo !== undefined) põe('wa_ativo', !!dados.waAtivo);
+  if (dados.waToken) põe('wa_token_cifrado', encrypt(String(dados.waToken)));
+  if (dados.removerWaToken) põe('wa_token_cifrado', null);
 
   if (campos.length) {
     valores.push(true);
@@ -257,12 +273,16 @@ async function guardar(lista) {
 
     const r = await db.query(
       `INSERT INTO solicitacoes (id_externo, empresa_id, cnpj_informado, payload,
-                                 situacao, motivo, origem, remetente)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                                 situacao, motivo, origem, remetente, transcricao)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (id_externo) DO NOTHING
        RETURNING id`,
       [String(s.id).slice(0, 80), e ? e.id : null, cnpj || null,
-       JSON.stringify(s), situacao, motivo, origem, remetente]);
+       JSON.stringify(s), situacao, motivo, origem, remetente,
+       /* A conversa que gerou o pedido. É o que responde "eu não pedi essa
+          nota" — o pedido sozinho não prova nada. Limitada a 60 mensagens para
+          um cliente falante (ou um engraçadinho) não inchar o banco. */
+       s.transcricao ? JSON.stringify(s.transcricao.slice(-60)) : null]);
     novas += r.rowCount;
     if (r.rowCount && verificado) verificados.add(String(s.id).slice(0, 80));
   }

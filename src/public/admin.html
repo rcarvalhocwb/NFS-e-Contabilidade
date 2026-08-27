@@ -973,6 +973,41 @@
             </div>
 
             <div class="caixa-amb" style="margin-top:16px">
+              <h4>WhatsApp do escritório</h4>
+              <div class="ajuda" style="margin-bottom:12px">
+                O número por onde os clientes pedem nota. Estes dados saem do
+                painel da Meta (WhatsApp → Configuração da API) e são enviados ao
+                repassador junto com o cadastro — <strong>ninguém precisa entrar
+                num servidor para configurar</strong>.
+              </div>
+              <div class="grade c3">
+                <div><label for="waNumero">Número que aparece ao cliente</label>
+                  <input id="waNumero" maxlength="24" placeholder="(41) 3000-0000"></div>
+                <div><label for="waPhoneId">Phone number ID</label>
+                  <input id="waPhoneId" maxlength="40" class="mono"
+                         placeholder="1234567890"></div>
+                <div><label for="waToken">Token permanente</label>
+                  <input id="waToken" type="password" autocomplete="new-password"
+                         placeholder="deixe em branco para manter">
+                  <div class="ajuda" id="waTokenEstado"></div></div>
+              </div>
+              <label style="display:flex;align-items:center;gap:9px;margin-top:14px;font-weight:400">
+                <input type="checkbox" id="waCanalAtivo" style="width:auto">
+                Atender pedidos por WhatsApp
+              </label>
+              <div class="ajuda" style="margin-top:10px">
+                O <span class="mono">App Secret</span> e o token de verificação
+                <strong>não vêm para cá</strong>: são eles que provam que a
+                mensagem veio da Meta, e mandá-los pelo canal que protegem
+                fecharia o círculo. Esses ficam no <span class="mono">.env</span>
+                do repassador, escritos uma vez na instalação.
+              </div>
+              <div class="linha-botoes" style="margin-top:14px">
+                <button class="pequeno primario" id="btnSalvarCanal">Salvar WhatsApp</button>
+              </div>
+            </div>
+
+            <div class="caixa-amb" style="margin-top:16px">
               <h4>Cadastro enviado ao portal</h4>
               <div class="ajuda" style="margin-bottom:10px">
                 Empresas, serviços e quem acessa cada CNPJ são escritos aqui e
@@ -1839,6 +1874,21 @@
   <div id="loteCorpo"></div>
   <div class="acoes-form">
     <button class="primario" id="loteFechar">Fechar</button>
+  </div>
+</div></dialog>
+
+<dialog id="dlgTranscricao"><div class="interno">
+  <h3 id="trTitulo">Conversa</h3>
+  <div class="dsub" id="trSub"></div>
+  <div id="trCorpo" style="max-height:60vh;overflow-y:auto;margin-top:14px;
+       border:1px solid var(--linha);border-radius:var(--raio-sm);padding:14px"></div>
+  <div class="ajuda" style="margin-top:12px">
+    Registro do que foi pedido e respondido, na ordem. Junto com o histórico de
+    quem aprovou, é o que comprova a origem da nota se alguém contestar.
+  </div>
+  <div class="acoes-form">
+    <span class="espaco"></span>
+    <button type="button" id="trFechar">Fechar</button>
   </div>
 </div></dialog>
 

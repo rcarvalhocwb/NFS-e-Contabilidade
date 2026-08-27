@@ -127,10 +127,22 @@ async function tratarMensagem(m) {
   }
 
   const anterior = memoria.conversaDe(m.de);
+
+  /* Cada mensagem entra na transcrição antes de ser respondida. Anotar só
+     depois perderia justamente a que quebrou a conversa. */
+  const transcricao = ((anterior && anterior.dados && anterior.dados.transcricao) || [])
+    .concat([{ de: 'cliente', texto: String(m.texto).slice(0, 500),
+               em: new Date(m.recebidaEm || Date.now()).toISOString() }])
+    .slice(-60);
+  const comHistorico = anterior
+    ? Object.assign({}, anterior, { dados: Object.assign({}, anterior.dados, { transcricao }) })
+    : { estado: 'inicio', dados: { transcricao }, em: new Date().toISOString() };
+
   let saida;
   try {
     saida = conversa.responder({
-      texto: m.texto, telefone: m.de, vinculos, conversa: anterior, memoria
+      texto: m.texto, telefone: m.de, vinculos, conversa: anterior ? comHistorico : null,
+      memoria
     });
   } catch (e) {
     console.error('[conversa] quebrou:', e.message);
@@ -139,23 +151,48 @@ async function tratarMensagem(m) {
       'Tive um problema aqui. Comece de novo escrevendo "oi", por favor.');
   }
 
+  // A resposta do sistema também entra no registro
+  const completa = transcricao.concat([{
+    de: 'sistema', texto: String(saida.resposta || '').slice(0, 1000),
+    em: new Date().toISOString()
+  }]).slice(-60);
+
   if (saida.pedido) {
+    saida.pedido.transcricao = completa;
     memoria.enfileirar(saida.pedido);
     console.log('[fila] pedido', saida.pedido.id, 'de', m.de, 'para', saida.pedido.cnpjEmpresa);
   }
 
-  if (saida.estado) memoria.guardarConversa(m.de, saida.estado, saida.dados);
-  else memoria.esquecerConversa(m.de);
+  if (saida.estado) {
+    memoria.guardarConversa(m.de, saida.estado,
+      Object.assign({}, saida.dados, { transcricao: completa }));
+  } else {
+    memoria.esquecerConversa(m.de);
+  }
 
   return responderAoCliente(m.de, saida.resposta);
 }
 
+/* As credenciais do número vêm do gateway junto com o cadastro; o .env é o
+   caminho de reserva, para a primeira subida e para quando o cadastro ainda não
+   chegou. Assim o contador configura o WhatsApp na tela dele, e não por SSH. */
+function credenciais() {
+  const canal = (memoria.dados.cadastro || {}).canal || {};
+  return {
+    phoneNumberId: canal.phoneNumberId || CFG.phoneNumberId,
+    token: canal.token || CFG.token
+  };
+}
+
 async function responderAoCliente(para, textoMsg) {
   try {
-    await meta.enviarTexto({
-      para, texto: textoMsg,
-      phoneNumberId: CFG.phoneNumberId, token: CFG.token
-    });
+    const { phoneNumberId, token } = credenciais();
+    if (!phoneNumberId || !token) {
+      console.error('[meta] sem número configurado — a resposta para', para, 'não saiu.',
+        'Configure o WhatsApp do escritório na tela "Portal do cliente" do gateway.');
+      return;
+    }
+    await meta.enviarTexto({ para, texto: textoMsg, phoneNumberId, token });
   } catch (e) {
     if (e.foraDaJanela) {
       console.warn('[meta] janela de 24h fechada para', para, '- a resposta não saiu');
