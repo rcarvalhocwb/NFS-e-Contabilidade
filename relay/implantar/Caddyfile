@@ -1,0 +1,26 @@
+# HTTPS na frente do repassador.
+#
+# O Caddy resolve o certificado sozinho (Let's Encrypt) e renova sem ninguém
+# lembrar. A Meta não aceita HTTP, e certificado vencido derruba o webhook em
+# silêncio — por isso não vale a pena gerenciar isso na mão.
+#
+# Troque o domínio e ponha em /etc/caddy/Caddyfile.
+
+nfse.seudominio.com.br {
+    encode gzip
+
+    reverse_proxy 127.0.0.1:8080 {
+        # A Meta desiste em 20s. O repassador responde 200 antes de trabalhar,
+        # então este prazo é folga de sobra — está aqui para o caso de o
+        # processo travar, e não para dar tempo a ele.
+        transport http {
+            response_header_timeout 30s
+        }
+    }
+
+    log {
+        output file /var/log/caddy/nfse-relay.log
+        # Só metadados: o corpo traz mensagem de cliente, com CNPJ e valor.
+        format json
+    }
+}

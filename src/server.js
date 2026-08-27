@@ -156,6 +156,30 @@ if (process.env.ADMIN_ATIVO === 'false') {
   app.get('/nota', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'nota.html')));
 }
 
+/* O cadastro para o ensaio local.
+ *
+ * Fica ANTES da autenticação do painel porque quem chama não é uma pessoa
+ * logada: é o `relay/ensaio.js`, rodando na mesma máquina para mostrar a
+ * conversa do WhatsApp funcionando antes de existir servidor e número.
+ *
+ * A credencial é a chave da ponte — a mesma do repassador, e o dado devolvido é
+ * exatamente o que o repassador já recebe. Nada aqui abre nada novo: sem a
+ * chave, 401; com ela, o que o outro lado teria de todo jeito.
+ */
+app.get('/ponte/cadastro/previa-ensaio', async (req, res, next) => {
+  try {
+    const ponte = require('./services/ponteNuvem');
+    const chave = await ponte.chave().catch(() => null);
+    const cabecalho = String(req.headers.authorization || '');
+    const esperado = 'Bearer ' + chave;
+    if (!chave || cabecalho.length !== esperado.length ||
+        !require('crypto').timingSafeEqual(Buffer.from(cabecalho), Buffer.from(esperado))) {
+      return res.status(401).json({ erro: 'chave da ponte inválida' });
+    }
+    res.json(await require('./services/replicaCadastro').montar());
+  } catch (e) { next(e); }
+});
+
 app.use(auth); // daqui para baixo: sessão de usuário ou X-API-Key
 
 // Gestão do próprio gateway: administrador apenas. Quem só emite nota não

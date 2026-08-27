@@ -176,3 +176,21 @@ test('base fora do ar devolve null, não explode', () => {
   assert.match(r, /catch \(_\) \{[\s\S]{0,200}return null;/);
   assert.match(r, /AbortController/);
 });
+
+test('o ensaio não fala com a Meta nem com a fila', () => {
+  /* Ele existe para ver a conversa antes de haver servidor e número. Se um dia
+     encostar na Meta ou enfileirar de verdade, deixa de ser ensaio. */
+  const s = require('fs').readFileSync(require.resolve('../ensaio.js'), 'utf8');
+  const semComentarios = s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
+  assert.ok(!/graph\.facebook|enviarTexto|meta\./i.test(semComentarios),
+    'o ensaio não pode mandar mensagem de verdade');
+  assert.match(s, /127\.0\.0\.1/, 'e só ouve em localhost');
+});
+
+test('o ensaio usa o cadastro de verdade', () => {
+  /* Ensaiar com cadastro inventado mostraria uma conversa que não é a que vai
+     acontecer. */
+  const s = require('fs').readFileSync(require.resolve('../ensaio.js'), 'utf8');
+  assert.match(s, /previa-ensaio/);
+  assert.match(s, /CHAVE_GATEWAY/, 'autenticado com a chave da ponte');
+});

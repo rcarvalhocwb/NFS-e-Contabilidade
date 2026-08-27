@@ -195,3 +195,17 @@ test('a identidade do escritório viaja para o relay', () => {
   assert.match(relay, /memoria\.escritorio\(\)/,
     'e a conversa se apresenta com ele');
 });
+
+test('a rota do ensaio exige a chave da ponte, comparada em tempo constante', () => {
+  /* Fica antes da autenticação do painel porque quem chama é um processo local,
+     não uma pessoa logada. A credencial é a mesma do repassador, e o dado é o
+     mesmo que ele já recebe — não abre nada novo. */
+  const servidor = fonte('src', 'server.js');
+  const i = servidor.indexOf("'/ponte/cadastro/previa-ensaio'");
+  assert.ok(i > 0);
+  const corpo = servidor.slice(i, servidor.indexOf('\n});', i));
+  assert.match(corpo, /timingSafeEqual/);
+  assert.match(corpo, /status\(401\)/);
+  assert.ok(i < servidor.indexOf('app.use(auth)'),
+    'precisa vir antes do auth para o processo local alcançá-la');
+});
