@@ -138,3 +138,41 @@ test('a boca de teste não existe sem RELAY_TESTE', () => {
   assert.match(corpo, /process\.env\.RELAY_TESTE !== 'true'/);
   assert.match(corpo, /404/);
 });
+
+test('o estado só avança depois de a resposta sair', () => {
+  /* Era o contrário, e isso quebrava a conversa em silêncio: falhando o envio
+     (janela de 24h fechada, Meta fora do ar, token vencido), o estado avançava
+     de um passo que a pessoa nunca viu, e a próxima mensagem dela seria lida
+     contra uma pergunta que nunca chegou. */
+  const s = require('fs').readFileSync(require.resolve('../servidor.js'), 'utf8');
+  const envio = s.indexOf('const entregue = await responderAoCliente');
+  const salva = s.indexOf('memoria.guardarConversa(m.de, saida.estado');
+  assert.ok(envio > 0 && envio < salva, 'a entrega vem antes de gravar o estado');
+  assert.match(s.slice(envio, salva), /if \(!entregue\)[\s\S]*return;/,
+    'e não gravando nada quando a entrega falha');
+  assert.match(s, /return true;/, 'responderAoCliente diz se conseguiu');
+});
+
+test('conversa expirada avisa em vez de sumir', () => {
+  /* A pessoa volta uma hora depois, responde "1" ao que estava na tela, e
+     recebia o menu sem entender por quê. */
+  const s = require('fs').readFileSync(require.resolve('../servidor.js'), 'utf8');
+  assert.match(s, /const expirou = tinhaConversa && !anterior/);
+  assert.match(s, /expirou por inatividade/);
+});
+
+test('a consulta pública entra por injeção, não por acoplamento', () => {
+  /* A conversa não sabe de onde os dados vêm — o que a mantém testável sem
+     rede, e deixa a base pública trocável sem tocar na lógica. */
+  const conv = require('fs').readFileSync(require.resolve('../conversa.js'), 'utf8');
+  assert.match(conv, /buscarCnpj/);
+  assert.ok(!/brasilapi|fetch\(/i.test(conv),
+    'a conversa não chama a rede direto');
+});
+
+test('base fora do ar devolve null, não explode', () => {
+  /* Timeout ou 500 num serviço que não é nosso não pode derrubar a conversa. */
+  const r = require('fs').readFileSync(require.resolve('../receita.js'), 'utf8');
+  assert.match(r, /catch \(_\) \{[\s\S]{0,200}return null;/);
+  assert.match(r, /AbortController/);
+});

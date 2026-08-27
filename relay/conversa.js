@@ -40,6 +40,10 @@ function lerValor(texto) {
 }
 
 const CANCELAR = /^(cancelar|cancela|sair|parar|nao quero|não quero)$/i;
+/* "quero falar com alguém" precisa levar a alguém.
+   A pesquisa de conversa automatizada é unânime nisso: o cliente perdoa o robô
+   não saber, e não perdoa ficar preso nele. */
+const HUMANO = /^(atendente|humano|pessoa|falar com|contador|ajuda humana|nao consigo|não consigo)/i;
 const VOLTAR = /^(voltar|volta|corrigir|errei|anterior)$/i;
 const AJUDA = /^(ajuda|help|\?|menu|oi|ola|olá|bom dia|boa tarde|boa noite)$/i;
 
@@ -61,7 +65,7 @@ function menu(opcoes) {
 /* Recebe a mensagem e devolve { resposta, estado, dados, pedido? }.
  * Função pura: não grava nem envia nada. Quem chama decide o que fazer com o
  * resultado — o que torna a conversa inteira testável sem WhatsApp nenhum. */
-function responder({ texto, telefone, vinculos, conversa, memoria }) {
+async function responder({ texto, telefone, vinculos, conversa, memoria, buscarCnpj }) {
   const estado = conversa ? conversa.estado : 'inicio';
   const dados = conversa ? Object.assign({}, conversa.dados) : {};
   const t = String(texto || '').trim();
@@ -92,6 +96,17 @@ function responder({ texto, telefone, vinculos, conversa, memoria }) {
   if (CANCELAR.test(t)) {
     return { resposta: 'Cancelado. É só chamar quando precisar.', estado: null };
   }
+  if (HUMANO.test(t)) {
+    const casa = memoria.escritorio() || {};
+    return {
+      resposta: 'Claro. Eu sou automático e só sei emitir nota — para o resto, ' +
+        'fale direto com ' + (casa.nome || 'a contabilidade') + ':\n\n' +
+        (casa.telefone ? '📞 ' + formatarTelefone(casa.telefone) + '\n' : '') +
+        (casa.email ? '✉ ' + casa.email : '') +
+        (!casa.telefone && !casa.email ? 'procure o escritório pelos canais de sempre.' : ''),
+      estado: null
+    };
+  }
   /* A trava vem ANTES do menu, e não depois.
      Colocada depois, um "oi" recebia a lista de opções de uma empresa que não
      pode emitir, e a pessoa só descobria o bloqueio na mensagem seguinte —
@@ -117,7 +132,9 @@ function responder({ texto, telefone, vinculos, conversa, memoria }) {
   switch (estado) {
     case 'escolhendo_empresa': return doEmpresa(t, vinculos, telefone, memoria, dados);
     case 'inicio':          return doInicio(t, empresa, contato, memoria, dados);
-    case 'documento_novo': return doDocumento(t, empresa, memoria, dados);
+    case 'documento_novo': return doDocumento(t, empresa, memoria, dados, buscarCnpj);
+    case 'conferindo_cliente': return doConferirCliente(t, empresa, memoria, dados);
+    case 'nome_novo':       return doNomeNovo(t, empresa, memoria, dados);
     case 'escolhendo_valor':return doValor(t, empresa, contato, dados);
     case 'confirmando':     return doConfirmacao(t, empresa, contato, dados, memoria);
     case 'escolhendo_servico': return doServico(t, empresa, dados, memoria);
@@ -233,9 +250,12 @@ function abertura(empresa, contato, memoria, prefixo) {
      Do outro lado é uma janela de WhatsApp e um número que a pessoa não
      conhece. Sem o nome do escritório, a primeira mensagem parece golpe — e
      alguém que emite nota fiscal por um sistema que parece golpe não emite. */
+  /* Dizer que é automático é a primeira regra de conversa por robô, e a que
+     mais evita frustração: a pessoa calibra o que pedir. Junto vai a saída para
+     gente, porque ninguém perdoa ficar preso num bot. */
   const casa = (memoria.escritorio() || {}).nome;
   const apresentacao = casa
-    ? '*' + casa + '*\nEmissão de notas fiscais.\n\n'
+    ? '*' + casa + '*\n_Atendimento automático para emissão de notas._\n\n'
     : '';
 
   /* A empresa vai escrita por extenso, com CNPJ, e volta na conferência. É o
@@ -248,7 +268,7 @@ function abertura(empresa, contato, memoria, prefixo) {
 
   return {
     resposta: cabeca + '\n\n' + menu(opcoes) +
-      '\n\n_Responda com o número. "cancelar" encerra a qualquer momento._',
+      '\n\n_Responda com o número. "cancelar" encerra; "atendente" chama uma pessoa._',
     estado: 'inicio',
     /* O CNPJ escolhido acompanha TODA resposta a partir daqui. Sem ele, uma
        recusa no meio ("nao entendi") devolvia o menu sem a empresa, e a
@@ -323,23 +343,25 @@ function doServico(t, empresa, dados, memoria) {
      o pedido chegar incompleto e o contador completar no painel — que é onde
      ele já faz isso todo dia. */
   const anterior = empresa.ultimoPedido;
-  /* Cliente novo veio pelo documento; senão, é o mesmo da última nota. */
+  /* Cliente novo já vem com o nome conferido pela pessoa; senão, é o mesmo da
+     última nota. */
   const tomador = dados.documentoNovo
-    ? { documento: dados.documentoNovo, nome: null, novo: true }
+    ? { documento: dados.documentoNovo, nome: dados.nomeNovo || null, novo: true,
+        endereco: dados.dadosDaReceita || null }
     : (anterior ? anterior.tomador : null);
 
   return {
     resposta: '*' + (s.apelido || s.descricao) + '*. Qual o valor?\n\n' +
       '_Digite como 1.500,00_' +
       (dados.documentoNovo
-        ? '\n\nCliente ' + formatarCnpj(dados.documentoNovo) +
-          ' — a contabilidade confere os dados antes de emitir.'
+        ? '\n\nCliente: ' + (dados.nomeNovo || formatarCnpj(dados.documentoNovo))
         : anterior ? '\n\nO cliente será ' + (anterior.tomador.nome || 'o mesmo da última nota') + '.'
         : ''),
     estado: 'escolhendo_valor',
     dados: {
       cnpj: empresa.cnpj,
       documentoNovo: dados.documentoNovo,
+      nomeNovo: dados.nomeNovo,
       base: {
         tomador: tomador,
         servico: { codigoTributacao: s.codigoTributacao, descricao: s.descricao },
@@ -357,7 +379,7 @@ function doServico(t, empresa, dados, memoria) {
  * cópias dela seria uma divergindo da outra. Documento com dígito errado volta
  * como recusa, com o motivo, até esta mesma conversa.
  */
-function doDocumento(t, empresa, memoria, dados) {
+async function doDocumento(t, empresa, memoria, dados, buscarCnpj) {
   const doc = String(t).replace(/[^0-9A-Za-z]/g, '').toUpperCase();
   if (doc.length !== 14 && doc.length !== 11) {
     return naoEntendi(dados, () => ({
@@ -367,8 +389,7 @@ function doDocumento(t, empresa, memoria, dados) {
     }));
   }
 
-  const servicos = memoria.servicosDa(empresa.cnpj);
-  if (!servicos.length) {
+  if (!memoria.servicosDa(empresa.cnpj).length) {
     return {
       resposta: 'Para uma nota nova eu preciso do serviço já cadastrado pela ' +
                 'contabilidade, e ainda não há nenhum para esta empresa.\n\n' +
@@ -377,15 +398,126 @@ function doDocumento(t, empresa, memoria, dados) {
     };
   }
 
+  const base = Object.assign({}, dados, { documentoNovo: doc });
+
+  /* CPF a base pública não devolve — não existe consulta de pessoa física
+     aberta, e não deveria existir. Então o nome é perguntado, que é o único
+     campo que a DPS exige além do documento. */
+  if (doc.length === 11) {
+    return {
+      resposta: 'CPF ' + formatarCpf(doc) + '.\n\n' +
+        'Qual o nome completo da pessoa?\n\n' +
+        '_Pessoa física não tem consulta pública, então preciso perguntar._',
+      estado: 'nome_novo',
+      dados: base
+    };
+  }
+
+  /* CNPJ: busca e MOSTRA. Antes a consulta acontecia depois da conversa, do
+     outro lado, e o cliente nunca via o resultado — se a base estivesse
+     desatualizada, ninguém percebia até a nota sair com o nome errado. */
+  const achado = buscarCnpj ? await buscarCnpj(doc) : null;
+  if (!achado) {
+    return {
+      resposta: 'Não consegui os dados desse CNPJ na base pública agora.\n\n' +
+        'Qual a razão social do cliente?',
+      estado: 'nome_novo',
+      dados: base
+    };
+  }
+
+  const endereco = require('./receita').enderecoEmUmaLinha(achado);
+  return {
+    resposta: 'Achei:\n\n' +
+      '*' + achado.nome + '*\n' +
+      formatarCnpj(doc) + '\n' +
+      (endereco ? endereco + '\n' : '') +
+      (achado.situacao && achado.situacao.toUpperCase() !== 'ATIVA'
+        ? '\n⚠ Situação na Receita: *' + achado.situacao + '*\n' : '') +
+      '\n1 — Está certo\n' +
+      '2 — O nome está diferente (digite o certo)',
+    estado: 'conferindo_cliente',
+    dados: Object.assign({}, base, { achado })
+  };
+}
+
+/* A pessoa confere o que a base devolveu.
+   A Receita atrasa: empresa que mudou de nome há dois meses ainda aparece com o
+   antigo. Quem pede a nota conhece o cliente melhor do que a base — então a
+   correção dela vale, e o contador confere na aprovação de todo jeito. */
+function doConferirCliente(t, empresa, memoria, dados) {
+  const escolha = escolher(t, [
+    { chave: 'certo', sinonimos: ['certo', 'sim', 'confirmo', 'ok', 'isso'] },
+    { chave: 'corrigir', sinonimos: ['nao', 'não', 'errado', 'diferente', 'corrigir'] }
+  ]);
+
+  if (escolha && escolha.chave === 'certo') {
+    return seguirParaServico(empresa, memoria, Object.assign({}, dados, {
+      nomeNovo: dados.achado.nome, dadosDaReceita: dados.achado
+    }));
+  }
+  if (escolha && escolha.chave === 'corrigir') {
+    return {
+      resposta: 'Sem problema. Qual a razão social correta?',
+      estado: 'nome_novo', dados
+    };
+  }
+
+  /* Quem responde direto com o nome novo, em vez de "2", está corrigindo —
+     obrigar a passar pelo menu seria burocracia sem motivo. */
+  if (t.length >= 3 && !/^\d+$/.test(t)) {
+    return seguirParaServico(empresa, memoria, Object.assign({}, dados, {
+      nomeNovo: t.slice(0, 300), nomeCorrigido: true,
+      dadosDaReceita: dados.achado
+    }));
+  }
+
+  return naoEntendi(dados, () => ({
+    resposta: 'Responda *1* se está certo, ou escreva a razão social correta.',
+    estado: 'conferindo_cliente', dados
+  }));
+}
+
+function doNomeNovo(t, empresa, memoria, dados) {
+  if (t.length < 3) {
+    return naoEntendi(dados, () => ({
+      resposta: 'O nome ficou curto demais. Escreva como deve sair na nota.',
+      estado: 'nome_novo', dados
+    }));
+  }
+  return seguirParaServico(empresa, memoria, Object.assign({}, dados, {
+    nomeNovo: t.slice(0, 300)
+  }));
+}
+
+function seguirParaServico(empresa, memoria, dados) {
+  const servicos = memoria.servicosDa(empresa.cnpj);
   return {
     resposta: 'Certo. Qual serviço?\n\n' +
       servicos.slice(0, 8).map((x, i) => (i + 1) + ' — ' + (x.apelido || x.descricao)).join('\n'),
     estado: 'escolhendo_servico',
-    dados: Object.assign({}, dados, {
-      documentoNovo: doc,
-      servicos: servicos.slice(0, 8).map(x => x.id)
-    })
+    dados: Object.assign({}, dados, { servicos: servicos.slice(0, 8).map(x => x.id) })
   };
+}
+
+function formatarCpf(d) {
+  const c = String(d || '');
+  return c.length === 11
+    ? c.slice(0, 3) + '.' + c.slice(3, 6) + '.' + c.slice(6, 9) + '-' + c.slice(9)
+    : c;
+}
+
+function formatarTelefone(d) {
+  const c = String(d || '').replace(/\D/g, '');
+  if (c.length === 13 && c.startsWith('55')) {
+    return '(' + c.slice(2, 4) + ') ' + c.slice(4, 9) + '-' + c.slice(9);
+  }
+  if (c.length === 12 && c.startsWith('55')) {
+    return '(' + c.slice(2, 4) + ') ' + c.slice(4, 8) + '-' + c.slice(8);
+  }
+  if (c.length === 11) return '(' + c.slice(0, 2) + ') ' + c.slice(2, 7) + '-' + c.slice(7);
+  if (c.length === 10) return '(' + c.slice(0, 2) + ') ' + c.slice(2, 6) + '-' + c.slice(6);
+  return c;
 }
 
 function doValor(t, empresa, contato, dados) {
@@ -436,7 +568,7 @@ function doValor(t, empresa, contato, dados) {
       (acimaDoTeto
         ? '_Acima do combinado para este número — a contabilidade vai conferir._\n\n'
         : '') +
-      '1 — Confirmar\n2 — Cancelar',
+      '1 — Confirmar\n2 — Corrigir o valor\n3 — Cancelar',
     estado: 'confirmando',
     dados: Object.assign({}, dados, { valorEscolhido: valor })
   };
@@ -445,16 +577,27 @@ function doValor(t, empresa, contato, dados) {
 function doConfirmacao(t, empresa, contato, dados, memoria) {
   const escolha = escolher(t, [
     { chave: 'sim', sinonimos: ['sim', 'confirmar', 'confirmo', 'ok', 'pode'] },
+    { chave: 'valor', sinonimos: ['corrigir', 'valor errado', 'outro valor', 'mudar'] },
     { chave: 'nao', sinonimos: ['nao', 'não', 'cancelar', 'errado'] }
   ]);
   if (!escolha) {
     return naoEntendi(dados, () => ({
-      resposta: 'Responda *1* para confirmar ou *2* para cancelar.',
+      resposta: 'Responda *1* para confirmar, *2* para corrigir o valor ou ' +
+                '*3* para cancelar.',
       estado: 'confirmando', dados
     }));
   }
   if (escolha.chave === 'nao') {
     return { resposta: 'Cancelado, nada foi enviado. É só chamar de novo.', estado: null };
+  }
+  /* Valor errado não deveria custar recomeçar tudo. Era o caminho antes: só
+     cancelar e refazer as quatro respostas. */
+  if (escolha.chave === 'valor') {
+    return {
+      resposta: 'Qual o valor correto?\n\n_Digite como 1.500,00_',
+      estado: 'escolhendo_valor',
+      dados: Object.assign({}, dados, { servicoEscolhido: true, valorEscolhido: null })
+    };
   }
 
   const base = dados.base;
@@ -467,7 +610,24 @@ function doConfirmacao(t, empresa, contato, dados, memoria) {
        da solicitação, e some daqui quando o pedido é buscado. */
     transcricao: (dados.transcricao || []).slice(-60),
     cnpjEmpresa: empresa.cnpj,
-    tomador: { cnpj: base.tomador.documento, razaoSocial: base.tomador.nome },
+    /* O nome vai como a pessoa confirmou — ela conhece o cliente dela melhor
+       que uma base pública que pode estar meses atrasada. O gateway confere o
+       documento e o contador aprova de todo jeito. */
+    tomador: Object.assign(
+      { razaoSocial: base.tomador.nome },
+      String(base.tomador.documento || '').length === 11
+        ? { cpf: base.tomador.documento }
+        : { cnpj: base.tomador.documento },
+      base.tomador.endereco && base.tomador.endereco.codigoMunicipio ? {
+        endereco: {
+          codigoMunicipio: base.tomador.endereco.codigoMunicipio,
+          cep: base.tomador.endereco.cep,
+          logradouro: base.tomador.endereco.logradouro,
+          numero: base.tomador.endereco.numero,
+          complemento: base.tomador.endereco.complemento,
+          bairro: base.tomador.endereco.bairro
+        }
+      } : {}),
     servico: {
       codigoTributacaoNacional: base.servico.codigoTributacao,
       descricao: base.servico.descricao

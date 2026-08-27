@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const meta = require('./meta');
 const conversa = require('./conversa');
 const { Memoria } = require('./memoria');
+const receita = require('./receita');
 
 /* O repassador entre o WhatsApp e o gateway do escritório.
  *
@@ -126,7 +127,13 @@ async function tratarMensagem(m) {
       'Se você é cliente do escritório, peça para cadastrarem seu WhatsApp.');
   }
 
+  const tinhaConversa = !!memoria.dados.conversas[m.de];
   const anterior = memoria.conversaDe(m.de);
+
+  /* Conversa que expirou some em silêncio: a pessoa volta uma hora depois,
+     responde "1" ao que estava na tela, e recebe o menu sem entender por quê.
+     Dizer que expirou custa uma linha e evita a sensação de sistema quebrado. */
+  const expirou = tinhaConversa && !anterior;
 
   /* Cada mensagem entra na transcrição antes de ser respondida. Anotar só
      depois perderia justamente a que quebrou a conversa. */
@@ -140,10 +147,19 @@ async function tratarMensagem(m) {
 
   let saida;
   try {
-    saida = conversa.responder({
+    saida = await conversa.responder({
       texto: m.texto, telefone: m.de, vinculos, conversa: anterior ? comHistorico : null,
-      memoria
+      memoria,
+      /* A consulta pública entra por aqui: a conversa não sabe de onde os dados
+         vêm, o que a mantém testável sem rede. */
+      buscarCnpj: receita.consultarCnpj
     });
+    if (expirou) {
+      saida = Object.assign({}, saida, {
+        resposta: '_A conversa anterior expirou por inatividade — nada foi ' +
+                  'enviado._\n\n' + saida.resposta
+      });
+    }
   } catch (e) {
     console.error('[conversa] quebrou:', e.message);
     memoria.esquecerConversa(m.de);
@@ -157,6 +173,22 @@ async function tratarMensagem(m) {
     em: new Date().toISOString()
   }]).slice(-60);
 
+  /* A ORDEM IMPORTA, e estava errada.
+   *
+   * O estado era salvo ANTES de a resposta sair. Falhando o envio — janela de
+   * 24h fechada, Meta fora do ar, token vencido —, a conversa avançava de um
+   * passo que a pessoa nunca viu: a próxima mensagem dela seria interpretada
+   * contra uma pergunta que nunca chegou.
+   *
+   * Agora a resposta vai primeiro. Se ela não chegar, o estado fica onde
+   * estava, e a pessoa continua de onde parou quando o canal voltar.
+   */
+  const entregue = await responderAoCliente(m.de, saida.resposta);
+  if (!entregue) {
+    console.warn('[conversa] resposta não entregue a', m.de, '— o estado não avançou');
+    return;
+  }
+
   if (saida.pedido) {
     saida.pedido.transcricao = completa;
     memoria.enfileirar(saida.pedido);
@@ -169,8 +201,6 @@ async function tratarMensagem(m) {
   } else {
     memoria.esquecerConversa(m.de);
   }
-
-  return responderAoCliente(m.de, saida.resposta);
 }
 
 /* As credenciais do número vêm do gateway junto com o cadastro; o .env é o
@@ -184,21 +214,25 @@ function credenciais() {
   };
 }
 
+/* Devolve `true` só quando a mensagem saiu de verdade. Quem chama usa isso
+   para decidir se o estado da conversa pode avançar. */
 async function responderAoCliente(para, textoMsg) {
   try {
     const { phoneNumberId, token } = credenciais();
     if (!phoneNumberId || !token) {
       console.error('[meta] sem número configurado — a resposta para', para, 'não saiu.',
         'Configure o WhatsApp do escritório na tela "Portal do cliente" do gateway.');
-      return;
+      return false;
     }
     await meta.enviarTexto({ para, texto: textoMsg, phoneNumberId, token });
+    return true;
   } catch (e) {
     if (e.foraDaJanela) {
       console.warn('[meta] janela de 24h fechada para', para, '- a resposta não saiu');
     } else {
       console.error('[meta] falha ao responder', para + ':', e.message);
     }
+    return false;
   }
 }
 

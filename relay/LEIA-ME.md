@@ -56,23 +56,41 @@ cadastre os números de WhatsApp autorizados.
 
 ```
 Cliente:  oi
-Bot:      Olá, Maria! Emissão de notas de *ALFA*.
-          1 — A nota de sempre — CLIENTE MENSAL LTDA, R$ 2.500,00
+Bot:      *Contabilidade Silva*
+          _Atendimento automático para emissão de notas._
+
+          Olá, Maria! Nota por *ALFA*
+          11.111.111/0001-91.
+
+          1 — A nota de sempre — CLIENTE MENSAL, R$ 2.500,00
           2 — Outra nota
+          3 — Nota para um cliente novo
 Cliente:  1
 Bot:      A última foi assim: ... 1 — Mesmo valor  2 — Outro valor
 Cliente:  1
-Bot:      Confira antes de eu enviar: ... 1 — Confirmar  2 — Cancelar
+Bot:      Confira antes de eu enviar: ...
+          1 — Confirmar  2 — Corrigir o valor  3 — Cancelar
 Cliente:  1
-Bot:      Pedido enviado. A contabilidade confere e eu te aviso aqui.
+Bot:      ✓ Pedido enviado. ... Precisa de outra? É só escrever "oi".
 ```
 
-Três respostas para o caso normal. `cancelar`, `voltar` e `ajuda` funcionam em
-qualquer ponto.
+Três respostas para o caso normal.
 
-**Um número fala por uma empresa só.** No WhatsApp não existe barra mostrando
-qual está selecionada — permitir duas traria de volta, pelo canal onde é pior, a
-confusão que o painel resolve.
+**Cliente novo:** a conversa pede só o CNPJ, consulta a base pública e **mostra
+o que achou** para a pessoa conferir ou corrigir — a Receita atrasa, e quem pede
+a nota conhece o cliente melhor. Para CPF não existe consulta pública, então o
+nome é perguntado (é o único campo que a DPS exige além do documento).
+
+**Em qualquer ponto:** `cancelar` encerra, `voltar` refaz, `oi` recomeça, e
+`atendente` devolve o telefone e o e-mail do escritório — ninguém fica preso no
+robô. Conversa parada 30 minutos expira, e a próxima mensagem avisa que
+expirou.
+
+**Um número pode servir várias empresas.** Quando serve mais de uma, a conversa
+pergunta por qual antes de tudo — por número da lista ou digitando o CNPJ — e a
+empresa aparece escrita, com CNPJ, na abertura e de novo na conferência. É o que
+substitui a barra fixa do painel: no WhatsApp a pessoa rola a tela e perde a
+referência, e emitir no CNPJ errado é nota no cliente errado.
 
 ## Custo
 
@@ -95,5 +113,7 @@ janela de 24 horas (~R$ 0,05).
 npm test
 ```
 
-31 testes, sem WhatsApp nenhum: a conversa é função pura, e a assinatura do
+57 testes, sem WhatsApp nenhum e sem rede. A conversa é função pura e a consulta
+pública entra por injeção, então dá para exercitar até os caminhos de erro — base
+fora do ar, dado desatualizado, resposta que a pessoa corrige. A assinatura do
 webhook é testada com HMAC de verdade.
