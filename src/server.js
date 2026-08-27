@@ -237,6 +237,10 @@ const servidor = app.listen(config.port, process.env.HOST || '0.0.0.0', () => {
      duplica nem mexe no que já foi concluído. */
   if (process.env.RESUMO_ATIVO !== 'false') require('./services/resumoPrazos').iniciar();
   if (process.env.PONTE_ATIVA !== 'false') require('./services/ponteNuvem').iniciar();
+  /* O repassador do WhatsApp, quando o escritorio escolheu roda-lo aqui.
+     Uma instalacao, uma atualizacao, um lugar so para olhar o log. */
+  require('./services/repassadorLocal').iniciar()
+    .catch(e => console.warn('[repassador]', e.message));
 
   require('./services/obrigacoes').gerar({ meses: 3 })
     .then(r => { if (r.criadas) console.log(`[obrigacoes] ${r.criadas} ocorrência(s) criada(s)`); })
@@ -261,6 +265,7 @@ function encerrar(sinal) {
   webhooks.parar();
   emailTomador.parar();
   backupAutomatico.parar();
+  require('./services/repassadorLocal').parar();
   servidor.close(() => {
     db.pool.end()
       .then(() => { console.log('[shutdown] concluído'); process.exit(0); })

@@ -35,12 +35,26 @@ Ok "pacote/ limpo"
 
 Titulo "2. Copiando o gateway"
 
-$incluir = @('src', 'migrations', 'scripts', 'package.json', 'package-lock.json', '.env.example')
+# relay/ vai junto: o repassador do WhatsApp pode rodar na propria maquina do
+# escritorio, subido e vigiado pelo gateway. Sem ele no pacote, a chave "Rodar o
+# repassador nesta maquina" ligaria e nada aconteceria.
+$incluir = @('src', 'migrations', 'scripts', 'relay',
+             'package.json', 'package-lock.json', '.env.example')
 foreach ($item in $incluir) {
     $origem = Join-Path $raizProjeto $item
     if (-not (Test-Path $origem)) { throw "nao encontrei $item" }
     Copy-Item $origem -Destination $pacote -Recurse -Force
 }
+
+# Testes e fila de desenvolvimento nao vao para a maquina da contabilidade.
+foreach ($fora in @('relay\teste', 'relay\dados')) {
+    $p = Join-Path $pacote $fora
+    if (Test-Path $p) { Remove-Item $p -Recurse -Force }
+}
+Ok "relay/ incluido (sem teste/ e dados/)"
+
+# A pasta onde o escritorio poe o cloudflared, se optar pelo tunel local.
+New-Item -ItemType Directory -Force -Path (Join-Path $pacote 'ferramentas') | Out-Null
 
 # node_modules so de producao: as de desenvolvimento nao vao para a maquina
 # da contabilidade e o instalador fica bem menor.

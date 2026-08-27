@@ -953,6 +953,123 @@
 
         <div class="cartao" style="margin:0 0 18px" data-admin hidden>
           <div class="cartao-cab">
+            <h2>Onde o WhatsApp atende</h2>
+            <span id="rpEstado" class="selo-status s-neutro"></span>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:16px">
+              A Meta entrega as mensagens num endereço público em https. Quem as
+              recebe é o <strong>repassador</strong>: um programa pequeno, que só
+              conversa e enfileira pedidos — nunca vê o certificado, a numeração
+              nem o XML. Ele pode rodar num servidor alugado, ou
+              <strong>aqui, junto com o gateway</strong>.
+            </div>
+
+            <label style="display:flex;align-items:center;gap:9px;font-weight:400">
+              <input type="checkbox" id="rpLocal" style="width:auto">
+              Rodar o repassador nesta máquina
+            </label>
+            <div class="ajuda" style="margin-top:6px">
+              <strong>Ligado</strong>: uma instalação, uma atualização, um backup,
+              um log. O gateway sobe o repassador, vigia e reinicia se cair.
+              <strong>Desligado</strong>: ele roda noutro servidor, e o endereço
+              dele vai no campo <em>Endereço do portal</em>, logo abaixo.
+            </div>
+            <div class="ajuda" style="margin-top:10px">
+              O que se perde rodando aqui: numa VPS, um repassador invadido está
+              numa máquina que não tem nada. Aqui ele está na mesma máquina do
+              certificado — separado por processo, sem senha do banco e ouvindo só
+              em 127.0.0.1, mas na mesma máquina. Em troca, some a peça que
+              ninguém atualiza.
+            </div>
+
+            <div id="rpCaixaLocal" hidden>
+              <div class="caixa-amb" style="margin-top:18px">
+                <h4>O repassador</h4>
+                <div class="grade c3">
+                  <div><label for="rpPorta">Porta interna</label>
+                    <input id="rpPorta" type="number" min="1024" max="65535" value="8080">
+                    <div class="ajuda">Atende só em 127.0.0.1.</div></div>
+                  <div><label for="rpAppSecret">App Secret da Meta</label>
+                    <input id="rpAppSecret" type="password" autocomplete="new-password"
+                           placeholder="deixe em branco para manter">
+                    <div class="ajuda" id="rpAppSecretEstado"></div></div>
+                  <div><label for="rpVerify">Token de verificação</label>
+                    <input id="rpVerify" type="text" autocomplete="off" class="mono"
+                           placeholder="clique em Sortear e copie">
+                    <div class="ajuda" id="rpVerifyEstado"></div>
+                    <button class="pequeno" id="btnSortearVerify"
+                            style="margin-top:6px">Sortear</button></div>
+                </div>
+                <div class="ajuda" style="margin-top:10px">
+                  O <span class="mono">App Secret</span> é o que prova que a
+                  mensagem veio da Meta; o token de verificação é o que ela
+                  pergunta uma vez, ao cadastrar o webhook — a mesma frase vai
+                  nos dois lugares. Com o repassador aqui, os dois ficam
+                  cifrados neste banco e são entregues ao processo na hora de
+                  subi-lo: não viajam por canal nenhum.
+                </div>
+              </div>
+
+              <div class="caixa-amb" style="margin-top:16px">
+                <h4>O endereço público</h4>
+                <div class="ajuda" style="margin-bottom:12px">
+                  O túnel dá um endereço em https <strong>sem abrir porta no
+                  roteador</strong>: a conexão é de saída, desta máquina para a
+                  Cloudflare. O gateway continua invisível — o que existe lá fora
+                  é o nome do túnel, e atrás dele só o repassador.
+                </div>
+                <label style="display:flex;align-items:center;gap:9px;font-weight:400">
+                  <input type="checkbox" id="rpTunel" style="width:auto">
+                  Manter o túnel no ar por aqui
+                </label>
+                <div class="grade c2" style="margin-top:14px">
+                  <div><label for="rpTunelToken">Token do túnel</label>
+                    <input id="rpTunelToken" type="password" autocomplete="new-password"
+                           placeholder="deixe em branco para manter">
+                    <div class="ajuda" id="rpTunelTokenEstado"></div></div>
+                  <div><label for="rpUrlPublica">Endereço público</label>
+                    <input id="rpUrlPublica" maxlength="300"
+                           placeholder="https://nfse.seudominio.com.br">
+                    <div class="ajuda">O mesmo que você deu ao túnel na
+                      Cloudflare. Na Meta, cadastre-o com
+                      <span class="mono">/webhook</span> no fim.</div></div>
+                </div>
+                <div style="margin-top:14px">
+                  <label for="rpBinario">Programa do túnel</label>
+                  <input id="rpBinario" class="mono" maxlength="300"
+                         placeholder="ferramentas\cloudflared.exe">
+                  <div class="ajuda">Em branco: procura na pasta
+                    <span class="mono">ferramentas</span> e no PATH. O gateway
+                    <strong>não baixa programa sozinho</strong> — numa máquina
+                    que guarda certificado A1 isso não se faz. Baixe o
+                    <a href="https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"
+                       target="_blank" rel="noopener">cloudflared</a> uma vez e
+                    ponha ali.</div>
+                </div>
+                <div class="ajuda" style="margin-top:12px">
+                  Use um <strong>túnel nomeado</strong>, não o endereço de teste:
+                  o de teste muda a cada reinício, e endereço de webhook que muda
+                  sozinho quer dizer reconfigurar a Meta toda vez que faltar luz.
+                </div>
+              </div>
+
+              <div class="caixa-amb" style="margin-top:16px">
+                <h4>Os dois processos, agora</h4>
+                <div id="rpProcessos"></div>
+              </div>
+            </div>
+
+            <div class="linha-botoes" style="margin-top:18px">
+              <button class="primario" id="btnSalvarRepassador">Salvar</button>
+              <button id="btnReiniciarRepassador">Reiniciar</button>
+            </div>
+            <div id="rpResultado" class="ajuda" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0 0 18px" data-admin hidden>
+          <div class="cartao-cab">
             <h2>Ligação com o portal</h2>
             <span id="ptEstado" class="selo-status s-neutro"></span>
           </div>
@@ -971,8 +1088,8 @@
                 <label for="ptUrl">Endereço do portal</label>
                 <input id="ptUrl" maxlength="300" placeholder="https://portal.exemplo.com.br/api"
                        autocomplete="off">
-                <div class="ajuda">Precisa ser https: as solicitações levam CNPJ,
-                  valores e descrição de serviço.</div>
+                <div class="ajuda" id="ptUrlNota">Precisa ser https: as solicitações
+                  levam CNPJ, valores e descrição de serviço.</div>
               </div>
               <div>
                 <label for="ptChave">Chave desta instalação</label>
@@ -1031,13 +1148,7 @@
                 ficam nos servidores da Meta — é o documento do próprio cliente
                 indo para ele, mas é uma escolha.
               </div>
-              <div class="ajuda" style="margin-top:10px">
-                O <span class="mono">App Secret</span> e o token de verificação
-                <strong>não vêm para cá</strong>: são eles que provam que a
-                mensagem veio da Meta, e mandá-los pelo canal que protegem
-                fecharia o círculo. Esses ficam no <span class="mono">.env</span>
-                do repassador, escritos uma vez na instalação.
-              </div>
+              <div class="ajuda" style="margin-top:10px" id="waSegredosNota"></div>
               <div class="linha-botoes" style="margin-top:14px">
                 <button class="pequeno primario" id="btnSalvarCanal">Salvar WhatsApp</button>
               </div>

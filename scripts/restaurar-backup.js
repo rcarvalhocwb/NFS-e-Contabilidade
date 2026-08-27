@@ -16,30 +16,32 @@
  */
 require('dotenv').config();
 const fs = require('fs');
+const path = require('path');
 const db = require('../src/db');
 
 const arquivo = process.argv[2];
 const soConferir = process.argv.includes('--conferir');
 
-/* Chave natural de cada tabela, para saber o que já existe. As que não têm
-   chave além do id ficam de fora do ON CONFLICT e usam o próprio id. */
-const CONFLITO = {
-  empresas: '(cnpj)',
-  numeracao_dps: '(empresa_id, ambiente)',
-  empresa_tokens: '(empresa_id, ambiente)',
-  usuarios: '(email)',
-  usuario_empresas: '(usuario_id, empresa_id)',
-  municipios: '(codigo_municipio)',
-  tomadores: '(empresa_id, documento)',
-  servicos: '(empresa_id, apelido)',
-  notas: '(id)',
-  certificados: '(id)',
-  webhooks: '(id)'
-};
+/* A mesma lista do backup, na mesma ordem. */
+const { TABELAS: ORDEM, CHAVE_NATURAL } = require('./tabelas-backup');
 
-const ORDEM = ['empresas', 'certificados', 'numeracao_dps', 'empresa_tokens',
-  'usuarios', 'usuario_empresas', 'municipios', 'webhooks', 'tomadores',
-  'servicos', 'notas'];
+/* Onde não há chave natural melhor, pergunta ao Postgres qual é a primária.
+   O mapa fixo anterior chutava `(id)` para o resto, e isso quebrava justamente
+   nas de chave composta — numeracao_dps, regra_im_dps, empresa_obrigacoes —
+   que são as que mais doem perder. */
+async function conflitoDe(tabela) {
+  if (CHAVE_NATURAL[tabela]) return CHAVE_NATURAL[tabela];
+  const r = await db.query(
+    `SELECT string_agg(quote_ident(a.attname), ', ' ORDER BY k.ord) AS colunas
+       FROM pg_constraint con
+       JOIN pg_class c ON c.oid = con.conrelid
+       JOIN LATERAL unnest(con.conkey) WITH ORDINALITY AS k(att, ord) ON TRUE
+       JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.att
+      WHERE con.contype = 'p' AND c.relname = $1
+        AND c.relnamespace = 'public'::regnamespace`, [tabela]);
+  const colunas = (r.rows[0] || {}).colunas;
+  return colunas ? '(' + colunas + ')' : null;
+}
 
 async function principal() {
   if (!arquivo) {
@@ -75,14 +77,21 @@ async function principal() {
     for (const tabela of ORDEM) {
       const linhas = backup.tabelas[tabela];
       if (!Array.isArray(linhas) || !linhas.length) continue;
+      if (!(await conflitoDe(tabela)) &&
+          !(await db.query('SELECT to_regclass($1) AS t', ['public.' + tabela]))
+            .rows[0].t) {
+        console.log(`${tabela.padEnd(18)}     - (não existe neste banco)`);
+        continue;
+      }
 
+      const conflito = await conflitoDe(tabela);
       for (const linha of linhas) {
         const colunas = Object.keys(linha);
         const marcadores = colunas.map((_, i) => '$' + (i + 1));
         await cliente.query(
           `INSERT INTO ${tabela} (${colunas.map(c => `"${c}"`).join(',')})
            VALUES (${marcadores.join(',')})
-           ON CONFLICT ${CONFLITO[tabela] || '(id)'} DO NOTHING`,
+           ${conflito ? 'ON CONFLICT ' + conflito + ' DO NOTHING' : ''}`,
           colunas.map(c => linha[c]));
       }
       total += linhas.length;
@@ -113,6 +122,22 @@ async function principal() {
          WHERE pg_get_serial_sequence($1, 'id') IS NOT NULL`, [tabela]);
     } catch (e) {
       console.warn(`aviso: não ajustei a sequence de ${tabela} (${e.message})`);
+    }
+  }
+
+  /* A fila do repassador só volta se não houver uma no lugar: sobrescrever
+     uma fila viva perderia pedidos que chegaram depois do backup. */
+  if (backup.repassador && !backup.repassador.erro) {
+    const destino = path.join(__dirname, '..', 'dados-relay', 'relay.json');
+    if (fs.existsSync(destino)) {
+      console.log('\nA fila do repassador já existe e foi mantida. O backup ' +
+        'tem ' + (backup.repassador.pedidos || []).length + ' pedido(s); ' +
+        'para usá-la, pare o gateway e apague ' + destino + ' antes.');
+    } else {
+      fs.mkdirSync(path.dirname(destino), { recursive: true });
+      fs.writeFileSync(destino, JSON.stringify(backup.repassador, null, 1), 'utf8');
+      console.log('\nFila do repassador restaurada: ' +
+        (backup.repassador.pedidos || []).length + ' pedido(s).');
     }
   }
 

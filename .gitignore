@@ -31,6 +31,15 @@ atualizacoes/
 # artefatos de análise gerados durante o desenvolvimento
 .artefatos/
 
+# Fila e conversas do repassador quando ele roda nesta máquina. Levam telefone
+# de cliente e pedido em andamento — entram no backup, nunca no repositório.
+dados-relay/
+relay/dados/
+
+# O cloudflared, baixado uma vez pelo escritório. Binário de 70 MB de terceiro:
+# não é código deste projeto e não se versiona junto.
+ferramentas/
+
 # scripts descartáveis de edição
 .patch.py
 .p.py

@@ -25,6 +25,14 @@ const receita = require('./receita');
 
 const PORTA = Number(process.env.PORT || 8080);
 
+/* Em qual placa de rede atender.
+ *
+ * Numa VPS é 0.0.0.0, porque o Caddy fala com ele de fora do processo. Rodando
+ * na máquina do escritório é 127.0.0.1, e a diferença não é detalhe: em
+ * 0.0.0.0 qualquer computador da rede da contabilidade alcançaria o webhook e
+ * a fila de pedidos. Quem precisa alcançar é o túnel, e o túnel roda aqui. */
+const HOST = process.env.HOST || '0.0.0.0';
+
 const CFG = {
   verifyToken: process.env.META_VERIFY_TOKEN || '',
   appSecret: process.env.META_APP_SECRET || '',
@@ -387,17 +395,25 @@ const servidor = http.createServer(async (req, res) => {
 });
 
 function conferirConfiguracao() {
-  const faltando = Object.keys(CFG).filter(k => !CFG[k]);
+  /* `token` e `phoneNumberId` chegam com o cadastro, não pelo ambiente: são
+     configurados na tela do gateway. Cobrá-los aqui mandava o operador
+     procurar num .env uma coisa que nunca esteve nele. */
+  const doAmbiente = ['verifyToken', 'appSecret', 'chaveGateway'];
+  const faltando = doAmbiente.filter(k => !CFG[k]);
   if (faltando.length) {
     console.warn('[config] faltam variáveis: ' + faltando.join(', ') +
       ' — veja o .env.exemplo. O relay sobe assim mesmo, mas não vai funcionar inteiro.');
+  }
+  if (!CFG.token || !CFG.phoneNumberId) {
+    console.log('[config] sem token de envio ainda — ele chega com o cadastro ' +
+      'do gateway. Se demorar, mande "Enviar agora" na tela Portal do cliente.');
   }
 }
 
 if (require.main === module) {
   conferirConfiguracao();
-  servidor.listen(PORTA, () => {
-    console.log('repassador ouvindo na porta ' + PORTA);
+  servidor.listen(PORTA, HOST, () => {
+    console.log('repassador ouvindo em ' + HOST + ':' + PORTA);
     console.log('  webhook da Meta:  POST /webhook');
     console.log('  gateway busca em: GET  /solicitacoes');
   });

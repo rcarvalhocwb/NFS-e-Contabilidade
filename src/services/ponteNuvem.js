@@ -27,6 +27,7 @@
  *
  * O portal responde 200 com lista vazia quando não há nada — não 404.
  */
+const crypto = require('crypto');
 const db = require('../db');
 const config = require('../config');
 const { encrypt, decrypt } = require('../secretbox');
@@ -43,7 +44,7 @@ let timer = null;
  * A URL é digitada por quem configura, e uma requisição de saída para um
  * endereço interno transforma o gateway num scanner da rede da contabilidade —
  * é a forma clássica de SSRF. Portal de verdade está na internet, com https. */
-function validarUrl(url) {
+function validarUrl(url, opcoes = {}) {
   let u;
   try {
     u = new URL(String(url));
@@ -52,7 +53,15 @@ function validarUrl(url) {
       { status: 400 });
   }
 
-  const permiteHttp = process.env.PONTE_PERMITE_HTTP === 'true';
+  /* Quando o repassador e o que ESTE gateway subiu, 127.0.0.1 nao e um
+     endereco de rede a ser varrido: e um processo filho conhecido, ouvindo so
+     em localhost, cujo endereco o proprio codigo escolheu. A trava existe
+     contra endereco DIGITADO. */
+  const proprio = opcoes.proprioProcesso &&
+    /^https?:$/.test(new URL(String(url)).protocol) &&
+    ['127.0.0.1', 'localhost'].includes(new URL(String(url)).hostname.toLowerCase());
+
+  const permiteHttp = proprio || process.env.PONTE_PERMITE_HTTP === 'true';
   if (u.protocol !== 'https:' && !permiteHttp) {
     throw Object.assign(new Error(
       'O endereço precisa ser https. As solicitações levam CNPJ, valores e ' +
@@ -83,8 +92,13 @@ async function ler() {
             ultimo_contato, ultimo_erro, erro_em, atualizado_em,
             cadastro_hash, cadastro_em, cadastro_erro,
             wa_numero, wa_phone_number_id, wa_ativo, wa_envia_documentos,
+            relay_local, relay_porta, relay_url_publica,
+            tunel_ativo, tunel_binario,
+            (tunel_token_cifrado IS NOT NULL) AS tem_tunel_token,
             (chave_cifrada IS NOT NULL) AS tem_chave,
-            (wa_token_cifrado IS NOT NULL) AS tem_wa_token
+            (wa_token_cifrado IS NOT NULL) AS tem_wa_token,
+            (wa_app_secret_cifrado IS NOT NULL) AS tem_app_secret,
+            (wa_verify_token_cifrado IS NOT NULL) AS tem_verify_token
        FROM config_nuvem WHERE id = TRUE`);
   return r.rows[0] || {};
 }
@@ -110,8 +124,23 @@ async function salvar(dados = {}) {
     campos.push(`${coluna} = $${valores.length}`);
   };
 
+  /* Precisa vir antes da url: e o que decide se 127.0.0.1 passa. */
+  const local = dados.relayLocal !== undefined
+    ? !!dados.relayLocal
+    : !!(await ler()).relay_local;
+
   if (dados.url !== undefined) {
-    põe('url', dados.url ? validarUrl(dados.url) : null);
+    põe('url', dados.url
+      ? validarUrl(dados.url, { proprioProcesso: local })
+      : null);
+  } else if (dados.relayLocal === true) {
+    /* Ligar a chave já aponta o gateway para o repassador que ele mesmo sobe.
+       Pedir que alguém digite "http://127.0.0.1:8080" numa segunda caixa seria
+       inventar um jeito de errar: o endereço é conhecido, é decidido aqui. */
+    const porta = dados.relayPorta !== undefined
+      ? Number(dados.relayPorta)
+      : ((await ler()).relay_porta || 8080);
+    põe('url', 'http://127.0.0.1:' + porta);
   }
   if (dados.ativo !== undefined) põe('ativo', !!dados.ativo);
   if (dados.emitirAutomatico !== undefined) põe('emitir_automatico', !!dados.emitirAutomatico);
@@ -133,6 +162,17 @@ async function salvar(dados = {}) {
   if (dados.chave) põe('chave_cifrada', encrypt(String(dados.chave)));
   if (dados.removerChave) põe('chave_cifrada', null);
 
+  /* Com o repassador aqui, a chave é usada dos dois lados por este mesmo
+     processo — ninguém precisa inventá-la, copiá-la nem guardá-la em lugar
+     nenhum. Pedir que alguém digite uma frase longa em dois campos só cria
+     um jeito de errar, e a frase que a pessoa inventa é sempre pior. */
+  if (dados.relayLocal === true && !dados.chave) {
+    const atual = await ler();
+    if (!atual.tem_chave) {
+      põe('chave_cifrada', encrypt(crypto.randomBytes(32).toString('base64url')));
+    }
+  }
+
   /* O WhatsApp do escritório. O token é da Meta e vale como senha do número:
      cifrado aqui, e nunca devolvido pela API — a tela só informa se existe. */
   if (dados.waNumero !== undefined) {
@@ -149,6 +189,39 @@ async function salvar(dados = {}) {
   }
   if (dados.waToken) põe('wa_token_cifrado', encrypt(String(dados.waToken)));
   if (dados.removerWaToken) põe('wa_token_cifrado', null);
+
+  /* O repassador nesta maquina.
+     Com ele aqui, o App Secret e o token de verificacao deixam de morar num
+     .env noutro servidor e passam a ser configurados na tela, como o resto.
+     Nao viajam por canal nenhum: sao entregues ao processo filho na hora de
+     inicia-lo. Rodando fora, continuam no .env de la — manda-los pelo canal
+     que eles protegem fecharia o circulo. */
+  if (dados.relayLocal !== undefined) põe('relay_local', !!dados.relayLocal);
+  if (dados.relayPorta !== undefined) {
+    const p = Number(dados.relayPorta);
+    if (!Number.isInteger(p) || p < 1024 || p > 65535) {
+      throw Object.assign(new Error('A porta vai de 1024 a 65535.'), { status: 400 });
+    }
+    põe('relay_porta', p);
+  }
+  if (dados.waAppSecret) põe('wa_app_secret_cifrado', encrypt(String(dados.waAppSecret)));
+  if (dados.removerWaAppSecret) põe('wa_app_secret_cifrado', null);
+  if (dados.waVerifyToken) põe('wa_verify_token_cifrado', encrypt(String(dados.waVerifyToken)));
+  if (dados.removerWaVerifyToken) põe('wa_verify_token_cifrado', null);
+  if (dados.relayUrlPublica !== undefined) {
+    põe('relay_url_publica',
+      dados.relayUrlPublica ? validarUrl(dados.relayUrlPublica) : null);
+  }
+
+  /* O túnel. É ele que dá endereço público sem abrir porta no roteador: a
+     conexão é de SAÍDA, daqui para a Cloudflare. O token vale como a chave
+     desse endereço — quem o tiver publica o que quiser naquele nome. */
+  if (dados.tunelAtivo !== undefined) põe('tunel_ativo', !!dados.tunelAtivo);
+  if (dados.tunelToken) põe('tunel_token_cifrado', encrypt(String(dados.tunelToken)));
+  if (dados.removerTunelToken) põe('tunel_token_cifrado', null);
+  if (dados.tunelBinario !== undefined) {
+    põe('tunel_binario', String(dados.tunelBinario || '').trim() || null);
+  }
 
   if (campos.length) {
     valores.push(true);

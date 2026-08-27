@@ -389,6 +389,7 @@
           ? 'Última falha em ' + fmtDataHora(c.erro_em) + ': ' + c.ultimo_erro : '';
 
         preencherCanal(c);
+        preencherRepassador(c);
         conferirWhatsapp();
         el('ptCadastroEstado').textContent = c.cadastro_erro
           ? 'Último envio falhou: ' + c.cadastro_erro
@@ -882,6 +883,167 @@
       ? 'Um token já está guardado. Deixe em branco para mantê-lo.'
       : 'Nenhum token guardado.';
   }
+
+  /* ------------------------------------------- o repassador desta máquina */
+
+  /* Quem recebe a mensagem da Meta pode rodar aqui ou num servidor alugado.
+     Rodando aqui, some a peça que ninguém atualiza — e é o gateway que sobe,
+     vigia e reinicia os dois processos. A tela é a única configuração. */
+  function preencherRepassador(c) {
+    var local = !!c.relay_local;
+    el('rpLocal').checked = local;
+    el('rpCaixaLocal').hidden = !local;
+    el('rpPorta').value = c.relay_porta || 8080;
+    el('rpTunel').checked = !!c.tunel_ativo;
+    el('rpUrlPublica').value = c.relay_url_publica || '';
+    el('rpBinario').value = c.tunel_binario || '';
+    el('rpAppSecret').value = '';
+    el('rpVerify').value = '';
+    el('rpTunelToken').value = '';
+
+    el('rpAppSecretEstado').textContent = c.tem_app_secret
+      ? 'Guardado. Em branco mantém.' : 'Nenhum guardado.';
+    el('rpVerifyEstado').textContent = c.tem_verify_token
+      ? 'Guardado. Em branco mantém.' : 'Nenhum guardado.';
+    el('rpTunelTokenEstado').textContent = c.tem_tunel_token
+      ? 'Guardado. Em branco mantém.' : 'Nenhum guardado.';
+
+    /* Com o repassador aqui, o endereço não é digitado: é o processo que este
+       gateway mesmo subiu. Deixar a caixa aberta só criaria jeito de errar. */
+    el('ptUrl').readOnly = local;
+    el('ptUrlNota').textContent = local
+      ? 'O repassador é desta máquina: o endereço é escolhido pelo sistema.'
+      : 'Precisa ser https: as solicitações levam CNPJ, valores e descrição de serviço.';
+
+    /* A frase sobre os segredos deixa de valer quando ele roda aqui. */
+    el('waSegredosNota').innerHTML = local
+      ? 'O <span class="mono">App Secret</span> e o token de verificação ficam ' +
+        'logo acima, em <strong>Onde o WhatsApp atende</strong> — com o ' +
+        'repassador nesta máquina, não há .env noutro servidor para editar.'
+      : 'O <span class="mono">App Secret</span> e o token de verificação ' +
+        '<strong>não vêm para cá</strong>: são eles que provam que a mensagem ' +
+        'veio da Meta, e mandá-los pelo canal que protegem fecharia o círculo. ' +
+        'Ficam no <span class="mono">.env</span> do repassador, escritos uma ' +
+        'vez na instalação.';
+
+    if (local) situacaoRepassador();
+    else {
+      el('rpEstado').className = 'selo-status s-neutro';
+      el('rpEstado').textContent = 'Roda fora daqui';
+    }
+  }
+
+  function linhaProcesso(nome, p, ligado, papel) {
+    var cor, texto;
+    if (!ligado) { cor = 's-neutro'; texto = 'desligado'; }
+    else if (p.rodando) { cor = 's-ok'; texto = 'no ar desde ' + fmtDataHora(p.subiuEm); }
+    else if (p.desistiu) { cor = 's-erro'; texto = 'parado'; }
+    else { cor = 's-alerta'; texto = 'subindo'; }
+
+    return '<div style="display:flex;gap:10px;padding:8px 0;' +
+      'border-bottom:1px solid var(--linha)">' +
+      '<div style="flex:none;width:14px"><span class="' + cor + '">●</span></div>' +
+      '<div style="flex:1"><div><strong>' + esc(nome) + '</strong> — ' + esc(texto) + '</div>' +
+      '<div class="ajuda">' + esc(papel) + '</div>' +
+      (p.ultimoErro ? '<div class="ajuda s-erro">' + esc(p.ultimoErro) + '</div>' : '') +
+      (!p.ultimoErro && p.ultimaLinha
+        ? '<div class="ajuda mono">' + esc(p.ultimaLinha) + '</div>' : '') +
+      '</div></div>';
+  }
+
+  /* "O bot não respondeu" começa aqui: os dois processos, de pé ou não, com a
+     última linha que cada um escreveu. Sem isto, a resposta seria abrir o log
+     do Windows — que ninguém no escritório vai abrir. */
+  function situacaoRepassador() {
+    return api('/ponte/repassador').then(function (r) {
+      el('rpProcessos').innerHTML =
+        linhaProcesso('Repassador', r.repassador, r.relayLocal,
+          'Recebe a mensagem da Meta e enfileira o pedido. Escuta em 127.0.0.1:' +
+          r.porta + '.') +
+        linhaProcesso('Túnel', r.tunel, r.tunelAtivo,
+          r.cloudflared
+            ? 'Dá o endereço público sem abrir porta. Programa: ' + r.cloudflared
+            : 'Dá o endereço público sem abrir porta.');
+
+      var selo = el('rpEstado');
+      var faltaSegredo = !r.temAppSecret || !r.temVerifyToken;
+      var deviaTer = r.relayLocal && (!r.tunelAtivo || r.tunel.rodando);
+      if (!r.relayLocal) { selo.className = 'selo-status s-neutro'; selo.textContent = 'Roda fora daqui'; }
+      else if (faltaSegredo) { selo.className = 'selo-status s-alerta'; selo.textContent = 'Falta configurar'; }
+      else if (r.repassador.rodando && deviaTer) { selo.className = 'selo-status s-ok'; selo.textContent = 'No ar'; }
+      else { selo.className = 'selo-status s-erro'; selo.textContent = 'Parado'; }
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('rpLocal').onchange = function () {
+    el('rpCaixaLocal').hidden = !this.checked;
+    /* Preenche o quadro dos processos na hora de abrir a caixa: um retangulo
+       vazio parece defeito, e "desligado" e uma informacao. */
+    if (this.checked) situacaoRepassador();
+  };
+
+  /* Fica visível de propósito: esta mesma frase precisa ser colada no painel da
+     Meta, e ela não protege nada depois do cadastro do webhook — serve só para
+     a Meta provar, uma vez, que quem respondeu era mesmo o dono do endereço. */
+  el('btnSortearVerify').onclick = function () {
+    var b = new Uint8Array(18);
+    crypto.getRandomValues(b);
+    var s = '';
+    for (var i = 0; i < b.length; i++) s += ('0' + b[i].toString(16)).slice(-2);
+    el('rpVerify').value = 'nfse-' + s;
+    el('rpVerifyEstado').textContent =
+      'Copie esta frase: ela vai igualzinha no painel da Meta, em Webhook → ' +
+      'Token de verificação. Salve aqui antes de sair da tela.';
+  };
+
+  el('btnSalvarRepassador').onclick = function () {
+    var b = el('btnSalvarRepassador');
+    var local = el('rpLocal').checked;
+    if (local && el('rpTunel').checked && !el('rpUrlPublica').value) {
+      return aviso('Diga qual é o endereço público do túnel — é ele que vai ' +
+                   'no webhook da Meta.', 'erro');
+    }
+    b.disabled = true;
+    el('rpResultado').textContent = 'Aplicando…';
+    api('/ponte/config', { method: 'PUT', body: JSON.stringify({
+      relayLocal: local,
+      relayPorta: Number(el('rpPorta').value) || 8080,
+      relayUrlPublica: el('rpUrlPublica').value || null,
+      tunelAtivo: el('rpTunel').checked,
+      tunelBinario: el('rpBinario').value,
+      // Vazio mantém o que está guardado, não apaga
+      waAppSecret: el('rpAppSecret').value || undefined,
+      waVerifyToken: el('rpVerify').value || undefined,
+      tunelToken: el('rpTunelToken').value || undefined
+    }) })
+      .then(function (c) {
+        el('rpResultado').textContent = '';
+        preencherRepassador(c);
+        el('ptUrl').value = c.url || '';
+        aviso('Salvo e aplicado.', 'ok');
+      })
+      .catch(function (e) {
+        el('rpResultado').textContent = e.message;
+        aviso(e.message, 'erro');
+      })
+      .then(function () { b.disabled = false; });
+  };
+
+  /* Existe para depois de trocar o token na Meta, e para o caso em que o
+     processo caiu cinco vezes e a supervisão desistiu de propósito. */
+  el('btnReiniciarRepassador').onclick = function () {
+    var b = el('btnReiniciarRepassador');
+    b.disabled = true;
+    el('rpResultado').textContent = 'Reiniciando…';
+    api('/ponte/repassador/reiniciar', { method: 'POST' })
+      .then(function () {
+        el('rpResultado').textContent = '';
+        /* Dá tempo de o processo subir antes de perguntar como ele está. */
+        setTimeout(situacaoRepassador, 1500);
+      })
+      .catch(function (e) { el('rpResultado').textContent = e.message; })
+      .then(function () { b.disabled = false; });
+  };
 
   /* A conversa que gerou o pedido. É o que responde "eu não pedi essa nota":
      o pedido pronto não prova nada, o diálogo prova. */

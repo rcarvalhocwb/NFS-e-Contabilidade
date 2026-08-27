@@ -29,30 +29,9 @@ function argumento(nome) {
   return i !== -1 ? process.argv[i + 1] : undefined;
 }
 
-/* Ordem importa na hora de restaurar: quem é referenciado vem antes.
-   Tabela que fica de fora só se descobre no dia da restauração, quando o
-   calendário de obrigações ou a marca do escritório não voltam. */
-const TABELAS = [
-  'empresas',
-  'certificados',
-  'numeracao_dps',
-  'empresa_tokens',
-  'usuarios',
-  'usuario_empresas',
-  'municipios',
-  'webhooks',
-  'tomadores',
-  'servicos',
-  'obrigacao_modelos',
-  'empresa_obrigacoes',
-  'obrigacoes',
-  'identidade',
-  'regra_im_dps',
-  'backup_destinos',
-  'notas'
-];
-
-const PESADAS = ['notas'];
+/* A lista mora em tabelas-backup.js, compartilhada com a restauração. Eram
+   duas listas, e divergiram — o que só se descobre no dia da restauração. */
+const { TABELAS, PESADAS } = require('./tabelas-backup');
 
 async function principal() {
   const semNotas = process.argv.includes('--sem-notas');
@@ -81,6 +60,23 @@ async function principal() {
       // ter todas, e um backup parcial vale mais que nenhum.
       dados.tabelas[tabela] = { erro: e.message };
       console.log(`${tabela.padEnd(18)}     - (${e.message})`);
+    }
+  }
+
+  /* A fila do repassador, quando ele roda nesta máquina.
+     São os pedidos que o gateway ainda não buscou e as conversas em andamento.
+     Fora do banco de propósito (é transitório e não vale um Postgres), mas
+     perder isso é perder pedido de cliente sem ninguém saber. */
+  const filaRelay = path.join(__dirname, '..', 'dados-relay', 'relay.json');
+  if (fs.existsSync(filaRelay)) {
+    try {
+      dados.repassador = JSON.parse(fs.readFileSync(filaRelay, 'utf8'));
+      console.log('repassador'.padEnd(18) +
+        String((dados.repassador.pedidos || []).length).padStart(5) +
+        ' pedido(s) na fila');
+    } catch (e) {
+      dados.repassador = { erro: e.message };
+      console.log('repassador'.padEnd(18) + '     - (' + e.message + ')');
     }
   }
 

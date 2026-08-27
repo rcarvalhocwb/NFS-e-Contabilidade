@@ -91,30 +91,68 @@ test('um destino que falha não impede os outros', () => {
     'a falha de um destino é registrada, não propagada');
 });
 
+const { TABELAS, PESADAS } = require('../scripts/tabelas-backup');
+
 test('o backup carrega as tabelas que a restauração precisa', () => {
   /* Tabela que fica de fora só se descobre no dia da restauração, quando o
      calendário de obrigações ou a marca do escritório não voltam. */
-  const script = fs.readFileSync(
-    path.join(__dirname, '..', 'scripts', 'backup.js'), 'utf8');
-  const lista = script.slice(script.indexOf('const TABELAS = ['),
-                             script.indexOf('];', script.indexOf('const TABELAS = [')));
   for (const t of ['empresas', 'certificados', 'numeracao_dps', 'notas',
                    'obrigacoes', 'empresa_obrigacoes', 'obrigacao_modelos',
                    'identidade', 'regra_im_dps', 'servicos', 'tomadores']) {
-    assert.match(lista, new RegExp("'" + t + "'"), t + ' precisa entrar no backup');
+    assert.ok(TABELAS.includes(t), t + ' precisa entrar no backup');
   }
+});
+
+test('a configuração do WhatsApp e quem pode pedir nota também voltam', () => {
+  /* Ficaram de fora até o repassador passar a rodar nesta máquina. Sem
+     config_nuvem, trocar de computador significa refazer a configuração da
+     Meta do zero; sem contatos_whatsapp, o canal volta aberto e mudo. */
+  assert.ok(TABELAS.includes('config_nuvem'));
+  assert.ok(TABELAS.includes('contatos_whatsapp'));
+  assert.ok(TABELAS.includes('config_email'));
+});
+
+test('o histórico que prova o que foi feito entra no backup', () => {
+  /* O pedido pronto não prova nada; a conversa que o gerou, sim. */
+  assert.ok(TABELAS.includes('solicitacoes'));
+  assert.ok(TABELAS.includes('auditoria'));
+  /* Mas são as que crescem sem parar: --sem-notas precisa deixá-las de fora,
+     senão o arquivo "só de cadastro" não serve para mandar por e-mail. */
+  assert.ok(PESADAS.includes('solicitacoes'));
+  assert.ok(PESADAS.includes('auditoria'));
 });
 
 test('as tabelas vêm em ordem de dependência', () => {
   /* Restaurar filho antes do pai quebra a chave estrangeira. */
-  const script = fs.readFileSync(
-    path.join(__dirname, '..', 'scripts', 'backup.js'), 'utf8');
-  const lista = script.slice(script.indexOf('const TABELAS = ['),
-                             script.indexOf('];', script.indexOf('const TABELAS = [')));
-  const pos = t => lista.indexOf("'" + t + "'");
+  const pos = t => TABELAS.indexOf(t);
   assert.ok(pos('empresas') < pos('certificados'), 'empresa antes do certificado');
   assert.ok(pos('empresas') < pos('notas'), 'empresa antes das notas');
   assert.ok(pos('usuarios') < pos('usuario_empresas'), 'usuário antes do vínculo');
   assert.ok(pos('obrigacao_modelos') < pos('empresa_obrigacoes'),
     'modelo antes da obrigação da empresa');
+  assert.ok(pos('empresas') < pos('contatos_whatsapp'), 'empresa antes do contato');
+  assert.ok(pos('notas') < pos('solicitacoes'), 'nota antes da solicitação');
+});
+
+test('backup e restauração leem a MESMA lista', () => {
+  /* Eram duas listas. Divergiram: identidade, obrigações e regras de inscrição
+     municipal eram gravadas e nunca restauradas — e isso só aparece no dia em
+     que se precisa, que é o pior dia possível. */
+  for (const arquivo of ['backup.js', 'restaurar-backup.js']) {
+    const s = fs.readFileSync(
+      path.join(__dirname, '..', 'scripts', arquivo), 'utf8');
+    assert.match(s, /require\('\.\/tabelas-backup'\)/,
+      arquivo + ' precisa usar a lista compartilhada');
+    assert.ok(!/^const (TABELAS|ORDEM) = \[/m.test(s),
+      arquivo + ' não pode ter lista própria');
+  }
+});
+
+test('a restauração pergunta a chave ao banco, não a um mapa', () => {
+  /* O mapa fixo chutava (id) para o que não conhecia, e quebrava justamente
+     nas de chave composta — numeracao_dps, regra_im_dps, empresa_obrigacoes. */
+  const s = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'restaurar-backup.js'), 'utf8');
+  assert.match(s, /async function conflitoDe/);
+  assert.match(s, /con\.contype = 'p'/);
 });

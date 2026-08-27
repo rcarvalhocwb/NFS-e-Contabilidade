@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const ponte = require('../services/ponteNuvem');
+const repassador = require('../services/repassadorLocal');
 const auditoria = require('../services/auditoria');
 const { somenteAdmin, empresasVisiveis, empresaVisivel } = require('../middleware/escopo');
 
@@ -16,12 +17,46 @@ router.get('/config', somenteAdmin, async (_req, res, next) => {
 
 router.put('/config', somenteAdmin, async (req, res, next) => {
   try {
+    const antes = await ponte.ler();
     const salvo = await ponte.salvar(req.body || {});
     await auditoria.registrar(req, null, 'ponte.config',
       'Alterou a ligação com o portal do cliente',
       { detalhe: { url: salvo.url, ativo: salvo.ativo,
-                   automatico: salvo.emitir_automatico } });
+                   automatico: salvo.emitir_automatico,
+                   repassadorLocal: salvo.relay_local } });
+
+    /* Mexeu no repassador desta máquina: aplica agora.
+       Salvar na tela e o processo continuar com a configuração velha até
+       alguém reiniciar o gateway é a pior forma de errar — parece feito. */
+    const b = req.body || {};
+    const mudou = antes.relay_local !== salvo.relay_local ||
+                  antes.relay_porta !== salvo.relay_porta ||
+                  antes.tunel_ativo !== salvo.tunel_ativo ||
+                  antes.tunel_binario !== salvo.tunel_binario ||
+                  b.waAppSecret || b.waVerifyToken || b.waToken || b.tunelToken;
+    if (mudou) {
+      const r = await repassador.reaplicar();
+      return res.json(Object.assign({}, salvo, { repassador: r }));
+    }
     res.json(salvo);
+  } catch (e) { next(e); }
+});
+
+/* Como está o repassador desta máquina — de pé, caído, ou nunca subiu e por
+   quê. É a primeira pergunta quando o bot não responde. */
+router.get('/repassador', somenteAdmin, async (_req, res, next) => {
+  try { res.json(await repassador.situacao()); }
+  catch (e) { next(e); }
+});
+
+/* Reinicia à mão. Serve para depois de trocar o token na Meta e para o caso em
+   que o processo caiu cinco vezes e a supervisão desistiu de propósito. */
+router.post('/repassador/reiniciar', somenteAdmin, async (req, res, next) => {
+  try {
+    const r = await repassador.reaplicar();
+    await auditoria.registrar(req, null, 'ponte.repassador',
+      'Reiniciou o repassador do WhatsApp nesta máquina');
+    res.json(r);
   } catch (e) { next(e); }
 });
 

@@ -1,5 +1,6 @@
 const db = require('../db');
 const ponte = require('./ponteNuvem');
+const repassador = require('./repassadorLocal');
 
 /* O que falta para o WhatsApp funcionar.
  *
@@ -38,15 +39,62 @@ async function conferir() {
   const c = await ponte.ler();
 
   /* ------------------------------------------------ o endereço e a chave */
+  const local = !!c.relay_local;
+
   itens.push(c.url
-    ? item('ok', 'Endereço do repassador', c.url)
+    ? item('ok', local ? 'Repassador nesta máquina' : 'Endereço do repassador',
+        c.url)
     : item('falta', 'Endereço do repassador não configurado', null,
         'Preencha aqui em cima, com o https:// do servidor.'));
 
   itens.push(c.tem_chave
     ? item('ok', 'Chave da ponte guardada')
     : item('falta', 'Chave da ponte não configurada', null,
-        'Invente uma frase longa e ponha aqui e no .env do repassador.'));
+        local ? 'Preencha "Chave desta instalação" aqui em cima. Com o ' +
+                'repassador daqui, ela é usada dos dois lados sozinha.'
+              : 'Invente uma frase longa e ponha aqui e no .env do repassador.'));
+
+  /* --------------------------------- o que só existe quando ele roda aqui */
+  if (local) {
+    const r = await repassador.situacao();
+
+    itens.push(c.tem_app_secret
+      ? item('ok', 'App Secret da Meta guardado')
+      : item('falta', 'App Secret da Meta não configurado', null,
+          'Meta → Configurações do app → Básico. É o que prova que a mensagem ' +
+          'veio da Meta; sem ele nenhuma mensagem é aceita.'));
+
+    itens.push(c.tem_verify_token
+      ? item('ok', 'Token de verificação do webhook guardado')
+      : item('falta', 'Token de verificação não configurado', null,
+          'Invente uma frase e use a mesma aqui e no painel da Meta ao ' +
+          'cadastrar o webhook.'));
+
+    itens.push(r.repassador.rodando
+      ? item('ok', 'Processo do repassador de pé',
+          'desde ' + new Date(r.repassador.subiuEm).toLocaleString('pt-BR'))
+      : item('falta', 'O processo do repassador não está de pé',
+          r.repassador.ultimoErro,
+          r.repassador.desistiu
+            ? 'Caiu várias vezes seguidas e a supervisão parou de tentar de ' +
+              'propósito. Resolva o motivo acima e clique em Reiniciar.'
+            : 'Ligue "Rodar o repassador nesta máquina" e salve.'));
+
+    if (r.tunelAtivo) {
+      itens.push(r.tunel.rodando
+        ? item('ok', 'Túnel de pé', r.cloudflared)
+        : item('falta', 'O túnel não está de pé',
+            r.tunel.ultimoErro || r.cloudflared,
+            /Programa não encontrado/.test(r.tunel.ultimoErro || '')
+              ? 'Baixe o cloudflared e ponha na pasta ferramentas, ou diga o ' +
+                'caminho dele no campo "Programa do túnel".'
+              : 'Confira o token do túnel no painel da Cloudflare.'));
+    } else {
+      itens.push(item('atencao', 'O túnel não é mantido por aqui', null,
+        'A Meta precisa de um endereço público em https. Se não é este ' +
+        'gateway que mantém o túnel, alguém tem de mantê-lo.'));
+    }
+  }
 
   /* ------------------------------------------------- o número do escritório */
   itens.push(c.wa_phone_number_id
@@ -135,10 +183,33 @@ async function conferir() {
         (saude.pedidosNaFila || 0) + ' pedido(s) na fila, ' +
         (saude.conversasAbertas || 0) + ' conversa(s) aberta(s)'));
 
-      itens.push(c.url.startsWith('https://')
-        ? item('ok', 'Endereço em HTTPS')
-        : item('falta', 'O endereço está em HTTP', null,
-            'A Meta não entrega em HTTP. Ponha o Caddy na frente.'));
+      /* Em http://127.0.0.1 o https não se aplica: quem precisa estar em
+         https é o endereço que a Meta chama, e esse é o do túnel. */
+      const publico = local ? c.relay_url_publica : c.url;
+      itens.push(publico && publico.startsWith('https://')
+        ? item('ok', 'Endereço público em HTTPS', publico)
+        : item('falta',
+            publico ? 'O endereço público está em HTTP'
+                    : 'Endereço público não informado',
+            publico,
+            local ? 'Ponha em "Endereço público" o nome que você deu ao túnel ' +
+                    'na Cloudflare. É ele que vai no webhook da Meta.'
+                  : 'A Meta não entrega em HTTP. Ponha o Caddy na frente.'));
+
+      /* A prova de que o túnel funciona de verdade: sair daqui, dar a volta
+         pela internet e voltar. É o único jeito de responder "a Meta consegue
+         me alcançar?" sem esperar a primeira mensagem perdida. */
+      if (publico && publico.startsWith('https://')) {
+        const fora = await bater(publico.replace(/\/+$/, '') + '/saude');
+        itens.push(fora.status === 200
+          ? item('ok', 'O endereço público responde de fora', publico)
+          : item('falta', 'O endereço público não respondeu',
+              fora.erro || ('HTTP ' + fora.status),
+              local ? 'O túnel está de pé, mas o nome pode não estar apontando ' +
+                      'para 127.0.0.1:' + (c.relay_porta || 8080) +
+                      '. Confira no painel da Cloudflare.'
+                    : 'Confira o DNS e o certificado do servidor.'));
+      }
     } else {
       itens.push(item('falta', 'O repassador respondeu HTTP ' + r.status));
     }
@@ -160,7 +231,8 @@ async function conferir() {
       'Se a Meta está entregando o webhook — isso só aparece no log do repassador.',
       'Se o campo "messages" foi assinado no painel da Meta.',
       'Se o token ainda vale: quem responde isso é a Meta, e quem pergunta é o repassador.'
-    ]
+    ],
+    repassadorLocal: local
   };
 }
 

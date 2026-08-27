@@ -1,7 +1,17 @@
-# Colocar o repassador no ar
+# Colocar o repassador no ar, num servidor separado
 
 Do zero até o primeiro "oi" respondido. Cerca de uma hora de trabalho, mais o
 tempo que a Meta leva para verificar o negócio — que não depende de você.
+
+> **Provavelmente você não precisa deste roteiro.**
+> O caminho recomendado é [NESTA-MAQUINA.md](NESTA-MAQUINA.md): o gateway sobe o
+> repassador e o túnel na própria máquina do escritório, e tudo se configura
+> numa tela. Sem servidor, sem `.env`, sem porta aberta no roteador.
+>
+> Este aqui é para quem **quer** separar as máquinas: o repassador numa VPS que
+> não guarda certificado nenhum, onde uma invasão dele não põe pé na máquina do
+> escritório. É mais seguro e é mais uma coisa para manter — e num escritório
+> sem quem cuide de servidor, servidor esquecido é risco, não proteção.
 
 ## Conferir a qualquer momento
 
@@ -16,11 +26,10 @@ e para na primeira peca que falta, dizendo o que fazer. O mesmo esta na tela
 Use antes de mexer no painel da Meta: cadastrar webhook com o repassador meio
 configurado so rende erro dificil de ler.
 
-## Sem servidor, para testar hoje
+## Sem servidor
 
-Da para chegar ao primeiro "oi" respondido sem contratar VPS, usando um tunel:
-[SEM-SERVIDOR.md](SEM-SERVIDOR.md). Serve para ver funcionando; para producao,
-siga o roteiro abaixo.
+O tunel resolve o endereco publico sem VPS e sem abrir porta, e o gateway sabe
+manter os dois processos: [NESTA-MAQUINA.md](NESTA-MAQUINA.md).
 
 ## Antes de gastar com servidor
 
