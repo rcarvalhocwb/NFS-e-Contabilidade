@@ -138,3 +138,60 @@ test('vários números na mesma empresa continuam possíveis', () => {
   assert.match(corpo, /c\.empresa_id = \$1/, 'a listagem é por empresa');
   assert.ok(!/LIMIT 1/.test(corpo), 'e não corta em um');
 });
+
+/* ------------------------------------------------ o cliente que não existe */
+
+test('cliente novo chega só com o documento, e o gateway completa', () => {
+  /* Pedir razão social, endereço e CEP por WhatsApp é onde a conversa vira
+     formulário e a pessoa desiste. O acesso à base pública está aqui, então é
+     aqui que o resto é resolvido. */
+  const ponte = fonte('src', 'services', 'ponteNuvem.js');
+  assert.match(ponte, /async function resolverTomador/);
+  const i = ponte.indexOf('async function resolverTomador');
+  const corpo = ponte.slice(i, ponte.indexOf('\n}\n', i));
+
+  assert.match(corpo, /FROM tomadores WHERE empresa_id = \$1 AND documento = \$2/,
+    'procura primeiro no cadastro da empresa');
+  assert.match(corpo, /consultarCnpj/, 'e só depois na base pública');
+  const cadastro = corpo.indexOf('FROM tomadores');
+  const publica = corpo.indexOf('consultarCnpj');
+  assert.ok(cadastro < publica,
+    'nessa ordem: o endereço que o contador conferiu vale mais que o da base');
+});
+
+test('o dígito verificador é conferido de um lado só', () => {
+  /* A regra mudou em julho/2026 (CNPJ alfanumérico). Duas cópias seriam uma
+     divergindo da outra. */
+  const ponte = fonte('src', 'services', 'ponteNuvem.js');
+  assert.match(ponte, /validarDocumento/, 'o gateway confere');
+  const relay = fonte('relay', 'conversa.js');
+  assert.ok(!/digitoModulo11|PESOS_CNPJ|validarCnpj/.test(relay),
+    'e o relay não duplica o cálculo');
+});
+
+test('CPF novo volta para o contador em vez de virar nota torta', () => {
+  /* A base pública não devolve nome de pessoa física — não há de onde tirar. */
+  const ponte = fonte('src', 'services', 'ponteNuvem.js');
+  const i = ponte.indexOf('async function resolverTomador');
+  const corpo = ponte.slice(i, ponte.indexOf('\n}\n', i));
+  assert.match(corpo, /doc\.length !== 14/);
+  assert.match(corpo, /precisam ser cadastrados aqui antes de emitir/);
+});
+
+test('busca falhada recusa o pedido, não emite sem cliente', () => {
+  const ponte = fonte('src', 'services', 'ponteNuvem.js');
+  const i = ponte.indexOf("if (t && t.cnpj && !t.razaoSocial");
+  assert.ok(i > 0);
+  const corpo = ponte.slice(i, i + 600);
+  assert.match(corpo, /situacao = 'recusada'/);
+  assert.match(corpo, /return \{ ok: false, erro: resolvido\.erro \}/);
+});
+
+test('a identidade do escritório viaja para o relay', () => {
+  const replica = fonte('src', 'services', 'replicaCadastro.js');
+  assert.match(replica, /FROM identidade/);
+  assert.match(replica, /escritorio: \{/);
+  const relay = fonte('relay', 'conversa.js');
+  assert.match(relay, /memoria\.escritorio\(\)/,
+    'e a conversa se apresenta com ele');
+});

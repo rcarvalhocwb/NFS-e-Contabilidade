@@ -109,6 +109,11 @@ class Memoria {
     return false;
   }
 
+  /* Quem esta falando com o cliente. Vem do gateway junto com o cadastro. */
+  escritorio() {
+    return (this.dados.cadastro || {}).escritorio || null;
+  }
+
   servicosDa(cnpj) {
     return ((this.dados.cadastro || {}).servicos || []).filter(s => s.cnpj === cnpj);
   }

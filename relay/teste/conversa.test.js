@@ -157,7 +157,7 @@ test('com duas empresas, a primeira pergunta é qual delas', () => {
 test('escolher pelo número da lista', () => {
   const m = comDuasEmpresas();
   const saidas = dialogo(m, '5541999998888', ['oi', '2', '1', '1', '1']);
-  assert.match(saidas[1].resposta, /Emissão por \*BETA\*/);
+  assert.match(saidas[1].resposta, /Nota por \*BETA\*/);
   assert.equal(saidas[4].pedido.cnpjEmpresa, '33333333000191');
   assert.equal(saidas[4].pedido.valores.valorServico, 800);
 });
@@ -337,4 +337,90 @@ test('dinheiro escrito como se lê', () => {
   assert.equal(conversa.dinheiro(2500), 'R$ 2.500,00');
   assert.equal(conversa.dinheiro(1234567.89), 'R$ 1.234.567,89');
   assert.equal(conversa.dinheiro(7), 'R$ 7,00');
+});
+
+/* ------------------------------------ apresentação, cliente novo, e o fim */
+
+function comEscritorio() {
+  const m = memoriaFalsa();
+  m.dados.cadastro.escritorio = { nome: 'Contabilidade Silva', telefone: '4130000000' };
+  return m;
+}
+
+test('a primeira mensagem diz quem está falando', () => {
+  /* Do outro lado é um número desconhecido numa janela de WhatsApp. Sem o nome
+     do escritório, a mensagem parece golpe — e quem acha que é golpe não emite
+     nota fiscal. */
+  const m = comEscritorio();
+  const [r] = dialogo(m, '5541999998888', ['oi']);
+  assert.match(r.resposta, /\*Contabilidade Silva\*/);
+  assert.match(r.resposta, /Emissão de notas fiscais/);
+  const casa = r.resposta.indexOf('Contabilidade Silva');
+  const cliente = r.resposta.indexOf('ALFA');
+  assert.ok(casa < cliente, 'o escritório vem antes da empresa do cliente');
+});
+
+test('sem identidade cadastrada, a conversa não quebra', () => {
+  const m = memoriaFalsa();
+  const [r] = dialogo(m, '5541999998888', ['oi']);
+  assert.match(r.resposta, /ALFA/);
+  assert.ok(!/undefined|null/.test(r.resposta));
+});
+
+test('"oi" no meio da conversa recomeça, e avisa', () => {
+  /* Antes caía no passo atual e recebia "não entendi", que é a pior resposta
+     possível para quem só quis cumprimentar. */
+  const m = memoriaFalsa();
+  const saidas = dialogo(m, '5541999998888', ['oi', '1', '1', 'oi']);
+  assert.match(saidas[3].resposta, /Recomeçando/);
+  assert.match(saidas[3].resposta, /não foi enviado/,
+    'e deixa claro que nada saiu');
+  assert.ok(!saidas[3].pedido);
+});
+
+test('o fim da conversa é dito, com o convite para a próxima', () => {
+  /* Sem isso a pessoa fica olhando a tela sem saber se acabou, se pode mandar
+     outro, ou se está esperando alguma coisa. */
+  const m = memoriaFalsa();
+  const saidas = dialogo(m, '5541999998888', ['oi', '1', '1', '1']);
+  const fim = saidas[3];
+  assert.match(fim.resposta, /Pedido enviado/);
+  assert.match(fim.resposta, /escrever "oi"/, 'e diz como pedir a próxima');
+  assert.equal(fim.estado, null, 'a conversa fecha de verdade');
+});
+
+test('cliente novo entra só pelo documento', () => {
+  /* Pedir razão social, endereço e CEP por WhatsApp é onde a conversa vira
+     formulário e a pessoa desiste. O resto o gateway busca na base pública. */
+  const m = memoriaFalsa();
+  const saidas = dialogo(m, '5541999998888',
+    ['oi', '3', '11.222.333/0001-81', '1', '1.500,00', '1']);
+  assert.match(saidas[1].resposta, /Qual o CNPJ do cliente/);
+  assert.match(saidas[1].resposta, /base da Receita/);
+  assert.match(saidas[2].resposta, /Qual serviço/);
+  assert.match(saidas[4].resposta, /novo — a contabilidade confere/,
+    'a conferência avisa que o cliente é novo');
+
+  const p = saidas[5].pedido;
+  assert.ok(p, 'o pedido sai');
+  assert.equal(p.tomador.cnpj, '11222333000181');
+  assert.equal(p.tomador.razaoSocial, null,
+    'sem nome: quem resolve é o gateway, onde a base pública é alcançável');
+});
+
+test('documento com tamanho errado é recusado antes de sair', () => {
+  const m = memoriaFalsa();
+  const saidas = dialogo(m, '5541999998888', ['oi', '3', '123']);
+  assert.match(saidas[2].resposta, /não parece certo/);
+  assert.match(saidas[2].resposta, /você mandou 3/);
+});
+
+test('o dígito verificador NÃO é conferido aqui', () => {
+  /* A regra mudou em julho/2026 (CNPJ alfanumérico). Duas cópias dela seriam
+     uma divergindo da outra — o gateway é quem confere, e a recusa volta com o
+     motivo até esta conversa. */
+  const fonte = require('fs').readFileSync(require.resolve('../conversa.js'), 'utf8');
+  assert.ok(!/digitoModulo11|validarCnpj|PESOS_CNPJ/.test(fonte),
+    'o cálculo do DV não pode ser duplicado no relay');
+  assert.match(fonte, /dígito verificador fica com/i);
 });

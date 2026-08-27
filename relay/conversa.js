@@ -104,14 +104,20 @@ function responder({ texto, telefone, vinculos, conversa, memoria }) {
     };
   }
 
-  if (VOLTAR.test(t) || (AJUDA.test(t) && estado === 'inicio')) {
+  /* "oi" no meio da conversa é alguém querendo recomeçar, não uma resposta à
+     pergunta que está na tela. Antes caía no passo atual e recebia "não
+     entendi", o que é a pior resposta possível para quem só quis cumprimentar. */
+  if (VOLTAR.test(t) || AJUDA.test(t)) {
+    const recomecando = estado !== 'inicio' && estado !== 'escolhendo_empresa';
     return escolherEmpresa(vinculos, telefone, memoria,
-      VOLTAR.test(t) ? 'Sem problema, vamos do começo.' : null);
+      VOLTAR.test(t) ? 'Sem problema, vamos do começo.'
+        : recomecando ? 'Recomeçando — o pedido anterior não foi enviado.' : null);
   }
 
   switch (estado) {
     case 'escolhendo_empresa': return doEmpresa(t, vinculos, telefone, memoria, dados);
     case 'inicio':          return doInicio(t, empresa, contato, memoria, dados);
+    case 'documento_novo': return doDocumento(t, empresa, memoria, dados);
     case 'escolhendo_valor':return doValor(t, empresa, contato, dados);
     case 'confirmando':     return doConfirmacao(t, empresa, contato, dados, memoria);
     case 'escolhendo_servico': return doServico(t, empresa, dados, memoria);
@@ -146,8 +152,10 @@ function escolherEmpresa(vinculos, telefone, memoria, prefixo) {
     (i + 1) + ' — ' + (v.empresa.nomeFantasia || v.empresa.razaoSocial) +
     '\n     ' + formatarCnpj(v.empresa.cnpj)).join('\n');
 
+  const casa = (memoria.escritorio() || {}).nome;
   return {
     resposta: (prefixo ? prefixo + '\n\n' : '') +
+      (casa ? '*' + casa + '*\nEmissão de notas fiscais.\n\n' : '') +
       'Você emite por mais de uma empresa. Por qual será esta nota?\n\n' + lista +
       '\n\n_Responda com o número, ou digite o CNPJ._',
     estado: 'escolhendo_empresa',
@@ -197,7 +205,13 @@ function formatarCnpj(c) {
     : d;
 }
 
-function abertura(empresa, contato, memoria, prefixo) {
+/* As opções do menu, montadas num lugar só.
+ *
+ * Estavam duplicadas — uma cópia para escrever o menu, outra para ler a
+ * resposta — e divergiram na primeira alteração: o menu ganhou "cliente novo" e
+ * a leitura continuou com duas opções, então escolher a terceira devolvia o
+ * menu de novo, sem erro nenhum aparente. */
+function opcoesDoInicio(empresa) {
   const anterior = empresa.ultimoPedido;
   const opcoes = [];
   if (anterior) {
@@ -205,14 +219,31 @@ function abertura(empresa, contato, memoria, prefixo) {
                           ', ' + dinheiro(anterior.valor), chave: 'sempre',
                   sinonimos: ['sempre', 'mesma', 'de sempre', 'igual'] });
   }
-  opcoes.push({ rotulo: 'Outra nota', chave: 'outra', sinonimos: ['outra', 'nova', 'diferente'] });
+  opcoes.push({ rotulo: 'Outra nota', chave: 'outra',
+                sinonimos: ['outra', 'nova', 'diferente'] });
+  opcoes.push({ rotulo: 'Nota para um cliente novo', chave: 'novo',
+                sinonimos: ['novo', 'cliente novo', 'outro cliente'] });
+  return opcoes;
+}
+
+function abertura(empresa, contato, memoria, prefixo) {
+  const opcoes = opcoesDoInicio(empresa);
+
+  /* QUEM ESTÁ FALANDO vem antes de tudo.
+     Do outro lado é uma janela de WhatsApp e um número que a pessoa não
+     conhece. Sem o nome do escritório, a primeira mensagem parece golpe — e
+     alguém que emite nota fiscal por um sistema que parece golpe não emite. */
+  const casa = (memoria.escritorio() || {}).nome;
+  const apresentacao = casa
+    ? '*' + casa + '*\nEmissão de notas fiscais.\n\n'
+    : '';
 
   /* A empresa vai escrita por extenso, com CNPJ, e volta na conferência. É o
      que substitui a barra fixa do painel: no WhatsApp a pessoa rola a tela e
      perde a referência, e emitir no CNPJ errado é nota no cliente errado. */
-  const cabeca = (prefixo ? prefixo + '\n\n' : '') +
+  const cabeca = (prefixo ? prefixo + '\n\n' : '') + apresentacao +
     'Olá' + (contato.nome ? ', ' + contato.nome.split(' ')[0] : '') + '! ' +
-    'Emissão por *' + (empresa.nomeFantasia || empresa.razaoSocial) + '*' +
+    'Nota por *' + (empresa.nomeFantasia || empresa.razaoSocial) + '*' +
     '\n' + formatarCnpj(empresa.cnpj) + '.';
 
   return {
@@ -228,12 +259,20 @@ function abertura(empresa, contato, memoria, prefixo) {
 
 function doInicio(t, empresa, contato, memoria, dados) {
   const anterior = empresa.ultimoPedido;
-  const opcoes = [];
-  if (anterior) opcoes.push({ chave: 'sempre', sinonimos: ['sempre', 'mesma', 'de sempre', 'igual'] });
-  opcoes.push({ chave: 'outra', sinonimos: ['outra', 'nova', 'diferente'] });
-
-  const escolha = escolher(t, opcoes);
+  const escolha = escolher(t, opcoesDoInicio(empresa));
   if (!escolha) return naoEntendi(dados, () => abertura(empresa, contato, memoria));
+
+  if (escolha.chave === 'novo') {
+    /* Só o documento. Pedir razão social, endereço e CEP por WhatsApp é onde a
+       conversa vira formulário e a pessoa desiste — o resto o gateway busca na
+       base pública, que é onde esse acesso existe. */
+    return {
+      resposta: 'Qual o CNPJ do cliente?\n\n' +
+        '_Só o número. Eu busco a razão social e o endereço na base da Receita._',
+      estado: 'documento_novo',
+      dados: { cnpj: empresa.cnpj }
+    };
+  }
 
   if (escolha.chave === 'sempre') {
     return {
@@ -284,21 +323,68 @@ function doServico(t, empresa, dados, memoria) {
      o pedido chegar incompleto e o contador completar no painel — que é onde
      ele já faz isso todo dia. */
   const anterior = empresa.ultimoPedido;
+  /* Cliente novo veio pelo documento; senão, é o mesmo da última nota. */
+  const tomador = dados.documentoNovo
+    ? { documento: dados.documentoNovo, nome: null, novo: true }
+    : (anterior ? anterior.tomador : null);
+
   return {
     resposta: '*' + (s.apelido || s.descricao) + '*. Qual o valor?\n\n' +
       '_Digite como 1.500,00_' +
-      (anterior ? '\n\nO cliente será ' + (anterior.tomador.nome || 'o mesmo da última nota') +
-                  '. Para outro cliente, peça pela contabilidade.' : ''),
+      (dados.documentoNovo
+        ? '\n\nCliente ' + formatarCnpj(dados.documentoNovo) +
+          ' — a contabilidade confere os dados antes de emitir.'
+        : anterior ? '\n\nO cliente será ' + (anterior.tomador.nome || 'o mesmo da última nota') + '.'
+        : ''),
     estado: 'escolhendo_valor',
     dados: {
       cnpj: empresa.cnpj,
+      documentoNovo: dados.documentoNovo,
       base: {
-        tomador: anterior ? anterior.tomador : null,
+        tomador: tomador,
         servico: { codigoTributacao: s.codigoTributacao, descricao: s.descricao },
         valor: s.valorPadrao || null
       },
       servicoEscolhido: true
     }
+  };
+}
+
+/* O documento do cliente novo.
+ *
+ * Aqui só se confere a FORMA — 11 ou 14 dígitos. O dígito verificador fica com
+ * o gateway: a regra mudou em julho/2026 (CNPJ alfanumérico) e manter duas
+ * cópias dela seria uma divergindo da outra. Documento com dígito errado volta
+ * como recusa, com o motivo, até esta mesma conversa.
+ */
+function doDocumento(t, empresa, memoria, dados) {
+  const doc = String(t).replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+  if (doc.length !== 14 && doc.length !== 11) {
+    return naoEntendi(dados, () => ({
+      resposta: 'Esse documento não parece certo.\n\n' +
+        'CNPJ tem 14 caracteres e CPF tem 11 — você mandou ' + doc.length + '.',
+      estado: 'documento_novo', dados
+    }));
+  }
+
+  const servicos = memoria.servicosDa(empresa.cnpj);
+  if (!servicos.length) {
+    return {
+      resposta: 'Para uma nota nova eu preciso do serviço já cadastrado pela ' +
+                'contabilidade, e ainda não há nenhum para esta empresa.\n\n' +
+                'Fale com o escritório.',
+      estado: null
+    };
+  }
+
+  return {
+    resposta: 'Certo. Qual serviço?\n\n' +
+      servicos.slice(0, 8).map((x, i) => (i + 1) + ' — ' + (x.apelido || x.descricao)).join('\n'),
+    estado: 'escolhendo_servico',
+    dados: Object.assign({}, dados, {
+      documentoNovo: doc,
+      servicos: servicos.slice(0, 8).map(x => x.id)
+    })
   };
 }
 
@@ -342,7 +428,9 @@ function doValor(t, empresa, contato, dados) {
     resposta: 'Confira antes de eu enviar:\n\n' +
       '*Empresa:* ' + (empresa.nomeFantasia || empresa.razaoSocial) +
         ' — ' + formatarCnpj(empresa.cnpj) + '\n' +
-      '*Cliente:* ' + (base.tomador.nome || base.tomador.documento) + '\n' +
+      '*Cliente:* ' + (base.tomador.nome ||
+        formatarCnpj(base.tomador.documento) +
+        (base.tomador.novo ? ' _(novo — a contabilidade confere)_' : '')) + '\n' +
       '*Serviço:* ' + base.servico.descricao + '\n' +
       '*Valor:* ' + dinheiro(valor) + '\n\n' +
       (acimaDoTeto
@@ -388,8 +476,11 @@ function doConfirmacao(t, empresa, contato, dados, memoria) {
   };
 
   return {
-    resposta: 'Pedido enviado. A contabilidade confere e eu te aviso aqui assim ' +
-              'que a nota sair.',
+    /* O fim precisa ser dito. Sem isso a pessoa fica olhando a tela sem saber
+       se acabou, se pode mandar outro, ou se está esperando alguma coisa. */
+    resposta: '✓ Pedido enviado.\n\n' +
+              'A contabilidade confere e eu te aviso aqui assim que a nota sair.\n\n' +
+              '_Precisa de outra? É só escrever "oi"._',
     estado: null,
     pedido
   };

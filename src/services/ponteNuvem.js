@@ -300,6 +300,63 @@ async function guardar(lista) {
 const CAMPOS_DO_PORTAL = ['tomador', 'servico', 'valores', 'intermediario',
                           'dataCompetencia', 'ibsCbs', 'regApTribSN'];
 
+/* Completa o tomador que veio só com o documento.
+ *
+ * Procura primeiro no cadastro da empresa — cliente que já recebeu nota antes
+ * volta com o endereço que o contador conferiu. Só depois vai à base pública,
+ * que serve para o primeiro atendimento.
+ */
+async function resolverTomador(empresa, documento) {
+  const { validarDocumento, limparDocumento } = require('../util/documento');
+  const doc = limparDocumento(documento);
+
+  if (!validarDocumento(doc)) {
+    return { erro: 'O documento ' + doc + ' não é um CNPJ nem um CPF válido — ' +
+                   'confira os dígitos e peça de novo.' };
+  }
+
+  const jaTem = await db.query(
+    'SELECT * FROM tomadores WHERE empresa_id = $1 AND documento = $2',
+    [empresa.id, doc]);
+  if (jaTem.rows.length) {
+    const c = jaTem.rows[0];
+    return { tomador: {
+      cnpj: doc.length === 14 ? doc : undefined,
+      cpf: doc.length === 11 ? doc : undefined,
+      razaoSocial: c.razao_social, email: c.email,
+      endereco: c.logradouro ? {
+        codigoMunicipio: c.codigo_municipio, cep: c.cep, logradouro: c.logradouro,
+        numero: c.numero, complemento: c.complemento, bairro: c.bairro
+      } : undefined
+    } };
+  }
+
+  /* CPF a base pública não devolve — e não há de onde tirar o nome. Volta para
+     o contador completar, que é quem tem o contrato do cliente na mão. */
+  if (doc.length !== 14) {
+    return { erro: 'Cliente novo com CPF ' + doc + ' — o nome e o endereço ' +
+                   'precisam ser cadastrados aqui antes de emitir.' };
+  }
+
+  try {
+    const { consultarCnpj } = require('./consultaExterna');
+    const r = await consultarCnpj(doc);
+    if (!r || !r.razaoSocial) throw new Error('sem retorno');
+    return { tomador: {
+      cnpj: doc,
+      razaoSocial: r.razaoSocial,
+      email: r.email || undefined,
+      endereco: r.codigoMunicipio ? {
+        codigoMunicipio: r.codigoMunicipio, cep: r.cep, logradouro: r.logradouro,
+        numero: r.numero, complemento: r.complemento, bairro: r.bairro
+      } : undefined
+    } };
+  } catch (e) {
+    return { erro: 'Não consegui os dados do CNPJ ' + doc + ' na base pública (' +
+                   e.message + '). Cadastre o cliente aqui e aprove de novo.' };
+  }
+}
+
 /* Emite uma solicitação aprovada. Separado da busca de propósito: aprovar é
    decisão, emitir é consequência — e o worker precisa poder reemitir uma que
    falhou sem buscar tudo de novo. */
@@ -330,6 +387,29 @@ async function emitirSolicitacao(solicitacao, contexto = {}) {
   };
   for (const campo of CAMPOS_DO_PORTAL) {
     if (payload[campo] !== undefined) dados[campo] = payload[campo];
+  }
+
+  /* Cliente novo, que chegou só com o CNPJ.
+   *
+   * Pedir CNPJ, razão social, endereço e CEP por WhatsApp é onde a conversa
+   * vira formulário e a pessoa desiste no meio. Então de lá vem só o documento,
+   * e o resto é resolvido AQUI — que é onde está o acesso à base pública e onde
+   * o cadastro de tomadores mora.
+   *
+   * O dígito verificador também é conferido aqui: a regra mudou em julho/2026
+   * (CNPJ alfanumérico) e ter duas cópias dela seria uma divergindo da outra.
+   * CNPJ errado volta como recusa, com o motivo, até o WhatsApp do cliente.
+   */
+  const t = dados.tomador;
+  if (t && t.cnpj && !t.razaoSocial && !t.endereco) {
+    const resolvido = await resolverTomador(emp.rows[0], t.cnpj);
+    if (resolvido.erro) {
+      await db.query(
+        `UPDATE solicitacoes SET situacao = 'recusada', motivo = $2, devolvida_em = NULL
+          WHERE id = $1`, [solicitacao.id, resolvido.erro]);
+      return { ok: false, erro: resolvido.erro };
+    }
+    dados.tomador = resolvido.tomador;
   }
 
   try {

@@ -106,8 +106,22 @@ async function montar() {
     catch (_) { waToken = null; }
   }
 
+  /* Quem está falando com o cliente.
+     Do outro lado é uma janela de WhatsApp: sem isso, a primeira mensagem vem
+     de um número desconhecido dizendo o nome da empresa DELE, e a pessoa não
+     sabe se está falando com a contabilidade ou com um golpe. */
+  const ident = await db.query(
+    `SELECT nome, descricao, telefone, email FROM identidade LIMIT 1`);
+  const id = ident.rows[0] || {};
+
   const retrato = {
     geradoEm: new Date().toISOString(),
+    escritorio: {
+      nome: id.nome || null,
+      descricao: id.descricao || null,
+      telefone: id.telefone || null,
+      email: id.email || null
+    },
     canal: {
       numero: c.wa_numero || null,
       phoneNumberId: c.wa_phone_number_id || null,
