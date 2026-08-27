@@ -118,4 +118,79 @@ async function enviarTexto({ para, texto, phoneNumberId, token }) {
   return JSON.parse(corpo);
 }
 
-module.exports = { conferirDesafio, assinaturaConfere, extrairMensagens, enviarTexto, GRAPH };
+/* O que a Meta aceita como documento.
+ *
+ * A lista é fechada e XML NÃO está nela: só texto, PDF e os formatos do Office.
+ * O XML da nota é o arquivo que o contador do cliente vai querer, então ele vai
+ * como text/plain — o MIME é o que a Meta valida, e o nome do arquivo continua
+ * dizendo o que é.
+ */
+const TIPOS = {
+  pdf: { mime: 'application/pdf', extensao: '.pdf' },
+  xml: { mime: 'text/plain', extensao: '.xml' }
+};
+
+/* Sobe o arquivo e devolve o id da mídia.
+ *
+ * Duas etapas, e é assim que a Meta quer: primeiro o upload, depois a mensagem
+ * apontando para o id. Mandar por link exigiria um endereço público para o
+ * documento fiscal — exatamente o que não se quer. */
+async function subirDocumento({ conteudo, tipo, nomeArquivo, phoneNumberId, token }) {
+  const t = TIPOS[tipo];
+  if (!t) throw new Error('tipo de documento não suportado: ' + tipo);
+
+  const forma = new FormData();
+  forma.append('messaging_product', 'whatsapp');
+  forma.append('type', t.mime);
+  forma.append('file', new Blob([conteudo], { type: t.mime }), nomeArquivo);
+
+  const r = await fetch(`${GRAPH}/${phoneNumberId}/media`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer ' + token },
+    body: forma
+  });
+  const corpo = await r.text();
+  if (!r.ok) {
+    let detalhe = corpo;
+    try { detalhe = JSON.parse(corpo).error || detalhe; } catch (_) {}
+    const e = new Error('A Meta recusou o upload: ' + JSON.stringify(detalhe).slice(0, 300));
+    e.status = r.status;
+    e.codigoMeta = detalhe && detalhe.code;
+    throw e;
+  }
+  return JSON.parse(corpo).id;
+}
+
+/* Manda um documento já subido. A legenda é o que a pessoa lê na conversa —
+   sem ela, chega um anexo sem contexto. */
+async function enviarDocumento({ para, mediaId, nomeArquivo, legenda,
+                                 phoneNumberId, token }) {
+  const r = await fetch(`${GRAPH}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: para,
+      type: 'document',
+      document: { id: mediaId, filename: nomeArquivo,
+                  caption: legenda || undefined }
+    })
+  });
+  const corpo = await r.text();
+  if (!r.ok) {
+    let detalhe = corpo;
+    try { detalhe = JSON.parse(corpo).error || detalhe; } catch (_) {}
+    const e = new Error('A Meta recusou o documento: ' + JSON.stringify(detalhe).slice(0, 300));
+    e.status = r.status;
+    e.codigoMeta = detalhe && detalhe.code;
+    e.foraDaJanela = detalhe && (detalhe.code === 131047 || detalhe.code === 131051);
+    throw e;
+  }
+  return JSON.parse(corpo);
+}
+
+module.exports = {
+  conferirDesafio, assinaturaConfere, extrairMensagens,
+  enviarTexto, subirDocumento, enviarDocumento, TIPOS, GRAPH
+};

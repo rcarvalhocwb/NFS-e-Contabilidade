@@ -129,15 +129,18 @@ test('a origem é deduzida do remetente, não aceita do payload', () => {
     'e pedido de whatsapp sem número é recusado');
 });
 
-test('o modo automático não vale para o que a nuvem autenticou sozinha', () => {
+test('a emissão direta não vale para o que a nuvem autenticou sozinha', () => {
   /* Emitir sem ninguém olhar a partir de identidade que este lado não conferiu
-     seria dar ao relay a chave do certificado do cliente. */
+     seria dar ao relay a chave do certificado do cliente. A escolha passou a ser
+     por empresa (whatsapp_direto), mas a origem continua sendo a trava. */
   const ponte = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'services', 'ponteNuvem.js'), 'utf8');
-  const i = ponte.indexOf('if (c.emitir_automatico) {');
-  const corpo = ponte.slice(i, ponte.indexOf('\n  }', i));
-  assert.match(corpo, /origem = 'whatsapp'/,
+  const i = ponte.indexOf('const liberadas = await db.query');
+  assert.ok(i > 0);
+  const corpo = ponte.slice(i, ponte.indexOf('\n  for (const s of liberadas', i));
+  assert.match(corpo, /s\.origem = 'whatsapp'/,
     'só a origem que o gateway confere entra no automático');
+  assert.match(corpo, /e\.whatsapp_direto/, 'e a empresa precisa ter escolhido');
 });
 
 test('acima do teto não recusa, só chama gente', () => {

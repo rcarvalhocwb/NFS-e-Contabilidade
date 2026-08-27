@@ -349,6 +349,12 @@ router.put('/:cnpj/portal', somenteAdmin, exigirEmpresaVisivel, async (req, res,
       põe('modo_emissao', b.modoEmissao);
     }
 
+    if (b.whatsappDireto !== undefined) {
+      /* Emissão sem gente olhando. Só faz sentido com o portal liberado — sem
+         isso o pedido nem chega a ficar aguardando. */
+      põe('whatsapp_direto', !!b.whatsappDireto);
+    }
+
     if (b.liberado !== undefined) {
       põe('portal_liberado', !!b.liberado);
       // Liberado não carrega motivo; bloqueado sem motivo ganha um padrão,
@@ -367,7 +373,8 @@ router.put('/:cnpj/portal', somenteAdmin, exigirEmpresaVisivel, async (req, res,
       `UPDATE empresas SET ${campos.join(', ')}, atualizado_em = now()
         WHERE cnpj = $1
         RETURNING id, cnpj, razao_social, modo_emissao, portal_liberado,
-                  portal_motivo, portal_decidido_por, portal_decidido_em`, valores);
+                  portal_motivo, portal_decidido_por, portal_decidido_em,
+                  whatsapp_direto`, valores);
     if (!r.rows.length) return res.status(404).json({ erro: 'Empresa não encontrada' });
 
     const e = r.rows[0];
@@ -377,7 +384,8 @@ router.put('/:cnpj/portal', somenteAdmin, exigirEmpresaVisivel, async (req, res,
         : (e.portal_liberado
             ? `Liberou o portal para ${e.razao_social}`
             : `Bloqueou o portal para ${e.razao_social} — ${e.portal_motivo}`),
-      { detalhe: { modo: e.modo_emissao, liberado: e.portal_liberado } });
+      { detalhe: { modo: e.modo_emissao, liberado: e.portal_liberado,
+                   whatsappDireto: e.whatsapp_direto } });
 
     res.json(e);
   } catch (e) { next(e); }

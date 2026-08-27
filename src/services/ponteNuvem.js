@@ -82,7 +82,7 @@ async function ler() {
     `SELECT id, ativo, url, intervalo_seg, lote, emitir_automatico,
             ultimo_contato, ultimo_erro, erro_em, atualizado_em,
             cadastro_hash, cadastro_em, cadastro_erro,
-            wa_numero, wa_phone_number_id, wa_ativo,
+            wa_numero, wa_phone_number_id, wa_ativo, wa_envia_documentos,
             (chave_cifrada IS NOT NULL) AS tem_chave,
             (wa_token_cifrado IS NOT NULL) AS tem_wa_token
        FROM config_nuvem WHERE id = TRUE`);
@@ -144,6 +144,9 @@ async function salvar(dados = {}) {
     põe('wa_phone_number_id', String(dados.waPhoneNumberId || '').trim() || null);
   }
   if (dados.waAtivo !== undefined) põe('wa_ativo', !!dados.waAtivo);
+  if (dados.waEnviaDocumentos !== undefined) {
+    põe('wa_envia_documentos', !!dados.waEnviaDocumentos);
+  }
   if (dados.waToken) põe('wa_token_cifrado', encrypt(String(dados.waToken)));
   if (dados.removerWaToken) põe('wa_token_cifrado', null);
 
@@ -261,8 +264,9 @@ async function guardar(lista) {
         verificado = true;
         const valor = (s.valores || {}).valorServico;
         if (whatsapp.acimaDoTeto(contato, valor)) {
-          /* Não recusa: só garante que passe por gente. O teto existe para dar
-             corda curta a quem emite valores rotineiros, não para barrar. */
+          /* Não recusa, mas SEGURA: com emissão direta ligada, o motivo
+             preenchido é o que tira o pedido da fila automática. Continua sendo
+             corda curta, não barreira — alguém do escritório aprova e sai. */
           motivo = 'Acima do teto combinado para este número (' +
             contato.limite_valor.toFixed(2).replace('.', ',') + ') — confira antes de aprovar.';
         }
@@ -429,8 +433,10 @@ async function emitirSolicitacao(solicitacao, contexto = {}) {
 
 /* Devolve ao portal o desfecho do que já foi decidido. */
 async function devolverResultados() {
+  const cfg = await ler();
   const pendentes = await db.query(
-    `SELECT s.*, n.chave_acesso, n.serie, n.numero, n.status AS status_nota
+    `SELECT s.*, n.chave_acesso, n.serie, n.numero, n.status AS status_nota,
+            n.nfse_xml
        FROM solicitacoes s LEFT JOIN notas n ON n.id = s.nota_id
       WHERE s.devolvida_em IS NULL
         AND s.situacao IN ('emitida','recusada','erro')
@@ -448,6 +454,31 @@ async function devolverResultados() {
       numero: s.numero || undefined,
       motivo: s.motivo || undefined
     };
+
+    /* A nota pronta, para o cliente receber na conversa.
+     *
+     * Sai daqui só quando a chave existe (nota autorizada), o pedido veio do
+     * WhatsApp e o escritório ligou o envio. Desligado, vai só o link da
+     * consulta pública e nenhum documento deixa esta máquina.
+     *
+     * É a única coisa fiscal que passa pelo repassador, e é de propósito: é o
+     * documento do próprio cliente, indo para o próprio cliente. */
+    if (cfg.wa_envia_documentos && s.origem === 'whatsapp' &&
+        corpo.situacao === 'emitida' && s.chave_acesso && s.nfse_xml) {
+      try {
+        const { gerarDanfse } = require('../nfse/danfse');
+        const pdf = await gerarDanfse(s.nfse_xml, {});
+        corpo.documentos = {
+          pdf: Buffer.from(pdf).toString('base64'),
+          xml: Buffer.from(s.nfse_xml, 'utf8').toString('base64'),
+          nome: 'NFSe-' + (s.serie || '1') + '-' + (s.numero || '')
+        };
+      } catch (e) {
+        /* Nota autorizada com PDF que não gera é problema para resolver, mas
+           não pode segurar o aviso: o cliente precisa saber que a nota saiu. */
+        console.error('[ponte] não consegui gerar o PDF da nota', s.nota_id + ':', e.message);
+      }
+    }
     try {
       const r = await chamar(`/solicitacoes/${encodeURIComponent(s.id_externo)}/resultado`,
         { method: 'POST', body: JSON.stringify(corpo) });
@@ -481,28 +512,33 @@ async function sincronizar({ forcar = false } = {}) {
   const { novas } = await guardar(lista);
 
   let emitidas = 0;
-  /* AUTOMÁTICO SÓ PARA IDENTIDADE QUE ESTE LADO CONFERIU.
+  /* EMISSÃO DIRETA: por empresa, e só para identidade que ESTE lado conferiu.
    *
-   * O modo automático emite sem ninguém olhar. Aplicá-lo a um pedido cuja
-   * identidade só a nuvem viu seria entregar ao relay — o componente exposto na
-   * internet — a capacidade de transformar qualquer texto em documento fiscal
-   * assinado com o certificado do cliente.
+   * Emitir sem ninguém olhar a partir de identidade que só a nuvem viu seria
+   * entregar ao relay — o componente exposto na internet — a capacidade de
+   * transformar qualquer texto em documento fiscal assinado com o certificado
+   * do cliente. WhatsApp o gateway confere sozinho: o número está no cadastro
+   * daqui e é autorizado para aquela empresa. Portal, não — quem autenticou a
+   * pessoa foi o site.
    *
-   * WhatsApp o gateway confere sozinho: o número está no cadastro daqui e é
-   * autorizado para aquela empresa. Portal, não: quem autenticou a pessoa foi o
-   * site, e este lado não tem como saber. Então pedido de portal espera
-   * aprovação mesmo com o automático ligado — e um relay invadido que se diga
-   * portal recebe MENOS, não mais.
+   * A escolha é da empresa (`whatsapp_direto`), não global: o cliente que emite
+   * a mesma nota há três anos não precisa de aprovação, e o que entrou mês
+   * passado precisa.
+   *
+   * E o teto do número trava de verdade aqui. Enquanto tudo passava por um
+   * humano, ele só marcava a solicitação; com emissão direta é a única coisa
+   * entre um dedo escorregando no teclado e uma nota de R$ 250.000 com imposto.
    */
-  if (c.emitir_automatico) {
-    const liberadas = await db.query(
-      `SELECT * FROM solicitacoes
-        WHERE situacao = 'aguardando' AND origem = 'whatsapp'
-        ORDER BY id LIMIT $1`, [c.lote]);
-    for (const s of liberadas.rows) {
-      const saida = await emitirSolicitacao(s);
-      if (saida.ok) emitidas++;
-    }
+  const liberadas = await db.query(
+    `SELECT s.* FROM solicitacoes s
+       JOIN empresas e ON e.id = s.empresa_id
+      WHERE s.situacao = 'aguardando' AND s.origem = 'whatsapp'
+        AND e.whatsapp_direto
+        AND s.motivo IS NULL          -- acima do teto vem com motivo: espera gente
+      ORDER BY s.id LIMIT $1`, [c.lote]);
+  for (const s of liberadas.rows) {
+    const saida = await emitirSolicitacao(s);
+    if (saida.ok) emitidas++;
   }
 
   const devolvidas = await devolverResultados();

@@ -669,9 +669,16 @@ function naoEntendi(dados, refazer) {
    natureza, e por isso nenhum documento fiscal precisa passar por aqui. */
 function avisoDeDesfecho(desfecho) {
   if (desfecho.situacao === 'emitida' && desfecho.chaveAcesso) {
-    return 'Nota autorizada! Série ' + desfecho.serie + ', número ' + desfecho.numero +
-      '.\n\nPDF e XML em:\nhttps://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=' +
+    const consulta = 'https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=' +
       desfecho.chaveAcesso;
+    /* Com os arquivos vindo em seguida, o link deixa de ser o caminho e passa a
+       ser a segunda via — útil no dia em que a pessoa apagar a conversa. */
+    return desfecho.documentos
+      ? '✓ Nota autorizada — série ' + desfecho.serie + ', número ' + desfecho.numero +
+        '.\n\nMando o PDF e o XML aqui em seguida.\n\n' +
+        '_Segunda via, sempre que precisar:_\n' + consulta
+      : '✓ Nota autorizada — série ' + desfecho.serie + ', número ' + desfecho.numero +
+        '.\n\nPDF e XML em:\n' + consulta;
   }
   if (desfecho.situacao === 'recusada') {
     return 'A contabilidade não aprovou este pedido.\n\n' +

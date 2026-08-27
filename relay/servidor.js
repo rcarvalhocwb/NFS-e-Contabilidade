@@ -203,6 +203,49 @@ async function tratarMensagem(m) {
   }
 }
 
+/* O aviso de que a nota saiu, com os documentos quando eles vêm.
+ *
+ * O texto vai primeiro: se o upload falhar, a pessoa pelo menos soube que a
+ * nota foi autorizada e tem o link da consulta pública. Documento é conforto;
+ * saber que a nota existe, não.
+ *
+ * Os arquivos são descartados assim que sobem — nunca tocam o disco daqui.
+ */
+async function avisarDesfecho(para, desfecho) {
+  const entregue = await responderAoCliente(para, conversa.avisoDeDesfecho(desfecho));
+  const docs = desfecho.documentos;
+  if (!entregue || !docs) return;
+
+  const { phoneNumberId, token } = credenciais();
+  const nome = docs.nome || 'NFSe';
+
+  const anexos = [
+    { tipo: 'pdf', conteudo: docs.pdf, arquivo: nome + '.pdf',
+      legenda: 'Nota fiscal ' + nome.replace(/^NFSe-/, '') },
+    { tipo: 'xml', conteudo: docs.xml, arquivo: nome + '.xml',
+      legenda: 'XML da nota — o arquivo que a contabilidade usa' }
+  ];
+
+  for (const a of anexos) {
+    if (!a.conteudo) continue;
+    try {
+      const mediaId = await meta.subirDocumento({
+        conteudo: Buffer.from(a.conteudo, 'base64'),
+        tipo: a.tipo, nomeArquivo: a.arquivo, phoneNumberId, token
+      });
+      await meta.enviarDocumento({
+        para, mediaId, nomeArquivo: a.arquivo, legenda: a.legenda,
+        phoneNumberId, token
+      });
+    } catch (e) {
+      /* O PDF é o que importa; o XML a Meta pode recusar por tipo. Falhar um
+         não pode impedir o outro, e nenhum dos dois pode derrubar o aviso que
+         já foi entregue. */
+      console.error('[aviso] não consegui mandar o ' + a.tipo + ':', e.message);
+    }
+  }
+}
+
 /* As credenciais do número vêm do gateway junto com o cadastro; o .env é o
    caminho de reserva, para a primeira subida e para quando o cadastro ainda não
    chegou. Assim o contador configura o WhatsApp na tela dele, e não por SSH. */
@@ -305,7 +348,7 @@ const servidor = http.createServer(async (req, res) => {
       /* O cliente pediu e ficou esperando: avisar é a razão de o pedido ter
          guardado o remetente. */
       if (pedido && pedido.remetente) {
-        responderAoCliente(pedido.remetente, conversa.avisoDeDesfecho(desfecho))
+        avisarDesfecho(pedido.remetente, desfecho)
           .catch(e => console.error('[aviso]', e.message));
       }
       return json(res, 200, { ok: true });

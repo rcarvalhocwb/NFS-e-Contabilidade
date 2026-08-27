@@ -318,15 +318,26 @@ test('acima do teto avisa, mas deixa seguir', async () => {
 
 /* ------------------------------------------------------------ o desfecho */
 
-test('o aviso de nota autorizada leva o link da consulta pública', async () => {
-  /* É o mesmo endereço do QR Code impresso na nota — público por natureza. Por
-     isso nenhum PDF precisa passar pelo relay. */
+test('sem documentos, o aviso leva o link da consulta pública', async () => {
+  /* É o mesmo endereço do QR Code impresso na nota — público por natureza. */
   const aviso = conversa.avisoDeDesfecho({
     situacao: 'emitida', chaveAcesso: '4106902...41', serie: '1', numero: '42'
   });
   assert.match(aviso, /autorizada/);
-  assert.match(aviso, /Série 1, número 42/);
+  assert.match(aviso, /série 1, número 42/);
+  assert.match(aviso, /PDF e XML em:/);
   assert.match(aviso, /nfse\.gov\.br\/ConsultaPublica\/\?tpc=1&chave=/);
+});
+
+test('com documentos, o link vira segunda via', async () => {
+  /* Os arquivos chegam em seguida; o link fica para o dia em que a pessoa
+     apagar a conversa. */
+  const aviso = conversa.avisoDeDesfecho({
+    situacao: 'emitida', chaveAcesso: '4106902...41', serie: '1', numero: '42',
+    documentos: { pdf: 'x', xml: 'y', nome: 'NFSe-1-42' }
+  });
+  assert.match(aviso, /Mando o PDF e o XML aqui em seguida/);
+  assert.match(aviso, /Segunda via/);
 });
 
 test('recusa do contador chega com o motivo dele', async () => {

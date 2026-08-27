@@ -528,6 +528,8 @@
   function preencherPortalEmpresa(e) {
     el('empModoEmissao').value = e.modo_emissao || 'gateway';
     el('empPortalLiberado').checked = !!e.portal_liberado;
+    el('empWhatsappDireto').checked = !!e.whatsapp_direto;
+    atualizarAvisoDireto();
     el('empPortalMotivo').value = e.portal_liberado ? '' : (e.portal_motivo || '');
     el('empModoAjuda').textContent = (e.modo_emissao === 'portal')
       ? 'O certificado e a numeração desta empresa ficam no portal.'
@@ -544,7 +546,31 @@
     el('empPortalMotivo').disabled = liberado;
     if (liberado) el('empPortalMotivo').value = '';
   }
-  el('empPortalLiberado').onchange = atualizarMotivoPortal;
+  el('empPortalLiberado').onchange = function () {
+    atualizarMotivoPortal();
+    atualizarAvisoDireto();
+  };
+  el('empWhatsappDireto').onchange = atualizarAvisoDireto;
+
+  /* A emissão direta só vale para WhatsApp, e só com o portal liberado. Dizer
+     isso na hora evita a pergunta "liguei e não emitiu sozinho". */
+  function atualizarAvisoDireto() {
+    var direto = el('empWhatsappDireto').checked;
+    var liberado = el('empPortalLiberado').checked;
+    var aviso = el('empDiretoAjuda');
+    if (direto && !liberado) {
+      aviso.textContent = 'Sem o portal liberado acima, nada chega a ser emitido.';
+      aviso.style.color = 'var(--alerta)';
+    } else if (direto) {
+      aviso.textContent = 'Pedido de WhatsApp de número autorizado vira nota na hora. ' +
+        'Acima do teto do número, ainda espera aprovação. Pedido pelo portal nunca ' +
+        'emite direto — quem autenticou a pessoa foi o site, não este sistema.';
+      aviso.style.color = '';
+    } else {
+      aviso.textContent = 'Todo pedido espera alguém do escritório aprovar.';
+      aviso.style.color = '';
+    }
+  }
 
   el('btnSalvarPortalEmp').onclick = function () {
     if (!estado.editando) return;
@@ -555,6 +581,7 @@
       body: JSON.stringify({
         modoEmissao: el('empModoEmissao').value,
         liberado: el('empPortalLiberado').checked,
+        whatsappDireto: el('empWhatsappDireto').checked,
         motivo: el('empPortalMotivo').value || undefined
       })
     })
@@ -848,6 +875,7 @@
     el('waNumero').value = c.wa_numero ? fmtTelefone(c.wa_numero) : '';
     el('waPhoneId').value = c.wa_phone_number_id || '';
     el('waCanalAtivo').checked = !!c.wa_ativo;
+    el('waDocumentos').checked = c.wa_envia_documentos !== false;
     el('waToken').value = '';
     el('waTokenEstado').textContent = c.tem_wa_token
       ? 'Um token já está guardado. Deixe em branco para mantê-lo.'
@@ -884,6 +912,7 @@
       waNumero: el('waNumero').value,
       waPhoneNumberId: el('waPhoneId').value,
       waAtivo: el('waCanalAtivo').checked,
+      waEnviaDocumentos: el('waDocumentos').checked,
       waToken: el('waToken').value || undefined
     }) })
       .then(function (c) { preencherCanal(c); aviso('WhatsApp do escritório salvo.', 'ok'); })

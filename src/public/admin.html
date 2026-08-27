@@ -742,6 +742,11 @@
                 <input type="checkbox" id="empPortalLiberado" style="width:auto">
                 Liberado para usar o portal
               </label>
+              <label style="display:flex;align-items:center;gap:9px;margin-top:10px;font-weight:400">
+                <input type="checkbox" id="empWhatsappDireto" style="width:auto">
+                Emitir direto pelo WhatsApp, sem aprovação
+              </label>
+              <div class="ajuda" id="empDiretoAjuda" style="margin-top:6px"></div>
               <div class="linha-botoes" style="margin-top:14px">
                 <button class="pequeno primario" id="btnSalvarPortalEmp">Salvar</button>
                 <span class="ajuda" id="empPortalEstado"></span>
@@ -995,6 +1000,16 @@
                 <input type="checkbox" id="waCanalAtivo" style="width:auto">
                 Atender pedidos por WhatsApp
               </label>
+              <label style="display:flex;align-items:center;gap:9px;margin-top:10px;font-weight:400">
+                <input type="checkbox" id="waDocumentos" style="width:auto">
+                Mandar o PDF e o XML da nota na conversa
+              </label>
+              <div class="ajuda" style="margin-top:6px">
+                Desligado, vai só o link da consulta pública e nenhum documento
+                sai desta máquina. Ligado, os arquivos passam pelo repassador e
+                ficam nos servidores da Meta — é o documento do próprio cliente
+                indo para ele, mas é uma escolha.
+              </div>
               <div class="ajuda" style="margin-top:10px">
                 O <span class="mono">App Secret</span> e o token de verificação
                 <strong>não vêm para cá</strong>: são eles que provam que a
