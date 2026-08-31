@@ -149,6 +149,8 @@
       <a href="#webhooks" data-tela="webhooks" data-admin hidden><span class="ico">⇄</span> Webhooks</a>
       <a href="#identidade" data-tela="identidade" data-admin hidden><span class="ico">◈</span> Identidade visual</a>
       <a href="#email" data-tela="email" data-admin hidden><span class="ico">✉</span> E-mail e avisos</a>
+      <a href="#sistema" data-tela="sistema" data-admin hidden><span class="ico">⏻</span> O gateway no ar
+        <span id="seloSistema" class="selo-status s-erro sem-ponto" hidden>!</span></a>
       <a href="#rede" data-tela="rede" data-admin hidden><span class="ico">⇅</span> Rede e conexão</a>
       <a href="#manutencao" data-tela="manutencao" data-admin hidden><span class="ico">▤</span> Backup e migração</a>
     </nav>
@@ -1543,6 +1545,47 @@
             <div id="emResumoResultado" class="ajuda" style="margin-top:12px"></div>
           </div>
         </div>
+      </section>
+
+      <section data-tela-conteudo="sistema" hidden>
+
+        <div class="cartao" style="margin:0 0 18px">
+          <div class="cartao-cab">
+            <h2>O sistema por baixo</h2>
+            <span id="sisSelo" class="selo-status s-neutro"></span>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:16px">
+              O gateway emite as notas, atende o WhatsApp e faz o backup — mas só
+              enquanto estiver rodando. Aqui está o que o mantém de pé, e o que
+              acontece se cada peça faltar.
+            </div>
+            <div id="sisLista"></div>
+
+            <div class="linha-botoes" style="margin-top:18px">
+              <button id="btnSisAtualizar">Conferir de novo</button>
+              <button class="primario" id="btnSisReiniciar">Reiniciar o gateway</button>
+            </div>
+            <div id="sisResultado" class="ajuda" style="margin-top:12px"></div>
+
+            <div class="caixa-amb" id="sisCaixaArquivo" style="margin-top:18px" hidden>
+              <h4>Para mexer no início automático</h4>
+              <div class="ajuda" style="margin-bottom:10px">
+                Registrar tarefa e serviço no Windows exige permissão de
+                administrador, e uma página no navegador não consegue pedir isso —
+                o Windows só mostra aquela janela azul para um programa.
+                <strong>Não precisa digitar comando nenhum:</strong> dê dois
+                cliques no arquivo abaixo, clique em <em>Sim</em> na janela azul, e
+                escolha a opção pelo número.
+              </div>
+              <div class="mono" id="sisArquivo"
+                   style="padding:10px 12px;background:var(--fundo-alt,#f2f4f3);
+                          border:1px solid var(--linha);border-radius:4px;
+                          word-break:break-all"></div>
+            </div>
+          </div>
+        </div>
+
       </section>
 
       <section data-tela-conteudo="rede" hidden>

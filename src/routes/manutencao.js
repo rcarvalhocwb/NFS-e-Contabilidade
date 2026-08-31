@@ -81,6 +81,28 @@ router.post('/backup', async (_req, res, next) => {
 
 /* Diagnóstico de rede. De administrador porque mostra os endereços da máquina
    na rede do escritório. */
+/* Como está o sistema por baixo: início automático, banco, backup,
+   certificado. Era um script de PowerShell — que funciona para quem escreve
+   comandos e não para quem opera a contabilidade. */
+router.get('/sistema', async (_req, res, next) => {
+  try { res.json(await require('../services/saudeSistema').ler()); }
+  catch (e) { next(e); }
+});
+
+/* Reiniciar o gateway por ele mesmo. É a operação que mais se repete, porque
+   toda atualização pede uma. Só funciona quando ele foi aberto pela tarefa do
+   Windows — do contrário não tem privilégio, e a resposta diz o que fazer. */
+router.post('/sistema/reiniciar', async (req, res, next) => {
+  try {
+    const r = await require('../services/saudeSistema').reiniciar();
+    await auditoria.registrar(req, null, 'sistema.reiniciar',
+      'Reiniciou o gateway pela tela');
+    res.json(r);
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message });
+  }
+});
+
 router.get('/rede', async (_req, res, next) => {
   try { res.json(await require('../services/diagnosticoRede').completo()); }
   catch (e) { next(e); }

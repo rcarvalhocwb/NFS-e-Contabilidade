@@ -50,11 +50,19 @@ Source: "configurar.ps1"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{group}\Emitir NFS-e"; Filename: "{app}\{#ExeAtalho}"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 70
 Name: "{group}\Painel de configuracao"; Filename: "http://localhost:3000/admin"
+; Manutencao: instalar/reiniciar/parar sem ninguem digitar comando. Ele mesmo
+; pede elevacao ao Windows, que e o que uma pagina no navegador nao consegue.
+Name: "{group}\Manutencao do sistema"; Filename: "{app}\Manutencao.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 21
 Name: "{group}\Desinstalar {#Nome}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Emitir NFS-e"; Filename: "{app}\{#ExeAtalho}"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 70; Tasks: atalhoDesktop
 
 [Tasks]
 Name: "atalhoDesktop"; Description: "Criar atalho na area de trabalho"; GroupDescription: "Atalhos:"
+; Marcado por padrao, e de proposito: sem isto o gateway so roda quando alguem
+; abre o atalho -- e um cliente que manda mensagem depois de um reinicio nao
+; recebe resposta, sem erro e sem aviso. O backup diario tambem so acontece
+; nos dias em que alguem abriu o programa.
+Name: "inicioAutomatico"; Description: "Iniciar o gateway junto com o Windows (recomendado)"; GroupDescription: "Funcionamento:"
 
 [Dirs]
 ; Dados e backups ficam graváveis por quem usa: sem isso o gateway instalado em
@@ -64,7 +72,10 @@ Name: "{app}\logs"; Permissions: users-modify
 Name: "{app}\postgres"; Permissions: users-modify
 
 [Run]
-Filename: "{app}\{#ExeAtalho}"; Description: "Abrir o gateway agora"; Flags: postinstall shellexec skipifsilent
+; Registra o servico do banco e a tarefa do gateway. O instalador ja roda
+; elevado, entao e aqui que isso custa zero para quem instala.
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\servico-windows.ps1"" instalar -Pasta ""{app}"" -Node ""{app}\node\node.exe"""; StatusMsg: "Configurando o inicio automatico..."; Flags: runhidden waituntilterminated; Tasks: inicioAutomatico
+Filename: "{app}\{#ExeAtalho}"; Description: "Abrir o gateway agora"; Flags: postinstall shellexec skipifsilent; Tasks: not inicioAutomatico
 
 [UninstallRun]
 ; Para o banco antes de apagar os arquivos, senao o Windows recusa a remocao

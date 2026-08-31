@@ -316,6 +316,7 @@
     identidade:  { titulo:'Identidade visual', sub:'A marca do escritório no painel e nos relatórios', carregar: carregarIdentidade },
     manutencao:  { titulo:'Backup e migração', sub:'Cópia de segurança e mudança de computador', carregar: function () { carregarManutencao(); carregarAtualizacao(); carregarCopias(); } },
     rede:        { titulo:'Rede e conexão', sub:'As saídas do gateway e a emissão sem internet', carregar: carregarRede },
+    sistema:     { titulo:'O gateway no ar', sub:'Início automático, banco de dados e manutenção', carregar: carregarSistema },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
     webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks },
     portal:      { titulo:'Portal do cliente', sub:'Pedidos de nota que chegam pelo site', carregar: carregarPonte }
@@ -868,6 +869,167 @@
       .then(function () { b.disabled = false; });
   };
 
+
+  /* ------------------------------------------- o sistema por baixo */
+
+  /* Isto morava num script de PowerShell. Funcionava para quem escreve
+     comandos, e nao para quem opera a contabilidade -- que e justamente quem
+     vai olhar as oito da manha, quando um cliente disser que mandou mensagem e
+     ninguem respondeu.
+
+     Cada linha diz O QUE ACONTECE se aquela peca faltar. "Tarefa nao
+     registrada" nao significa nada para o operador; "depois de um reinicio o
+     WhatsApp nao responde" significa. */
+  function linhaSistema(cor, titulo, texto, saida) {
+    return '<div style="display:flex;gap:11px;padding:11px 0;' +
+      'border-bottom:1px solid var(--linha)">' +
+      '<div style="flex:none;width:14px"><span class="' + cor + '">\u25cf</span></div>' +
+      '<div style="flex:1"><div><strong>' + esc(titulo) + '</strong></div>' +
+      '<div class="ajuda">' + esc(texto) + '</div>' +
+      (saida ? '<div class="ajuda" style="color:var(--acento)">\u2192 ' + esc(saida) + '</div>' : '') +
+      '</div></div>';
+  }
+
+  function carregarSistema() {
+    return api('/manutencao/sistema').then(function (d) {
+      var linhas = '';
+      var problemas = 0;
+
+      /* --------------------------------------------- o inicio automatico */
+      var t = d.tarefa;
+      if (t.estado === 'ok') {
+        linhas += linhaSistema('s-ok', 'Inicia sozinho com o Windows', t.texto);
+      } else if (t.estado === 'sem_permissao') {
+        linhas += linhaSistema('s-alerta', 'Inicia sozinho com o Windows', t.texto);
+      } else if (t.estado !== 'nao_se_aplica') {
+        problemas++;
+        linhas += linhaSistema('s-erro', 'NÃO inicia sozinho', t.texto,
+          'Use o arquivo de manutenção, abaixo, e escolha "Instalar o início automático".');
+      }
+
+      /* ------------------------------------------------------- o banco */
+      var b = d.banco;
+      if (b.estado === 'ok') {
+        linhas += linhaSistema('s-ok', 'Banco de dados', b.texto);
+      } else if (b.estado !== 'nao_se_aplica') {
+        problemas++;
+        linhas += linhaSistema('s-erro', 'Banco de dados', b.texto,
+          'Use o arquivo de manutenção e escolha "Instalar o início automático".');
+      }
+
+      /* -------------------------------------------------- o certificado */
+      (d.certificados || []).forEach(function (c) {
+        if (c.estado === 'vencido') {
+          problemas++;
+          linhas += linhaSistema('s-erro', 'Certificado de ' + c.empresa + ' VENCIDO',
+            'Venceu em ' + fmtData(c.validoAte) + '. Nenhuma nota desta empresa sai, ' +
+            'e o cancelamento também não.',
+            'Renove na certificadora e suba o arquivo novo na ficha da empresa.');
+        } else if (c.estado === 'vencendo') {
+          problemas++;
+          linhas += linhaSistema('s-alerta', 'Certificado de ' + c.empresa,
+            'Vence em ' + c.dias + ' dia(s), em ' + fmtData(c.validoAte) + '.',
+            'Renovar leva alguns dias na certificadora. Comece agora, não no dia.');
+        } else {
+          linhas += linhaSistema('s-ok', 'Certificado de ' + c.empresa,
+            'Válido até ' + fmtData(c.validoAte) + ' (' + c.dias + ' dias).');
+        }
+      });
+
+      /* ----------------------------------------------------- o backup */
+      var k = d.backup;
+      var quando = k.ultimo ? fmtDataHora(k.ultimo) : 'nunca';
+      if (k.estado === 'so_aqui') {
+        problemas++;
+        linhas += linhaSistema('s-alerta', 'Backup só neste computador',
+          'Última cópia: ' + quando + '. Ela fica no mesmo disco do banco — ' +
+          'um disco que falhar leva os dois.',
+          'Configure um destino em Backup e migração. Um pendrive ou uma pasta ' +
+          'de rede já resolve.');
+      } else if (k.estado === 'atrasado' || k.estado === 'nenhum') {
+        problemas++;
+        linhas += linhaSistema('s-erro', 'Backup atrasado',
+          'Última cópia: ' + quando + '.',
+          'Costuma querer dizer que o gateway ficou fechado — e fechado ele ' +
+          'também não atende o WhatsApp.');
+      } else {
+        linhas += linhaSistema('s-ok', 'Backup em dia',
+          'Última cópia: ' + quando + ', com ' + k.destinosFora + ' destino(s) fora daqui.');
+      }
+
+      /* ------------------------------------------------------- a rede */
+      if (d.rede.estado === 'aberto_na_rede') {
+        problemas++;
+        linhas += linhaSistema('s-alerta', 'O painel atende toda a rede local', d.rede.texto,
+          'Se só este computador opera, ponha HOST=127.0.0.1 no arquivo .env. ' +
+          'Se outras pessoas precisam entrar, trate de HTTPS antes de dar a senha a elas.');
+      } else {
+        linhas += linhaSistema('s-ok', 'O painel so atende neste computador', d.rede.texto);
+      }
+
+      el('sisLista').innerHTML = linhas;
+
+      var selo = el('sisSelo');
+      selo.className = 'selo-status ' + (problemas ? 's-erro' : 's-ok');
+      selo.textContent = problemas
+        ? problemas + ' ponto(s) para olhar'
+        : 'Tudo de pé \u00b7 versão ' + d.versao;
+
+      /* O selo do menu existe para o problema nao esperar alguem abrir a tela. */
+      var seloMenu = el('seloSistema');
+      if (seloMenu) { seloMenu.hidden = problemas === 0; seloMenu.textContent = problemas; }
+
+      /* O arquivo de duplo clique so aparece quando ha o que fazer com ele. */
+      var precisa = !d.podeAgir || problemas > 0;
+      el('sisCaixaArquivo').hidden = !(precisa && d.arquivoManutencao);
+      if (d.arquivoManutencao) el('sisArquivo').textContent = d.arquivoManutencao;
+
+      el('btnSisReiniciar').disabled = !d.podeAgir;
+      el('btnSisReiniciar').title = d.podeAgir ? ''
+        : 'Este gateway não foi aberto pela tarefa do Windows, então não tem ' +
+          'permissão para se reiniciar. Use o arquivo de manutenção.';
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('btnSisAtualizar').onclick = function () {
+    var b = el('btnSisAtualizar');
+    b.disabled = true;
+    carregarSistema().then(function () { b.disabled = false; });
+  };
+
+  el('btnSisReiniciar').onclick = function () {
+    if (!confirm('Reiniciar o gateway?\n\n' +
+                 'Ele sai do ar por alguns segundos e volta sozinho. ' +
+                 'Nota em emissão nesse momento continua na fila e sai depois.')) return;
+    var b = el('btnSisReiniciar');
+    b.disabled = true;
+    el('sisResultado').textContent = 'Reiniciando…';
+    api('/manutencao/sistema/reiniciar', { method: 'POST' })
+      .then(function () {
+        /* O proprio processo que responderia morre agora. Esperar e tentar de
+           novo e o que sobra -- e e o que a pessoa faria a mao. */
+        var tentar = function (resta) {
+          api('/manutencao/sistema').then(function () {
+            el('sisResultado').textContent = 'De volta ao ar.';
+            b.disabled = false;
+            carregarSistema();
+          }).catch(function () {
+            if (resta <= 0) {
+              el('sisResultado').textContent =
+                'Não voltou em 40 segundos. Confira pelo arquivo de manutenção.';
+              b.disabled = false;
+              return;
+            }
+            setTimeout(function () { tentar(resta - 1); }, 2000);
+          });
+        };
+        setTimeout(function () { tentar(20); }, 3000);
+      })
+      .catch(function (e) {
+        el('sisResultado').textContent = e.message;
+        b.disabled = false;
+      });
+  };
 
   /* ------------------------------- WhatsApp do escritório e a conversa */
 

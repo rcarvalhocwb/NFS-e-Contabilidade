@@ -39,7 +39,8 @@ Titulo "2. Copiando o gateway"
 # escritorio, subido e vigiado pelo gateway. Sem ele no pacote, a chave "Rodar o
 # repassador nesta maquina" ligaria e nada aconteceria.
 $incluir = @('src', 'migrations', 'scripts', 'relay',
-             'package.json', 'package-lock.json', '.env.example')
+             'package.json', 'package-lock.json', '.env.example',
+             'Manutencao.bat')
 foreach ($item in $incluir) {
     $origem = Join-Path $raizProjeto $item
     if (-not (Test-Path $origem)) { throw "nao encontrei $item" }
