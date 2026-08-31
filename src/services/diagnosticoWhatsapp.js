@@ -16,7 +16,17 @@ function tarefaDoWindows() {
   return new Promise(resolve => {
     execFile('schtasks', ['/query', '/TN', 'NFS-e Gateway'],
       { timeout: 5000, windowsHide: true },
-      (erro, saida) => resolve(erro ? false : /NFS-e Gateway/.test(String(saida))));
+      (erro, saida, erroTexto) => {
+        if (!erro) return resolve(/NFS-e Gateway/.test(String(saida)));
+        /* A tarefa roda como SYSTEM: um gateway aberto pelo atalho, sem
+           elevação, recebe "Acesso negado" ao consultá-la. Tratar isso como
+           "não registrada" faria a tela dizer que o gateway não sobe sozinho
+           justamente quando ele sobe — e dizer o contrário do que é verdade é
+           pior do que não conferir. */
+        const texto = String(erroTexto || '') + String(saida || '');
+        if (/negado|denied/i.test(texto)) return resolve('sem_permissao');
+        resolve(false);
+      });
   });
 }
 
@@ -261,7 +271,13 @@ async function conferir() {
 
   /* --------------------------------------------- o gateway sobe sozinho */
   const tarefa = await tarefaDoWindows();
-  if (tarefa !== null) {
+  if (tarefa === 'sem_permissao') {
+    itens.push(item('atencao', 'Não consegui conferir se o gateway sobe sozinho',
+      'a consulta à tarefa agendada voltou "acesso negado"',
+      'Isso costuma significar que a tarefa existe e roda como SYSTEM, ' +
+      'enquanto este gateway foi aberto pelo atalho. Confira num PowerShell ' +
+      'como Administrador: .\\scripts\\servico-windows.ps1 situacao'));
+  } else if (tarefa !== null) {
     itens.push(tarefa
       ? item('ok', 'O gateway sobe junto com o Windows')
       : item('falta', 'O gateway não sobe sozinho',

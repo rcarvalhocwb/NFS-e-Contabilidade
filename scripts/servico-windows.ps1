@@ -11,11 +11,21 @@
 #     25 e 27.
 #   - o tunel cai junto, e a Meta nao alcanca mais o webhook.
 #
-# Tarefa agendada e nao servico do Windows: o Node nao vira servico sozinho, e
-# um servico de verdade exigiria um programa a mais so para embrulhar o
-# processo -- exatamente a peca extra que este projeto vem tirando do caminho.
-# A tarefa agendada faz o mesmo com o que ja vem no Windows: sobe na
-# inicializacao, roda sem ninguem logado, e reinicia se cair.
+# Sao DUAS pecas, e as duas fazem falta:
+#
+#   1. o Postgres portatil vira servico do Windows. Quem o subia era o
+#      `garantir-banco.js`, um hook de `prestart` do npm que a tarefa nao
+#      executa -- depois de um reinicio o gateway subia sem banco, em silencio.
+#      Servico e nao "a tarefa sobe o banco" porque no Windows o postgres.exe
+#      se recusa a rodar sob conta administrativa, e a excecao e justamente
+#      quando quem inicia e o Gerenciador de Servicos.
+#
+#   2. o gateway vira tarefa agendada. O Node nao vira servico sozinho, e um
+#      servico de verdade exigiria um programa a mais so para embrulhar o
+#      processo -- a peca extra que este projeto vem tirando do caminho. A
+#      tarefa faz o mesmo com o que ja vem no Windows: sobe na inicializacao,
+#      roda sem ninguem logado, e reinicia se cair. Ela chama
+#      `scripts\iniciar.js`, que espera o banco atender antes de subir.
 #
 # Uso (PowerShell como Administrador):
 #   .\scripts\servico-windows.ps1 instalar
@@ -38,6 +48,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $NomeTarefa = 'NFS-e Gateway'
+$NomeServicoBanco = 'nfse-postgres'
 
 if (-not $Pasta) { $Pasta = Split-Path -Parent $PSScriptRoot }
 if (-not $Node) {
@@ -71,10 +82,70 @@ function TarefaAtual { Get-ScheduledTask -TaskName $NomeTarefa -ErrorAction Sile
 
 # ------------------------------------------------------------------ instalar
 
+<#
+  O Postgres portatil do gateway como servico.
+
+  Sem isto, depois de um reinicio o banco simplesmente nao esta rodando: quem o
+  subia era o `garantir-banco.js`, um hook de `prestart` do npm que a tarefa nao
+  executa. O gateway subia sem banco, em silencio.
+
+  Servico e nao "a tarefa sobe o banco": no Windows o postgres.exe se recusa a
+  rodar sob conta administrativa, e a tarefa roda como SYSTEM. A excecao e
+  quando quem inicia e o Gerenciador de Servicos -- que e como as outras
+  instalacoes de Postgres desta maquina ja funcionam.
+#>
+function InstalarBanco {
+    $raizPg = Join-Path $Pasta 'instalador\postgres'
+    if (-not (Test-Path (Join-Path $raizPg 'pgsql\bin\pg_ctl.exe'))) {
+        $raizPg = Join-Path $Pasta 'postgres'
+    }
+    $pgCtl = Join-Path $raizPg 'pgsql\bin\pg_ctl.exe'
+    $dados = Join-Path $raizPg 'dados'
+
+    if (-not (Test-Path $pgCtl)) {
+        Aviso "sem Postgres portatil nesta pasta - banco externo, nada a registrar"
+        return
+    }
+    if (-not (Test-Path $dados)) { throw "Achei o pg_ctl mas nao a pasta de dados em $dados." }
+
+    if (Get-Service -Name $NomeServicoBanco -ErrorAction SilentlyContinue) {
+        Ok "servico do banco '$NomeServicoBanco' ja existe"
+    } else {
+        # A porta escolhida na instalacao fica ao lado dos dados.
+        $arqPorta = Join-Path $raizPg 'porta.txt'
+        $porta = if (Test-Path $arqPorta) { (Get-Content $arqPorta -Raw).Trim() } else { '5433' }
+
+        Titulo "Registrando o banco como servico"
+        Write-Host "  dados: $dados"
+        Write-Host "  porta: $porta"
+        & $pgCtl register -N $NomeServicoBanco -D $dados -S auto -w -o "-p $porta"
+        if ($LASTEXITCODE -ne 0) { throw "pg_ctl register falhou (codigo $LASTEXITCODE)." }
+        Ok "servico '$NomeServicoBanco' registrado (inicio automatico)"
+    }
+
+    $svc = Get-Service -Name $NomeServicoBanco
+    if ($svc.Status -ne 'Running') {
+        # Se o Postgres ja estiver de pe pelo garantir-banco.js, a porta esta
+        # ocupada e o servico nao sobe. Para o avulso antes.
+        & $pgCtl status -D $dados > $null 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Aviso "havia um Postgres avulso rodando; parando para o servico assumir"
+            & $pgCtl stop -D $dados -m fast -w > $null 2>&1
+            Start-Sleep -Seconds 2
+        }
+        Start-Service -Name $NomeServicoBanco
+        Ok "servico do banco iniciado"
+    } else {
+        Ok "servico do banco ja estava rodando"
+    }
+}
+
 function Instalar {
     ExigirAdministrador
 
-    $servidor = Join-Path $Pasta 'src\server.js'
+    InstalarBanco
+
+    $servidor = Join-Path $Pasta 'scripts\iniciar.js'
     if (-not (Test-Path $servidor)) { throw "Nao achei $servidor. Use -Pasta com a pasta do gateway." }
     if (-not (Test-Path $Node))     { throw "Nao achei o node em $Node." }
 
@@ -87,8 +158,12 @@ function Instalar {
         Unregister-ScheduledTask -TaskName $NomeTarefa -Confirm:$false
     }
 
+    # scripts\iniciar.js e nao src\server.js: ele espera o banco atender antes
+    # de subir. A tarefa e o servico do Postgres disparam juntos na
+    # inicializacao e nao ha garantia de quem chega primeiro -- gateway sem
+    # banco fica inutil em silencio, que e o que se quer evitar aqui.
     $acaoTarefa = New-ScheduledTaskAction -Execute $Node `
-        -Argument 'src\server.js' -WorkingDirectory $Pasta
+        -Argument 'scripts\iniciar.js' -WorkingDirectory $Pasta
 
     # Na inicializacao do Windows, sem depender de alguem fazer login.
     $gatilho = New-ScheduledTaskTrigger -AtStartup
@@ -144,10 +219,18 @@ function Instalar {
 
 function Remover {
     ExigirAdministrador
-    if (-not (TarefaAtual)) { Aviso "nao havia tarefa registrada"; return }
-    Stop-ScheduledTask -TaskName $NomeTarefa -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $NomeTarefa -Confirm:$false
-    Ok "tarefa removida. O gateway volta a depender de alguem abrir o atalho."
+    if (TarefaAtual) {
+        Stop-ScheduledTask -TaskName $NomeTarefa -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $NomeTarefa -Confirm:$false
+        Ok "tarefa removida. O gateway volta a depender de alguem abrir o atalho."
+    } else { Aviso "nao havia tarefa registrada" }
+
+    # O servico do banco fica: remove-lo apagaria o acesso aos dados de quem
+    # ainda quiser abrir o gateway pelo atalho. Quem quiser tirar:
+    #   pg_ctl unregister -N nfse-postgres
+    if (Get-Service -Name $NomeServicoBanco -ErrorAction SilentlyContinue) {
+        Write-Host "  o servico '$NomeServicoBanco' foi mantido (o banco continua acessivel)."
+    }
 }
 
 # ------------------------------------------------------------------ situacao
@@ -165,6 +248,18 @@ function Situacao {
         $i = Get-ScheduledTaskInfo -TaskName $NomeTarefa
         Write-Host "     ultima execucao: $($i.LastRunTime)  (resultado $($i.LastTaskResult))"
         Write-Host "     proxima:         $($i.NextRunTime)"
+    }
+
+    Titulo "O banco"
+    $svc = Get-Service -Name $NomeServicoBanco -ErrorAction SilentlyContinue
+    if (-not $svc) {
+        Aviso "o Postgres do gateway NAO e um servico"
+        Write-Host "     Depois de um reinicio ele nao sobe, e o gateway fica sem banco."
+        Write-Host "     Para resolver:  .\scripts\servico-windows.ps1 instalar"
+    } elseif ($svc.Status -ne 'Running') {
+        Aviso "servico '$NomeServicoBanco' registrado, mas parado ($($svc.Status))"
+    } else {
+        Ok "servico '$NomeServicoBanco' rodando"
     }
 
     Titulo "O gateway"
