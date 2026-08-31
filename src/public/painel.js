@@ -1194,7 +1194,13 @@
           '<td class="mono">' + fmtDoc(e.cnpj) + '</td>' +
           '<td><strong>' + esc(e.razao_social) + '</strong>' +
             (e.nome_fantasia ? '<div class="ajuda">' + esc(e.nome_fantasia) + '</div>' : '') +
-            (e.ativo ? '' : ' <span class="selo-status s-neutro sem-ponto">inativa</span>') + '</td>' +
+            (e.ativo ? '' : ' <span class="selo-status s-neutro sem-ponto">inativa</span>') +
+            /* Falta de padrão fiscal só aparecia quando o cliente mandava a
+               primeira mensagem e a Sefin recusava. Aqui é onde se conserta. */
+            ((e.falta_padroes || []).length
+              ? '<div class="ajuda s-erro">Falta ' + esc(e.falta_padroes.join(' e ')) +
+                ' — emite pelo formulário, mas o WhatsApp é recusado.</div>'
+              : '') + '</td>' +
           '<td class="mono">' + esc(e.codigo_municipio) + (e.uf ? '/' + esc(e.uf) : '') + '</td>' +
           '<td>' + seloAmbiente(e.ambiente) + '</td>' +
           '<td>' + seloCertificado(e.certificado_valido_ate) + '</td>' +

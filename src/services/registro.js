@@ -59,8 +59,15 @@ function formatar(nivel, args) {
 /* Espelha console.log/warn/error para o arquivo, mantendo a saída no console.
    Envolver o console em vez de trocar as chamadas mantém o código do gateway
    sem uma camada de logger no meio. */
+let ligado = false;
+
 function iniciar() {
   if (process.env.LOG_ARQUIVO === 'false') return;
+  /* Chamar duas vezes envolveria o console duas vezes, e cada linha sairia
+     duplicada no arquivo. Acontece de verdade: o `scripts/iniciar.js` liga o
+     registro antes de esperar o banco, e o `server.js` liga de novo ao subir. */
+  if (ligado) return;
+  ligado = true;
 
   fs.mkdirSync(PASTA, { recursive: true });
   limparAntigos();

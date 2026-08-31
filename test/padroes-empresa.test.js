@@ -221,3 +221,50 @@ test('o pedido do WhatsApp gera o mesmo <valores> que a Sefin autorizou', () => 
   const bloco = (xml.match(/<valores>[\s\S]*?<\/valores>/) || [''])[0];
   assert.strictEqual(bloco, VALORES_DA_NOTA_AUTORIZADA);
 });
+
+/* -------------------------------- as telas param de mandar o numero errado */
+
+test('a página conversacional não manda alíquota de ISS como percentual do PGDAS', () => {
+  /* `servicos.aliquota_iss` está descrita no esquema como "usada fora do
+     Simples Nacional" — e esta tela a mandava como percentualTotalTributosSN
+     para quem ESTÁ no Simples. Enquanto o servidor não preenchia nada, número
+     errado era melhor que nenhum. Agora que ele aplica o perc_total_tributos da
+     empresa, mandar daqui só sobrescreveria o certo pelo errado. */
+  const s = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'public', 'emitir.js'), 'utf8');
+  /* A palavra ainda aparece — no comentário que explica por que ela saiu.
+     O que não pode voltar é a ATRIBUIÇÃO. */
+  assert.ok(!/percentualTotalTributosSN\s*=/.test(s),
+    'a tela não decide mais o percentual do Simples');
+  assert.match(s, /op_simp_nac\)\) < 0 && s\.aliquota_iss/,
+    'fora do Simples a alíquota do serviço continua valendo');
+});
+
+test('o formulário completo continua mandando o que a pessoa digitou', () => {
+  /* nota.js pré-preenche o campo com o padrão da empresa e manda o que estiver
+     lá. Isso continua certo: quem digitou vence, e é uma pessoa olhando. */
+  const s = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'public', 'nota.js'), 'utf8');
+  assert.match(s, /if \(optanteSN\) valores\.percentualTotalTributosSN = num\('fTotTrib'\)/);
+});
+
+test('a lista de empresas diz o que falta nos padrões fiscais', () => {
+  /* A falta aparece onde ela se conserta, e não só quando o cliente manda a
+     primeira mensagem e a Sefin recusa. */
+  const rota = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'routes', 'empresas.js'), 'utf8');
+  assert.match(rota, /falta_padroes: faltaParaEmitirSemFormulario\(e\)/);
+  assert.match(rota, /e\.perc_total_tributos,/, 'a consulta precisa trazer o campo');
+
+  const painel = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'public', 'painel.js'), 'utf8');
+  assert.match(painel, /e\.falta_padroes \|\| \[\]/);
+});
+
+test('ligar o registro duas vezes não duplica cada linha do log', () => {
+  /* O scripts/iniciar.js liga antes de esperar o banco e o server.js liga de
+     novo ao subir. Sem guarda, o console sairia envolvido duas vezes. */
+  const s = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'services', 'registro.js'), 'utf8');
+  assert.match(s, /if \(ligado\) return;/);
+});

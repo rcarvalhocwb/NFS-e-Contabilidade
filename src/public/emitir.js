@@ -463,10 +463,18 @@
         numero: t.numero, complemento: t.complemento, bairro: t.bairro
       };
     }
-    // Optante do Simples informa o percentual do PGDAS; os demais, a alíquota.
-    if ([2, 3].indexOf(Number(e.op_simp_nac)) >= 0) {
-      if (s.aliquota_iss) corpo.valores.percentualTotalTributosSN = Number(s.aliquota_iss);
-    } else if (s.aliquota_iss) {
+    /* Fora do Simples, a alíquota do serviço é o que vale — e é para isso que
+       o campo existe: em 010_emissor.sql ele está descrito como "usada fora do
+       Simples Nacional".
+
+       Dentro do Simples, esta tela mandava essa MESMA alíquota como
+       percentualTotalTributosSN, que é outra coisa: o pTotTribSN é a alíquota
+       efetiva do PGDAS-D, não a de ISS. Enquanto o servidor não preenchia nada,
+       o número errado era melhor que nenhum. Agora que ele aplica o
+       perc_total_tributos da empresa, mandar daqui só serviria para
+       sobrescrever o valor certo pelo errado — porque o que o chamador manda
+       vence. Então não manda: o servidor resolve. */
+    if ([2, 3].indexOf(Number(e.op_simp_nac)) < 0 && s.aliquota_iss) {
       corpo.valores.aliquotaIss = Number(s.aliquota_iss);
     }
 

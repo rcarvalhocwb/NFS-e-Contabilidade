@@ -113,7 +113,8 @@ router.get('/', async (req, res, next) => {
     const r = await db.query(
       `SELECT e.id, e.cnpj, e.razao_social, e.nome_fantasia, e.inscricao_municipal,
               e.codigo_municipio, e.op_simp_nac, e.reg_esp_trib, e.ambiente, e.ativo,
-              e.uf, e.email,
+              e.uf, e.email, e.portal_liberado,
+              e.cod_tributacao_padrao, e.descricao_padrao, e.perc_total_tributos,
               c.valido_ate AS certificado_valido_ate, c.subject AS certificado_subject,
               n.serie AS serie_dps, n.prox_numero AS prox_num_dps
        FROM empresas e
@@ -127,7 +128,15 @@ router.get('/', async (req, res, next) => {
        ORDER BY e.razao_social`,
       [ids]
     );
-    res.json(r.rows);
+
+    /* O que impede esta empresa de emitir fora do formulário.
+       Sem isto, uma empresa do Simples sem o percentual do PGDAS emite pela
+       tela — onde alguém digita — e é recusada pelo WhatsApp com E1235. A falta
+       aparece aqui, que é a lista de onde se abre a ficha para corrigi-la. */
+    const { faltaParaEmitirSemFormulario } = require('../nfse/padroesEmpresa');
+    res.json(r.rows.map(e => Object.assign(e, {
+      falta_padroes: faltaParaEmitirSemFormulario(e)
+    })));
   } catch (e) { next(e); }
 });
 

@@ -25,8 +25,15 @@ const net = require('net');
 const path = require('path');
 
 const RAIZ = path.join(__dirname, '..');
+
 const ESPERA_MAX_MS = 120000;
 const INTERVALO_MS = 1000;
+
+/* O registro em arquivo começa AQUI, e não no server.js.
+   A espera pelo banco acontece antes de o servidor carregar; sem isto, o
+   trecho mais interessante do boot — quanto tempo se esperou, e se chegou a
+   desistir — ficava só no stdout da tarefa, que ninguém lê. */
+require(path.join(RAIZ, 'src', 'services', 'registro')).iniciar();
 
 function alvo() {
   /* A porta do banco vem da URL. O Postgres portátil escolhe a porta livre na
@@ -59,12 +66,14 @@ async function esperarBanco() {
   if (!onde) return;                       // banco externo ou URL ilegível
   if (await atende(onde)) return;
 
+  const desde = Date.now();
   console.log('[iniciar] esperando o banco em ' + onde.host + ':' + onde.porta + '…');
   const limite = Date.now() + ESPERA_MAX_MS;
   while (Date.now() < limite) {
     await new Promise(r => setTimeout(r, INTERVALO_MS));
     if (await atende(onde)) {
-      console.log('[iniciar] banco respondeu; subindo o gateway');
+      console.log('[iniciar] banco respondeu em ' +
+        Math.round((Date.now() - desde) / 1000) + 's; subindo o gateway');
       return;
     }
   }
