@@ -29,7 +29,12 @@ const config = {
   databaseUrl: process.env.DATABASE_URL,
   apiKey: process.env.GATEWAY_API_KEY,
   masterKey: process.env.MASTER_KEY,
-  verAplic: process.env.VER_APLIC || 'nfse-gateway/1.0',
+  /* Vai dentro de toda DPS e identifica o aplicativo emissor. Ficou preso em
+     "1.0" enquanto o gateway chegava à 1.6: num documento fiscal, dizer a
+     versão errada atrapalha justamente quem for investigar um lote de notas
+     com problema. Sai do package.json para não haver duas verdades. */
+  verAplic: process.env.VER_APLIC ||
+    ('nfse-gateway/' + require('../package.json').version),
   xmlSigAlg: (process.env.XML_SIG_ALG || 'sha1').toLowerCase(),
   ambientes: AMBIENTES,
 

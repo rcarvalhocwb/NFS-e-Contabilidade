@@ -241,6 +241,9 @@ const servidor = app.listen(config.port, process.env.HOST || '0.0.0.0', () => {
      Uma instalacao, uma atualizacao, um lugar so para olhar o log. */
   require('./services/repassadorLocal').iniciar()
     .catch(e => console.warn('[repassador]', e.message));
+  /* Certificado vencendo, backup só no mesmo disco, painel aberto na rede:
+     coisas que só se descobrem no pior momento se ninguém as disser. */
+  require('./services/avisosProducao').iniciar();
 
   require('./services/obrigacoes').gerar({ meses: 3 })
     .then(r => { if (r.criadas) console.log(`[obrigacoes] ${r.criadas} ocorrência(s) criada(s)`); })
@@ -266,6 +269,7 @@ function encerrar(sinal) {
   emailTomador.parar();
   backupAutomatico.parar();
   require('./services/repassadorLocal').parar();
+  require('./services/avisosProducao').parar();
   servidor.close(() => {
     db.pool.end()
       .then(() => { console.log('[shutdown] concluído'); process.exit(0); })

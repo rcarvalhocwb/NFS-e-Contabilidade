@@ -168,14 +168,49 @@ test('o diagnóstico percorre a corrente na ordem em que ela quebra', () => {
 
 test('cada falta vem com o que fazer, não só com o que falta', () => {
   const d = fonte('src', 'services', 'diagnosticoWhatsapp.js');
-  const faltas = d.match(/item\('falta',[\s\S]{0,400}?\)\)/g) || [];
+  /* Cada chamada inteira, do `item('falta',` até o próximo `item(`.
+     A regex não-gulosa que estava aqui parava no primeiro `))` e cortava o
+     item antes do texto de orientação — acusava de não orientar justamente os
+     itens mais bem escritos, que são os que ocupam várias linhas. */
+  const faltas = [];
+  const marcas = [...d.matchAll(/item\('falta',/g)].map(m => m.index);
+  for (const i of marcas) {
+    const proximo = d.indexOf("item('", i + 6);
+    faltas.push(d.slice(i, proximo === -1 ? i + 600 : proximo));
+  }
   assert.ok(faltas.length >= 6, 'esperava várias verificações');
-  /* Uma ou outra é auto-explicativa (o HTTP 500 do repassador); o resto tem de
-     dizer onde resolver. */
-  const comSaida = faltas.filter(f => /'[^']{25,}'\s*\)\)/.test(f) || f.includes('→') ||
-    /aba Integração|tela |Meta →|Clique|Ponha|Invente|Gere/.test(f));
+
+  /* A propriedade, não o vocabulário.
+     Este teste conferia uma lista de palavras ("Clique", "Ponha", "Invente") e
+     virou armadilha: item novo escrito com outro verbo era acusado de não
+     orientar quando orientava. O que se quer mesmo é estrutural — a assinatura
+     é item(estado, o_que, detalhe, resolver), então basta perguntar se o
+     quarto argumento existe. */
+  const temResolver = chamada => {
+    const abre = chamada.indexOf('(');
+    let nivel = 0, virgulas = 0, aspas = null;
+    for (let i = abre; i < chamada.length; i++) {
+      const c = chamada[i];
+      if (aspas) {
+        if (c === '\\') i++;
+        else if (c === aspas) aspas = null;
+        continue;
+      }
+      if (c === "'" || c === '"' || c === '`') { aspas = c; continue; }
+      if (c === '(' || c === '[' || c === '{') nivel++;
+      else if (c === ')' || c === ']' || c === '}') { nivel--; if (nivel === 0) break; }
+      else if (c === ',' && nivel === 1) virgulas++;
+    }
+    return virgulas >= 3;
+  };
+  const comSaida = faltas.filter(temResolver);
+
+  /* Uma ou outra é auto-explicativa — o HTTP 500 do repassador não tem "onde
+     resolver", tem "o servidor respondeu isso". */
+  const semSaida = faltas.filter(f => !comSaida.includes(f));
   assert.ok(comSaida.length >= faltas.length - 2,
-    'quase toda falta precisa dizer como resolver');
+    'quase toda falta precisa dizer como resolver. Sem saída: ' +
+    semSaida.map(f => f.slice(0, 80)).join(' | '));
 });
 
 test('o que o gateway não consegue ver é dito, não omitido', () => {

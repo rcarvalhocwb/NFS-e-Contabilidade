@@ -1,6 +1,24 @@
+const { execFile } = require('child_process');
 const db = require('../db');
 const ponte = require('./ponteNuvem');
 const repassador = require('./repassadorLocal');
+const { faltaParaEmitirSemFormulario } = require('../nfse/padroesEmpresa');
+
+/* O gateway sobe junto com o Windows?
+ *
+ * É a pergunta que decide se o WhatsApp atende de verdade. Enquanto o gateway
+ * foi um atalho na área de trabalho, a resposta para o cliente que escrevia às
+ * 8h depois de um reinício de madrugada era o silêncio — e silêncio não aparece
+ * em log nenhum. O repassador e o túnel são filhos deste processo: se ele não
+ * sobe, nada sobe. */
+function tarefaDoWindows() {
+  if (process.platform !== 'win32') return Promise.resolve(null);
+  return new Promise(resolve => {
+    execFile('schtasks', ['/query', '/TN', 'NFS-e Gateway'],
+      { timeout: 5000, windowsHide: true },
+      (erro, saida) => resolve(erro ? false : /NFS-e Gateway/.test(String(saida))));
+  });
+}
 
 /* O que falta para o WhatsApp funcionar.
  *
@@ -115,12 +133,12 @@ async function conferir() {
 
   /* ---------------------------------------------------------- as empresas */
   const emp = await db.query(
-    `SELECT e.razao_social, e.nome_fantasia, e.portal_liberado, e.whatsapp_direto,
-            count(w.id)::int AS numeros
+    `SELECT e.*, e.razao_social, e.nome_fantasia, e.portal_liberado, e.whatsapp_direto,
+            (SELECT count(*) FROM contatos_whatsapp w
+              WHERE w.empresa_id = e.id AND w.ativo)::int AS numeros,
+            (SELECT count(*) FROM servicos s WHERE s.empresa_id = e.id)::int AS servicos
        FROM empresas e
-       LEFT JOIN contatos_whatsapp w ON w.empresa_id = e.id AND w.ativo
-      WHERE e.ativo
-      GROUP BY e.id ORDER BY e.razao_social`);
+      WHERE e.ativo ORDER BY e.razao_social`);
 
   const liberadas = emp.rows.filter(e => e.portal_liberado);
   itens.push(liberadas.length
@@ -147,6 +165,32 @@ async function conferir() {
       mudas.map(e => e.nome_fantasia || e.razao_social).join(', '),
       'Elas estão prontas, mas ninguém consegue pedir nota por elas.'));
   }
+
+  /* O serviço é o que a conversa oferece para escolher. Sem nenhum, ela
+     responde "ainda não há nenhum para esta empresa" e encerra na primeira
+     pergunta — a empresa fica liberada, com número cadastrado, e muda. */
+  const semServico = liberadas.filter(e => e.servicos === 0);
+  itens.push(semServico.length
+    ? item('falta', semServico.length + ' empresa(s) liberada(s) sem serviço cadastrado',
+        semServico.map(e => e.nome_fantasia || e.razao_social).join(', '),
+        'Tela Serviços. A conversa pede para escolher um serviço; sem lista, ' +
+        'ela não tem o que oferecer e o pedido morre aí.')
+    : item('ok', 'Todas as empresas liberadas têm serviço cadastrado'));
+
+  /* Os padrões fiscais que a tela preenchia sozinha.
+     Uma empresa do Simples sem o percentual do PGDAS emite pelo formulário,
+     onde alguém digita, e é recusada por todos os outros caminhos com E1235.
+     Antes de 27/08/2026 isso só aparecia na primeira mensagem do cliente. */
+  const semPadrao = liberadas
+    .map(e => ({ e, falta: faltaParaEmitirSemFormulario(e) }))
+    .filter(x => x.falta.length);
+  itens.push(semPadrao.length
+    ? item('falta', semPadrao.length + ' empresa(s) sem os padrões fiscais completos',
+        semPadrao.map(x => (x.e.nome_fantasia || x.e.razao_social) +
+          ': falta ' + x.falta.join(', ')).join(' · '),
+        'Ficha da empresa → aba Padrões fiscais. Sem eles a nota sai pelo ' +
+        'formulário e é recusada pelo WhatsApp.')
+    : item('ok', 'Padrões fiscais completos nas empresas liberadas'));
 
   /* ------------------------------------------------------- a identidade */
   const ident = await db.query('SELECT nome FROM identidade LIMIT 1');
@@ -213,6 +257,19 @@ async function conferir() {
     } else {
       itens.push(item('falta', 'O repassador respondeu HTTP ' + r.status));
     }
+  }
+
+  /* --------------------------------------------- o gateway sobe sozinho */
+  const tarefa = await tarefaDoWindows();
+  if (tarefa !== null) {
+    itens.push(tarefa
+      ? item('ok', 'O gateway sobe junto com o Windows')
+      : item('falta', 'O gateway não sobe sozinho',
+          'nenhuma tarefa "NFS-e Gateway" registrada',
+          'Abra o PowerShell como Administrador na pasta do gateway e rode: ' +
+          '.\\scripts\\servico-windows.ps1 instalar — sem isso, o WhatsApp ' +
+          'fica mudo depois de qualquer reinício, e o backup diário só roda ' +
+          'nos dias em que alguém abrir o programa.'));
   }
 
   const falta = itens.filter(i => i.estado === 'falta').length;

@@ -348,11 +348,18 @@ function totalTributos(v, optanteSN) {
       : (typeof v.percentualTotalTributos === 'number' ? v.percentualTotalTributos : undefined);
     return p !== undefined ? tag('pTotTribSN', dec(p)) : '';
   }
-  if (v.percentualTotalTributos !== undefined) {
+  /* Fora do Simples a declaração é repartida por esfera. Um número solto não
+     se reparte: até 27/08/2026 ele virava <pTotTrib> com três zeros, porque
+     `.federal` de um número é undefined e o `|| 0` completava. Declarar zero de
+     tributo federal quando o que houve foi falta de informação é errado no
+     documento fiscal — e silencioso. Sem a repartição, o certo é dizer que não
+     há informação, que é o que indTotTrib=0 significa. */
+  const p = v.percentualTotalTributos;
+  if (p !== undefined && p !== null && typeof p === 'object') {
     return `<pTotTrib>` +
-      tag('pTotTribFed', dec(v.percentualTotalTributos.federal || 0)) +
-      tag('pTotTribEst', dec(v.percentualTotalTributos.estadual || 0)) +
-      tag('pTotTribMun', dec(v.percentualTotalTributos.municipal || 0)) +
+      tag('pTotTribFed', dec(p.federal || 0)) +
+      tag('pTotTribEst', dec(p.estadual || 0)) +
+      tag('pTotTribMun', dec(p.municipal || 0)) +
     `</pTotTrib>`;
   }
   return tag('indTotTrib', '0');

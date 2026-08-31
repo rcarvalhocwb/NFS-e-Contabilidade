@@ -3,6 +3,7 @@ const { limparDocumento } = require('../util/documento');
 const config = require('../config');
 const { montarDps, gerarIdDps } = require('../nfse/dpsBuilder');
 const { conferirEmissao, conferirCancelamento } = require('../nfse/regrasDps');
+const { aplicarPadroes } = require('../nfse/padroesEmpresa');
 const { montarPedidoCancelamento } = require('../nfse/eventoBuilder');
 const { assinarXml } = require('../nfse/assinador');
 const sefin = require('../nfse/sefinClient');
@@ -64,8 +65,18 @@ async function buscarPorReferencia(empresaId, referencia) {
  * 3. Persiste como pendente, envia à Sefin Nacional
  * 4. Atualiza status com o resultado (autorizada/rejeitada/erro)
  */
-async function emitir(cnpjEmpresa, dados, contexto = {}) {
+async function emitir(cnpjEmpresa, dadosRecebidos, contexto = {}) {
   const empresa = await buscarEmpresa(cnpjEmpresa);
+
+  /* Os padrões da empresa, aplicados AQUI e não na tela.
+   *
+   * Moravam em `nota.js` e `emitir.js`, no navegador. Quem emitia por outro
+   * caminho — WhatsApp, portal, `POST /nfse` — mandava só o que tinha, e a nota
+   * de empresa do Simples saía sem <totTrib>: E1235, esquema incompleto. Com a
+   * aplicação aqui, os quatro caminhos passam a valer o mesmo.
+   *
+   * O que o chamador informou continua vencendo: isto só preenche buraco. */
+  const dados = aplicarPadroes(empresa, dadosRecebidos);
 
   // Idempotência antes de qualquer efeito colateral: se já existe nota com
   // esta referência, devolve a que existe sem reservar número nem transmitir.
