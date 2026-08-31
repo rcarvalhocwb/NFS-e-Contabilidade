@@ -50,6 +50,11 @@ Source: "configurar.ps1"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{group}\Emitir NFS-e"; Filename: "{app}\{#ExeAtalho}"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 70
 Name: "{group}\Painel de configuracao"; Filename: "http://localhost:3000/admin"
+; O monitor: programa separado, icone separado. Ve tudo o que esta
+; acontecendo e liga/desliga o gateway -- inclusive quando ele esta fora do
+; ar, que e quando mais importa.
+Name: "{group}\Monitor do gateway"; Filename: "{app}\Monitor.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22
+Name: "{autodesktop}\Monitor do gateway"; Filename: "{app}\Monitor.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22; Tasks: atalhoDesktop
 ; Manutencao: instalar/reiniciar/parar sem ninguem digitar comando. Ele mesmo
 ; pede elevacao ao Windows, que e o que uma pagina no navegador nao consegue.
 Name: "{group}\Manutencao do sistema"; Filename: "{app}\Manutencao.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 21

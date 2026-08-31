@@ -38,9 +38,12 @@ Titulo "2. Copiando o gateway"
 # relay/ vai junto: o repassador do WhatsApp pode rodar na propria maquina do
 # escritorio, subido e vigiado pelo gateway. Sem ele no pacote, a chave "Rodar o
 # repassador nesta maquina" ligaria e nada aconteceria.
-$incluir = @('src', 'migrations', 'scripts', 'relay',
+# monitor/ e um programa a parte, com icone proprio: o gateway emite, o
+# monitor olha. Um monitor que morre junto com o que ele monitora nao serve
+# para nada -- e justamente quando o gateway cai que alguem quer olhar.
+$incluir = @('src', 'migrations', 'scripts', 'relay', 'monitor',
              'package.json', 'package-lock.json', '.env.example',
-             'Manutencao.bat')
+             'Manutencao.bat', 'Monitor.bat')
 foreach ($item in $incluir) {
     $origem = Join-Path $raizProjeto $item
     if (-not (Test-Path $origem)) { throw "nao encontrei $item" }
@@ -48,7 +51,7 @@ foreach ($item in $incluir) {
 }
 
 # Testes e fila de desenvolvimento nao vao para a maquina da contabilidade.
-foreach ($fora in @('relay\teste', 'relay\dados')) {
+foreach ($fora in @('relay\teste', 'relay\dados', 'monitor\sessao.txt')) {
     $p = Join-Path $pacote $fora
     if (Test-Path $p) { Remove-Item $p -Recurse -Force }
 }

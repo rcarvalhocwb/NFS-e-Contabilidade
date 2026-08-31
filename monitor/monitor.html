@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor do gateway</title>
+<style>
+  :root {
+    --fundo: #0e1512;
+    --painel: #16211c;
+    --painel2: #1d2b24;
+    --linha: #2b3b33;
+    --texto: #e4ede8;
+    --texto2: #a9bab1;
+    --texto3: #7b8d84;
+    --ok: #5fbf8b;
+    --alerta: #e0b057;
+    --erro: #f08a8a;
+    --acento: #5fbf8b;
+    --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+    --sans: "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fundo); color: var(--texto);
+    font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    height: 100vh; display: flex; flex-direction: column;
+  }
+
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 12px 18px; background: var(--painel);
+    border-bottom: 1px solid var(--linha);
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+  .pulso {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--texto3);
+    flex: none;
+  }
+  .pulso.vivo { background: var(--ok); box-shadow: 0 0 0 0 rgba(95,191,139,.6); animation: bate 2s infinite; }
+  .pulso.morto { background: var(--erro); }
+  @keyframes bate {
+    0%   { box-shadow: 0 0 0 0 rgba(95,191,139,.55); }
+    70%  { box-shadow: 0 0 0 7px rgba(95,191,139,0); }
+    100% { box-shadow: 0 0 0 0 rgba(95,191,139,0); }
+  }
+  @media (prefers-reduced-motion: reduce) { .pulso.vivo { animation: none; } }
+
+  .espaco { flex: 1; }
+  button {
+    font-family: inherit; font-size: 13px; padding: 6px 13px;
+    background: var(--painel2); color: var(--texto);
+    border: 1px solid var(--linha); border-radius: 4px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--acento); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.perigo:hover:not(:disabled) { border-color: var(--erro); color: var(--erro); }
+  button.primario { background: var(--acento); color: #08150f; border-color: var(--acento); font-weight: 600; }
+
+  main { flex: 1; display: grid; grid-template-columns: 340px 1fr; gap: 1px;
+         background: var(--linha); min-height: 0; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+
+  .coluna { background: var(--fundo); overflow-y: auto; min-height: 0; }
+
+  .bloco { border-bottom: 1px solid var(--linha); padding: 14px 18px; }
+  .bloco h2 {
+    margin: 0 0 10px; font-size: 11px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--texto3); font-weight: 600;
+  }
+
+  .item { display: flex; align-items: baseline; gap: 9px; padding: 5px 0; }
+  .ponto { width: 8px; height: 8px; border-radius: 50%; flex: none; margin-top: 6px; }
+  .p-ok { background: var(--ok); } .p-alerta { background: var(--alerta); }
+  .p-erro { background: var(--erro); } .p-neutro { background: var(--texto3); }
+  .item .rot { flex: 1; }
+  .item .val { color: var(--texto2); font-size: 13px; }
+
+  .numeros { display: flex; gap: 22px; }
+  .numero .n { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .numero .l { font-size: 11px; color: var(--texto3); text-transform: uppercase; letter-spacing: .08em; }
+  .numero .n.alerta { color: var(--alerta); }
+  .numero .n.erro { color: var(--erro); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  td { padding: 5px 0; border-bottom: 1px solid var(--linha); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.hora { color: var(--texto3); font-family: var(--mono); white-space: nowrap; width: 1%; padding-right: 10px; }
+  .selo { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+  .s-ok { background: rgba(95,191,139,.16); color: var(--ok); }
+  .s-alerta { background: rgba(224,176,87,.16); color: var(--alerta); }
+  .s-erro { background: rgba(240,138,138,.16); color: var(--erro); }
+  .s-neutro { background: rgba(123,141,132,.16); color: var(--texto3); }
+
+  /* ------------------------------------------------------------- o log */
+  #log {
+    font-family: var(--mono); font-size: 12px; line-height: 1.65;
+    padding: 12px 16px; white-space: pre-wrap; word-break: break-word;
+  }
+  #log div { padding: 1px 0; }
+  #log .aviso { color: var(--alerta); }
+  #log .erro  { color: var(--erro); }
+  #log .hora  { color: var(--texto3); }
+  #log .vazio { color: var(--texto3); font-family: var(--sans); }
+
+  .barraLog {
+    position: sticky; top: 0; z-index: 1;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; background: var(--painel); border-bottom: 1px solid var(--linha);
+    font-size: 12px; color: var(--texto3);
+  }
+  .barraLog label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  #recado {
+    padding: 9px 18px; font-size: 13px; display: none;
+    border-bottom: 1px solid var(--linha);
+  }
+  #recado.mostra { display: block; }
+  #recado.bom { background: rgba(95,191,139,.12); color: var(--ok); }
+  #recado.ruim { background: rgba(240,138,138,.12); color: var(--erro); }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="pulso" id="pulso"></span>
+  <h1>Monitor do gateway</h1>
+  <span id="resumo" style="color:var(--texto2);font-size:13px"></span>
+  <span class="espaco"></span>
+  <button id="btnIniciar">Iniciar</button>
+  <button id="btnReiniciar" class="primario">Reiniciar</button>
+  <button id="btnParar" class="perigo">Parar</button>
+</header>
+
+<div id="recado"></div>
+
+<main>
+  <div class="coluna">
+    <div class="bloco">
+      <h2>As peças</h2>
+      <div id="pecas"></div>
+    </div>
+
+    <div class="bloco">
+      <h2>Fila de emissão</h2>
+      <div class="numeros">
+        <div class="numero"><div class="n" id="nProcessando">—</div><div class="l">emitindo</div></div>
+        <div class="numero"><div class="n" id="nErro">—</div><div class="l">com erro</div></div>
+      </div>
+    </div>
+
+    <div class="bloco">
+      <h2>Últimas notas</h2>
+      <table><tbody id="tbNotas"></tbody></table>
+    </div>
+
+    <div class="bloco">
+      <h2>Últimos pedidos</h2>
+      <table><tbody id="tbPedidos"></tbody></table>
+    </div>
+  </div>
+
+  <div class="coluna">
+    <div class="barraLog">
+      <span>O que está acontecendo agora</span>
+      <span class="espaco" style="flex:1"></span>
+      <label><input type="checkbox" id="seguir" checked> acompanhar o fim</label>
+      <button id="btnLimpar" style="padding:3px 10px">Limpar</button>
+    </div>
+    <div id="log"><div class="vazio">Esperando o gateway escrever alguma coisa…</div></div>
+  </div>
+</main>
+
+<script src="/monitor.js?t=__TOKEN__"></script>
+</body>
+</html>
