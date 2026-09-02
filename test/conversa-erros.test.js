@@ -120,16 +120,22 @@ test('rejeição da Sefin diz o que aconteceu com o número', () => {
 /* -------------------------------------------- município de emissor próprio */
 
 test('bloqueio de município diz para onde ir', () => {
-  /* "O município 4107652 não serve" deixa a pessoa com a nota na mão. */
+  /* "O município 4107652 não serve" deixa a pessoa com a nota na mão.
+     A mensagem mudou de casa quando o roteamento por município nasceu: mora em
+     emissorMunicipal, que é quem sabe se dá para emitir ali. */
   const servico = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'nfse', 'emissorMunicipal.js'), 'utf8');
+  const i = servico.indexOf("municipio.modo_emissao === 'proprio'");
+  assert.ok(i > 0, 'o bloqueio do emissor próprio precisa continuar existindo');
+  const corpo = servico.slice(i, servico.indexOf('\n    return null;', i));
+  assert.match(corpo, /municipio\.emissor/, 'o nome do emissor entra na mensagem');
+  assert.match(corpo, /municipio\.url_portal/, 'e o endereço também');
+  assert.match(corpo, /municipio\.nome/, 'e o nome do município, não só o código');
+
+  /* E quem chama continua devolvendo 422. */
+  const emissao = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'services', 'emissaoService.js'), 'utf8');
-  const i = servico.indexOf("mun.modo_emissao === 'proprio'");
-  assert.ok(i > 0);
-  const corpo = servico.slice(i, servico.indexOf('\n  }', i));
-  assert.match(corpo, /mun\.emissor/, 'o nome do emissor entra na mensagem');
-  assert.match(corpo, /mun\.url_portal/, 'e o endereço também');
-  assert.match(corpo, /mun\.nome/, 'e o nome do município, não só o código');
-  assert.match(corpo, /status: 422/);
+  assert.match(emissao, /conferirPodeEmitir\(mun\)[\s\S]{0,160}status: 422/);
 });
 
 test('o bloqueio acontece antes de reservar número', () => {

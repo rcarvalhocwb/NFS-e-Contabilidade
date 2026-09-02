@@ -43,7 +43,11 @@ test('falha de rede não muda o status da nota', () => {
 });
 
 test('não alcançar a Sefin é classificado como rede', () => {
-  const i = fila.indexOf('resp = await sefin.enviarDps');
+  /* O envio passou a ser roteado por município — a Sefin na maioria, o
+     provedor municipal onde ele aceita o layout nacional. A classificação da
+     falha é a mesma para os dois: não falar com o destino é rede. */
+  const i = fila.indexOf('resp = await transporte.enviarDps');
+  assert.ok(i > 0, 'o envio roteado precisa continuar existindo');
   const corpo = fila.slice(i, i + 600);
   assert.match(corpo, /marcarFalha\(nota, 'Sem conexão com a Sefin: ' \+ e\.message, 'rede'\)/);
 });

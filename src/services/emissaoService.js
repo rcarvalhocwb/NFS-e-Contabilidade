@@ -4,6 +4,7 @@ const config = require('../config');
 const { montarDps, gerarIdDps } = require('../nfse/dpsBuilder');
 const { conferirEmissao, conferirCancelamento } = require('../nfse/regrasDps');
 const { aplicarPadroes } = require('../nfse/padroesEmpresa');
+const emissorMunicipal = require('../nfse/emissorMunicipal');
 const { montarPedidoCancelamento } = require('../nfse/eventoBuilder');
 const { assinarXml } = require('../nfse/assinador');
 const sefin = require('../nfse/sefinClient');
@@ -98,26 +99,19 @@ async function emitir(cnpjEmpresa, dadosRecebidos, contexto = {}) {
     };
   }
 
-  // Guard de roteamento: se o município do emitente usa emissor próprio
-  // (ABRASF etc.), o gateway não emite ali. Bloqueia com mensagem clara antes
-  // de reservar número ou assinar. Município 'nacional' ou não classificado
-  // ('desconhecido') segue o fluxo normal.
+  /* Para onde esta nota vai, e se pode ir.
+   *
+   * Município no Sistema Nacional segue pela Sefin, como sempre. Município com
+   * provedor próprio que aceita o layout nacional — o Betha de Fazenda Rio
+   * Grande — segue pelo endereço dele, com a MESMA DPS. Emissor próprio sem
+   * provedor implementado continua bloqueado, com o nome do lugar e para onde
+   * ir.
+   *
+   * A conferência acontece ANTES de reservar número: uma recusa depois da
+   * reserva deixaria buraco na sequência fiscal. */
   const mun = await municipios.obter(empresa.codigo_municipio);
-  if (mun && mun.modo_emissao === 'proprio') {
-    /* Dizer só "o município 4107652 não serve" deixa a pessoa com a nota na mão
-       e sem saída. O que resolve o problema dela é o nome do lugar e para onde
-       ir — por isso o emissor e o portal ficam no cadastro do município. */
-    const onde = [
-      mun.emissor ? `pelo ${mun.emissor}` : 'pelo sistema da prefeitura',
-      mun.url_portal ? `(${mun.url_portal})` : ''
-    ].filter(Boolean).join(' ');
-
-    throw Object.assign(new Error(
-      `${mun.nome || 'Este município'} (${empresa.codigo_municipio}) não emite pelo ` +
-      `Sistema Nacional: mantém emissor próprio. A nota desta empresa sai ${onde}. ` +
-      (mun.observacao || 'Confira o credenciamento junto à prefeitura.')
-    ), { status: 422 });
-  }
+  const impedimento = emissorMunicipal.conferirPodeEmitir(mun);
+  if (impedimento) throw Object.assign(new Error(impedimento), { status: 422 });
 
   /* Conferência do leiaute ANTES de reservar número. A Sefin só recusaria
      depois de a numeração ter sido consumida e a DPS assinada — deixando um

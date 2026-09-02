@@ -126,7 +126,13 @@ async function transmitir(nota) {
 
   let resp;
   try {
-    resp = await sefin.enviarDps(nota.ambiente || empresa.ambiente, nota.dps_xml, cert);
+    /* Quem recebe a DPS depende do município do emitente: a Sefin Nacional na
+       maioria, o provedor municipal onde ele aceita o layout nacional. O
+       documento é o mesmo — muda o carteiro. */
+    const mun = await require('./municipiosService').obter(empresa.codigo_municipio);
+    const transporte = require('../nfse/emissorMunicipal').transporte(mun);
+    resp = await transporte.enviarDps(
+      mun, nota.ambiente || empresa.ambiente, nota.dps_xml, cert);
   } catch (e) {
     /* Não chegou a falar com a Sefin: DNS, timeout, cabo, roteador reiniciando.
        A nota está pronta e assinada aqui — só falta a linha. Fica na fila. */
