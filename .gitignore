@@ -50,3 +50,5 @@ ferramentas/
 # Token da sessao do monitor: sorteado a cada abertura, vale para ligar e
 # desligar a emissao do escritorio.
 monitor/sessao.txt
+.p.js
+.p2.js
