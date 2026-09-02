@@ -1683,6 +1683,83 @@
       </section>
 
       <section data-tela-conteudo="rede" hidden>
+        <div class="cartao" style="margin:0 0 18px" data-admin hidden>
+          <div class="cartao-cab">
+            <h2>Quem alcança o painel</h2>
+            <span id="rdSelo" class="selo-status s-neutro"></span>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:16px">
+              Isto vivia num arquivo de configuração. Agora é aqui — e vale para
+              o painel, não para a emissão: o gateway continua sem nada exposto
+              na internet.
+            </div>
+
+            <label style="display:flex;align-items:flex-start;gap:9px;font-weight:400">
+              <input type="radio" name="rdEscuta" value="local" id="rdLocal" style="width:auto;margin-top:4px">
+              <span><strong>Só este computador</strong>
+                <div class="ajuda">Ninguém abre o painel de outra máquina. É o
+                  mais seguro, e serve quando só uma pessoa opera.</div></span>
+            </label>
+
+            <label style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;font-weight:400">
+              <input type="radio" name="rdEscuta" value="rede" id="rdRede" style="width:auto;margin-top:4px">
+              <span><strong>Todo o escritório</strong>
+                <div class="ajuda">Outras máquinas da rede abrem o painel pelo
+                  endereço desta. <strong>Sem HTTPS, a senha de quem entrar de
+                  outro computador atravessa a rede em texto puro.</strong></div></span>
+            </label>
+
+            <div class="ajuda" style="margin-top:12px">
+              Endereços por onde esta máquina é alcançável:
+              <span class="mono" id="rdEnderecos"></span>
+            </div>
+            <div class="ajuda" id="rdAmbiente" style="margin-top:8px" hidden></div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0 0 18px" data-admin hidden>
+          <div class="cartao-cab">
+            <h2>Conexão criptografada (HTTPS)</h2>
+            <span id="rdSeloHttps" class="selo-status s-neutro"></span>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:14px">
+              O que o certificado próprio resolve: tira a senha do texto puro
+              dentro da rede. <strong>O que ele não resolve</strong>: o navegador
+              não conhece quem assinou e vai avisar na primeira vez — alguém
+              aceita uma vez em cada computador. Para rede de escritório é a
+              troca certa; na internet não seria, mas o gateway não vai para a
+              internet.
+            </div>
+
+            <div class="caixa-amb">
+              <h4>O certificado</h4>
+              <div id="rdCertificado" class="ajuda"></div>
+              <div class="linha-botoes" style="margin-top:12px">
+                <button id="btnRdGerar">Gerar certificado próprio</button>
+                <span class="ajuda">Leva alguns segundos.</span>
+              </div>
+            </div>
+
+            <label style="display:flex;align-items:center;gap:9px;margin-top:16px;font-weight:400">
+              <input type="checkbox" id="rdHttps" style="width:auto">
+              Atender também em HTTPS
+            </label>
+            <div class="grade c2" style="margin-top:12px;max-width:340px">
+              <div><label for="rdPorta">Porta do HTTPS</label>
+                <input id="rdPorta" type="number" min="1024" max="65535" value="3443">
+                <div class="ajuda">O HTTP continua na 3000: desligá-lo tiraria do
+                  ar o atalho e todo endereço já anotado.</div></div>
+            </div>
+
+            <div class="linha-botoes" style="margin-top:18px">
+              <button class="primario" id="btnRdSalvar">Salvar</button>
+            </div>
+            <div id="rdResultado" class="ajuda" style="margin-top:12px"></div>
+          </div>
+        </div>
+
         <div class="cartao" style="margin:0 0 18px">
           <div class="cartao-cab">
             <h2>Saídas do gateway</h2>

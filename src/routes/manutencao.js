@@ -103,6 +103,52 @@ router.post('/sistema/reiniciar', async (req, res, next) => {
   }
 });
 
+/* De onde o painel aceita conexão, e se é criptografada. Saiu do .env porque
+   editar arquivo de configuração no bloco de notas é onde o operador trava. */
+router.get('/rede/config', async (_req, res, next) => {
+  try {
+    const s = require('../services/configRede');
+    const c = await s.ler();
+    res.json(Object.assign(c, {
+      enderecos: s.enderecosDaMaquina(),
+      hostDoAmbiente: process.env.HOST || null
+    }));
+  } catch (e) { next(e); }
+});
+
+router.put('/rede/config', async (req, res, next) => {
+  try {
+    const s = require('../services/configRede');
+    const antes = await s.ler();
+    const depois = await s.salvar(req.body || {});
+    await auditoria.registrar(req, null, 'rede.config',
+      'Alterou o acesso pela rede: escuta=' + depois.escuta +
+      ', https=' + depois.https_ativo);
+    res.json(Object.assign(depois, {
+      precisaReiniciar: s.precisaReiniciar(antes, depois)
+    }));
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message });
+  }
+});
+
+router.post('/rede/certificado', async (req, res, next) => {
+  try {
+    const s = require('../services/configRede');
+    const b = req.body || {};
+    /* Gerar leva alguns segundos (2048 bits): é o preço de não depender de
+       ninguém emitir certificado para uma rede de escritório. */
+    const r = b.certPem && b.chavePem
+      ? await s.guardarCertificado(b.certPem, b.chavePem)
+      : await s.gerarCertificado();
+    await auditoria.registrar(req, null, 'rede.certificado',
+      'Gerou ou substituiu o certificado do painel: ' + r.assunto);
+    res.json(r);
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message });
+  }
+});
+
 router.get('/rede', async (_req, res, next) => {
   try { res.json(await require('../services/diagnosticoRede').completo()); }
   catch (e) { next(e); }

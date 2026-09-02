@@ -734,6 +734,7 @@
      funcionam e mostra onde parou quando não funcionam. */
 
   function carregarRede() {
+    carregarConfigRede();
     return api('/manutencao/rede').then(function (d) {
       var falhou = d.saidas.filter(function (s) { return s.alcancavel === false; });
       var selo = el('rdSelo');
@@ -870,6 +871,93 @@
       .then(function () { b.disabled = false; });
   };
 
+
+  /* ------------------------------------------ quem alcança o painel */
+
+  /* Saiu do arquivo .env porque editar configuração no bloco de notas é onde o
+     operador de contabilidade trava — e onde alguém apaga uma linha sem querer. */
+  function carregarConfigRede() {
+    return api('/manutencao/rede/config').then(function (c) {
+      el('rdLocal').checked = c.escuta === 'local';
+      el('rdRede').checked = c.escuta !== 'local';
+      el('rdHttps').checked = !!c.https_ativo;
+      el('rdPorta').value = c.https_porta || 3443;
+
+      var e = c.enderecos || { nomes: [], ips: [] };
+      el('rdEnderecos').textContent = e.ips.concat(e.nomes).join('  ·  ');
+
+      /* A variável de ambiente vence a tela. Se alguém a definiu, dizer isso é
+         a diferença entre "não funciona" e "está mandando outro". */
+      var amb = el('rdAmbiente');
+      amb.hidden = !c.hostDoAmbiente;
+      if (c.hostDoAmbiente) {
+        amb.innerHTML = '<strong>Atenção:</strong> existe <span class="mono">HOST=' +
+          esc(c.hostDoAmbiente) + '</span> no arquivo .env, e ele vence esta tela. ' +
+          'Tire a linha de lá para a escolha aqui valer.';
+      }
+
+      var selo = el('rdSelo');
+      if (c.escuta === 'local') {
+        selo.className = 'selo-status s-ok';
+        selo.textContent = 'Só este computador';
+      } else {
+        selo.className = 'selo-status ' + (c.https_ativo ? 's-ok' : 's-alerta');
+        selo.textContent = c.https_ativo ? 'Rede, com HTTPS' : 'Rede, sem HTTPS';
+      }
+
+      var sh = el('rdSeloHttps');
+      sh.className = 'selo-status ' + (c.https_ativo ? 's-ok' : 's-neutro');
+      sh.textContent = c.https_ativo ? 'ligado na porta ' + c.https_porta : 'desligado';
+
+      el('rdCertificado').innerHTML = c.tem_certificado
+        ? '<strong>' + esc(c.cert_assunto || 'certificado') + '</strong>' +
+          (c.cert_origem === 'gerado' ? ' (gerado aqui)' : ' (enviado)') +
+          '<div>Vale para: <span class="mono">' + esc(c.cert_nomes || '—') + '</span></div>' +
+          '<div>Válido até ' + fmtData(c.cert_valido_ate) + '</div>'
+        : 'Nenhum certificado ainda. Sem ele o HTTPS não liga.';
+
+      return c;
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('btnRdGerar').onclick = function () {
+    if (!confirm('Gerar um certificado próprio para este computador?\n\n' +
+                 'Leva alguns segundos. Se já existir um, ele será substituído — ' +
+                 'e quem já tinha aceitado o antigo vai precisar aceitar de novo.')) return;
+    var b = el('btnRdGerar');
+    b.disabled = true;
+    el('rdResultado').textContent = 'Gerando… isso leva alguns segundos.';
+    api('/manutencao/rede/certificado', { method: 'POST', body: JSON.stringify({}) })
+      .then(function (r) {
+        el('rdResultado').textContent = 'Certificado gerado para ' + r.nomes + '.';
+        carregarConfigRede();
+      })
+      .catch(function (e) { el('rdResultado').textContent = e.message; })
+      .then(function () { b.disabled = false; });
+  };
+
+  el('btnRdSalvar').onclick = function () {
+    var b = el('btnRdSalvar');
+    b.disabled = true;
+    el('rdResultado').textContent = '';
+    api('/manutencao/rede/config', { method: 'PUT', body: JSON.stringify({
+      escuta: el('rdLocal').checked ? 'local' : 'rede',
+      httpsAtivo: el('rdHttps').checked,
+      httpsPorta: Number(el('rdPorta').value) || 3443
+    }) })
+      .then(function (c) {
+        carregarConfigRede();
+        /* Porta em que um servidor escuta não se troca com ele no ar. Prometer
+           que trocou seria pior do que avisar. */
+        el('rdResultado').textContent = c.precisaReiniciar
+          ? 'Salvo. Só passa a valer depois de reiniciar o gateway — ' +
+            'use "O gateway no ar", aqui do lado, ou o Monitor.'
+          : 'Salvo.';
+        aviso('Acesso pela rede salvo.', 'ok');
+      })
+      .catch(function (e) { el('rdResultado').textContent = e.message; aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
 
   /* ------------------------------------------- as notas que a empresa recebe */
 

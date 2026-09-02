@@ -220,13 +220,47 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ erro: err.message || 'Erro interno' });
 });
 
-/* HOST controla de onde o gateway aceita conexão.
-   Sem a variável, ouve em todas as interfaces — que é como sempre funcionou, e
-   é o que permite outra máquina do escritório abrir o painel. Quem quiser
-   trancar no próprio computador põe HOST=127.0.0.1 no .env. Isso é rede local:
-   nada aqui tem a ver com expor o gateway na internet, que o desenho não pede
-   e a tela de Rede explica. */
-const servidor = app.listen(config.port, process.env.HOST || '0.0.0.0', () => {
+/* De onde o gateway aceita conexão, e se ela é criptografada.
+ *
+ * Isso morava só na variável HOST do .env. Agora vem da tela "Rede e conexão",
+ * porque editar arquivo de configuração no bloco de notas é onde o operador de
+ * contabilidade trava — e onde alguém apaga uma linha sem querer.
+ *
+ * A VARIÁVEL DE AMBIENTE CONTINUA VENCENDO, e é de propósito: numa máquina em
+ * que o painel ficou inalcançável por configuração errada, `HOST=127.0.0.1` na
+ * linha de comando é o jeito de voltar a entrar sem precisar do painel — que é
+ * justamente o que não abre.
+ *
+ * O servidor sobe DEPOIS de ler a configuração, e sobe mesmo se ela falhar: um
+ * gateway que não abre por causa do banco não consegue nem mostrar o erro. */
+let servidor;
+let servidorHttps = null;
+
+async function subir() {
+  const rede = await require('./services/configRede').paraSubir();
+
+  servidor = app.listen(config.port, rede.host, aoSubir);
+
+  if (rede.https) {
+    /* HTTP e HTTPS juntos, em portas diferentes. Derrubar o HTTP ao ligar o
+       HTTPS tiraria do ar o atalho da área de trabalho e todo endereço que
+       alguém já anotou — inclusive o do repassador e o do monitor. */
+    try {
+      servidorHttps = require('https')
+        .createServer({ cert: rede.https.cert, key: rede.https.key }, app)
+        .listen(rede.https.porta, rede.host, () => {
+          console.log('nfse-gateway tambem em https na porta ' + rede.https.porta);
+        });
+      servidorHttps.on('error', e =>
+        console.error('[https] não consegui subir na porta ' +
+          rede.https.porta + ': ' + e.message));
+    } catch (e) {
+      console.error('[https] certificado recusado pelo sistema: ' + e.message);
+    }
+  }
+}
+
+function aoSubir() {
   console.log(`nfse-gateway ouvindo na porta ${config.port}`);
   // O worker roda no mesmo processo. Como o estado da fila vive no banco e a
   // reivindicação usa FOR UPDATE SKIP LOCKED, subir várias instâncias do
@@ -252,6 +286,11 @@ const servidor = app.listen(config.port, process.env.HOST || '0.0.0.0', () => {
   require('./services/obrigacoes').gerar({ meses: 3 })
     .then(r => { if (r.criadas) console.log(`[obrigacoes] ${r.criadas} ocorrência(s) criada(s)`); })
     .catch(e => console.warn('[obrigacoes] geração falhou:', e.message));
+}
+
+subir().catch(e => {
+  console.error('[rede] não consegui ler a configuração:', e.message);
+  servidor = app.listen(config.port, process.env.HOST || '0.0.0.0', aoSubir);
 });
 
 /* Sessões expiradas se acumulariam para sempre. De hora em hora basta: elas já
@@ -274,11 +313,14 @@ function encerrar(sinal) {
   backupAutomatico.parar();
   require('./services/repassadorLocal').parar();
   require('./services/avisosProducao').parar();
-  servidor.close(() => {
-    db.pool.end()
-      .then(() => { console.log('[shutdown] concluído'); process.exit(0); })
-      .catch(() => process.exit(0));
-  });
+  /* Os dois, e tolerando que ainda não existam: um sinal que chegue antes de a
+     configuração de rede ser lida encontraria `servidor` indefinido, e o
+     encerramento morreria com TypeError em vez de fechar o banco. */
+  if (servidorHttps) servidorHttps.close();
+  const fecharBanco = () => db.pool.end()
+    .then(() => { console.log('[shutdown] concluído'); process.exit(0); })
+    .catch(() => process.exit(0));
+  if (servidor) servidor.close(fecharBanco); else fecharBanco();
   // Rede de segurança: se algo travar, não fica pendurado indefinidamente.
   setTimeout(() => {
     console.error('[shutdown] tempo esgotado, saindo à força');
