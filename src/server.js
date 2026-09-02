@@ -29,6 +29,7 @@ const usuariosRouter = require('./routes/usuarios');
 const manutencaoRouter = require('./routes/manutencao');
 const loteRouter = require('./routes/lote');
 const relatoriosRouter = require('./routes/relatorios');
+const notasEntradaRouter = require('./routes/notasEntrada');
 const sessoes = require('./services/sessoes');
 const fila = require('./services/filaEmissao');
 const atualizacao = require('./services/atualizacao');
@@ -205,6 +206,9 @@ app.use('/usuarios', usuariosRouter);
 app.use('/manutencao', manutencaoRouter);
 app.use('/lote', loteRouter);
 app.use('/relatorios', relatoriosRouter);
+/* Importar uma pasta manda dezenas de XMLs de uma vez. O limite geral de 2 MB
+   daria uns 250 documentos e cortaria o lote no meio, sem dizer por quê. */
+app.use('/notas-entrada', express.json({ limit: '25mb' }), notasEntradaRouter);
 
 // NFS-e: aberta ao token da empresa, restrita ao escopo dele.
 app.use('/nfse', fixarEscopoEmpresa, nfseRouter);

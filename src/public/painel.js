@@ -308,6 +308,7 @@
     notas:       { titulo:'Notas emitidas',sub:'Consulta, XML, PDF e cancelamento',     carregar: carregarNotas },
     lotes:       { titulo:'Emissão em lote', sub:'Muitas notas a partir de uma planilha', carregar: carregarLotes },
     relatorios:  { titulo:'Relatórios',    sub:'Fechamento do período e livro de notas', carregar: prepararRelatorios },
+    entradas:    { titulo:'Notas de entrada', sub:'As notas que os fornecedores emitiram para as empresas', carregar: carregarNotasEntrada },
     clientes:    { titulo:'Clientes',      sub:'Tomadores usados nas emissões',         carregar: carregarClientes },
     servicos:    { titulo:'Serviços',      sub:'Modelos para emitir mais rápido',       carregar: carregarServicos },
     usuarios:    { titulo:'Usuários',      sub:'Quem acessa o gateway e o que pode fazer', carregar: carregarUsuarios },
@@ -869,6 +870,139 @@
       .then(function () { b.disabled = false; });
   };
 
+
+  /* ------------------------------------------- as notas que a empresa recebe */
+
+  /* O escritório passa o mês procurando nota de entrada. A busca é o recurso:
+     tudo o mais nesta tela existe para estreitar o que ela devolve. */
+
+  function filtrosDeEntrada() {
+    var f = {};
+    if (el('neBusca').value.trim()) f.busca = el('neBusca').value.trim();
+    if (el('neDe').value) f.de = el('neDe').value;
+    if (el('neAte').value) f.ate = el('neAte').value;
+    var min = parseValorBR(el('neValorMin').value);
+    var max = parseValorBR(el('neValorMax').value);
+    if (min !== undefined) f.valorMin = min;
+    if (max !== undefined) f.valorMax = max;
+    return f;
+  }
+
+  function carregarNotasEntrada() {
+    var f = filtrosDeEntrada();
+    var busca = Object.keys(f).map(function (k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(f[k]);
+    }).join('&');
+
+    return api('/notas-entrada' + (busca ? '?' + busca : '')).then(function (d) {
+      el('neLista').innerHTML = (d.itens || []).map(function (n) {
+        var cancelada = n.situacao === 'cancelada';
+        return '<tr' + (cancelada ? ' style="opacity:.55"' : '') + '>' +
+          '<td>' + esc(fmtData(n.emitido_em)) + '</td>' +
+          '<td><strong>' + esc(n.prestador_nome || '—') + '</strong>' +
+            '<div class="ajuda mono">' + esc(fmtDoc(n.prestador_doc)) + '</div></td>' +
+          '<td>' + esc(n.descricao || '—') +
+            (n.prestador_municipio
+              ? '<div class="ajuda">' + esc(n.prestador_municipio) + '</div>' : '') + '</td>' +
+          '<td class="mono">' + esc(n.numero || '—') +
+            (cancelada ? '<div class="ajuda s-erro">cancelada</div>' : '') + '</td>' +
+          '<td style="text-align:right">' + fmtMoeda(n.valor_servico) +
+            (n.iss_retido ? '<div class="ajuda">ISS retido</div>' : '') + '</td>' +
+          '<td class="acoes"><a class="botao pequeno" href="/notas-entrada/' +
+            n.id + '/xml">XML</a></td>' +
+        '</tr>';
+      }).join('');
+
+      var vazio = el('neVazio');
+      vazio.hidden = (d.itens || []).length > 0;
+      vazio.textContent = f.busca
+        ? 'Nada encontrado para "' + f.busca + '". Tente uma palavra só, ou tire os filtros de data e valor.'
+        : 'Nenhuma nota de entrada ainda. Importe uma pasta de XMLs aqui embaixo.';
+
+      var selo = el('neSelo');
+      selo.className = 'selo-status ' + (d.total ? 's-ok' : 's-neutro');
+      selo.textContent = d.total === d.mostrando
+        ? d.total + ' nota(s)'
+        : 'mostrando ' + d.mostrando + ' de ' + d.total;
+
+      el('neResumo').textContent = d.total
+        ? d.total + ' nota(s) · ' + fmtMoeda(d.soma) + ' no total'
+        : '';
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  el('btnNeBuscar').onclick = carregarNotasEntrada;
+  el('neBusca').onkeydown = function (ev) { if (ev.key === 'Enter') carregarNotasEntrada(); };
+  ['neDe', 'neAte', 'neValorMin', 'neValorMax'].forEach(function (id) {
+    el(id).onchange = carregarNotasEntrada;
+  });
+  el('btnNeLimpar').onclick = function () {
+    ['neBusca', 'neDe', 'neAte', 'neValorMin', 'neValorMax'].forEach(function (id) {
+      el(id).value = '';
+    });
+    carregarNotasEntrada();
+  };
+
+  /* ------------------------------------------------------------ importar */
+
+  /* Cada arquivo com seu desfecho. Dizer "23 importadas, 2 recusadas" e parar
+     aí obrigaria a pessoa a descobrir sozinha QUAIS duas — e por quê. */
+  function mostrarImportacao(r) {
+    var linhas = (r.resultados || []).map(function (x) {
+      var cor = !x.ok ? 's-erro' : x.nova ? 's-ok' : 's-alerta';
+      var texto = !x.ok ? x.motivo
+        : x.nova ? 'importada · ' + (x.prestador || '') + ' · ' + fmtMoeda(x.valor)
+        : 'já estava aqui';
+      return '<div style="display:flex;gap:10px;padding:6px 0;' +
+        'border-bottom:1px solid var(--linha)">' +
+        '<span class="' + cor + '">●</span>' +
+        '<div><div class="mono">' + esc(x.arquivo || '—') + '</div>' +
+        '<div class="ajuda">' + esc(texto) + '</div></div></div>';
+    }).join('');
+
+    el('neImportacao').innerHTML =
+      '<div style="margin-bottom:8px"><strong>' + r.novas + ' nova(s)</strong>, ' +
+      r.repetidas + ' já existiam, ' + r.recusadas + ' recusada(s)' +
+      (r.ignorados ? ' · ' + r.ignorados + ' arquivo(s) além do limite de 500 ficaram de fora' : '') +
+      '</div>' + linhas;
+
+    carregarNotasEntrada();
+  }
+
+  el('btnNePasta').onclick = function () {
+    var caminho = el('nePasta').value.trim();
+    if (!caminho) return aviso('Diga o caminho da pasta.', 'erro');
+    var b = el('btnNePasta');
+    b.disabled = true;
+    el('neImportacao').textContent = 'Lendo a pasta…';
+    api('/notas-entrada/importar-pasta', {
+      method: 'POST', body: JSON.stringify({ caminho: caminho })
+    })
+      .then(mostrarImportacao)
+      .catch(function (e) { el('neImportacao').textContent = e.message; })
+      .then(function () { b.disabled = false; });
+  };
+
+  el('btnNeEnviar').onclick = function () {
+    var entrada = el('neArquivos');
+    var lista = Array.prototype.slice.call(entrada.files || []);
+    if (!lista.length) return aviso('Escolha ao menos um arquivo XML.', 'erro');
+
+    var b = el('btnNeEnviar');
+    b.disabled = true;
+    el('neImportacao').textContent = 'Lendo ' + lista.length + ' arquivo(s)…';
+
+    Promise.all(lista.map(function (f) {
+      return f.text().then(function (t) { return { nome: f.name, xml: t }; });
+    })).then(function (arquivos) {
+      return api('/notas-entrada/importar', {
+        method: 'POST', body: JSON.stringify({ arquivos: arquivos })
+      });
+    })
+      .then(function (r) { mostrarImportacao(r); entrada.value = ''; })
+      .catch(function (e) { el('neImportacao').textContent = e.message; })
+      .then(function () { b.disabled = false; });
+  };
 
   /* ------------------------------------------- o sistema por baixo */
 

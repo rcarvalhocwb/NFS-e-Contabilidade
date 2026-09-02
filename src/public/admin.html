@@ -136,6 +136,7 @@
       <a href="#lotes" data-tela="lotes"><span class="ico">▤</span> Emissão em lote</a>
       <a href="#portal" data-tela="portal"><span class="ico">☁</span> Portal do cliente
         <span class="selo-status s-alerta sem-ponto" id="seloFila" hidden></span></a>
+      <a href="#entradas" data-tela="entradas"><span class="ico">⬋</span> Notas de entrada</a>
       <a href="#relatorios" data-tela="relatorios"><span class="ico">◲</span> Relatórios</a>
 
       <div class="menu-grupo">Cadastros</div>
@@ -1545,6 +1546,99 @@
             <div id="emResumoResultado" class="ajuda" style="margin-top:12px"></div>
           </div>
         </div>
+      </section>
+
+      <section data-tela-conteudo="entradas" hidden>
+
+        <div class="cartao" style="margin:0 0 18px">
+          <div class="cartao-corpo">
+            <div class="grade" style="grid-template-columns:1fr auto;gap:10px">
+              <input id="neBusca" maxlength="200" autocomplete="off"
+                     placeholder="Fornecedor, serviço, número da nota, CNPJ…">
+              <button class="primario" id="btnNeBuscar">Procurar</button>
+            </div>
+            <div class="ajuda" style="margin-top:8px">
+              Procura no nome de quem emitiu e na descrição do serviço, em
+              português — <span class="mono">serviço</span> acha
+              <span class="mono">serviços</span>. Use <span class="mono">"entre
+              aspas"</span> para a frase exata e <span class="mono">-palavra</span>
+              para excluir. Número de nota, CNPJ e chave também funcionam.
+            </div>
+
+            <div class="grade c4" style="margin-top:14px">
+              <div><label for="neDe">De</label><input id="neDe" type="date"></div>
+              <div><label for="neAte">Até</label><input id="neAte" type="date"></div>
+              <div><label for="neValorMin">Valor de (R$)</label>
+                <input id="neValorMin" data-moeda placeholder="qualquer"></div>
+              <div><label for="neValorMax">até (R$)</label>
+                <input id="neValorMax" data-moeda placeholder="qualquer"></div>
+            </div>
+
+            <div class="linha-botoes" style="margin-top:14px">
+              <span class="ajuda" id="neResumo"></span>
+              <span style="flex:1"></span>
+              <button id="btnNeLimpar">Limpar filtros</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0 0 18px">
+          <div class="cartao-cab">
+            <h2>Notas recebidas</h2>
+            <span id="neSelo" class="selo-status s-neutro"></span>
+          </div>
+          <div class="cartao-corpo sem-padding">
+            <div class="tabela-area">
+              <table>
+                <thead><tr>
+                  <th>Emitida</th><th>Quem emitiu</th><th>Serviço</th>
+                  <th>Nota</th><th style="text-align:right">Valor</th><th></th>
+                </tr></thead>
+                <tbody id="neLista"></tbody>
+              </table>
+            </div>
+            <div id="neVazio" class="ajuda" style="padding:18px" hidden></div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0" data-admin hidden>
+          <div class="cartao-cab"><h2>Trazer notas para cá</h2></div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:14px">
+              A nota entra pelo XML, e a empresa dona sai de dentro do próprio
+              arquivo — do CNPJ do tomador. Nota cujo tomador não estiver
+              cadastrado aqui é recusada, e o motivo aparece na lista.
+              Importar a mesma pasta de novo <strong>não duplica</strong>: a
+              chave de acesso é a identidade do documento.
+            </div>
+
+            <div class="caixa-amb">
+              <h4>De uma pasta do computador</h4>
+              <div class="ajuda" style="margin-bottom:10px">
+                É como o trabalho já é feito: baixa do e-mail, joga numa pasta.
+                Aponte a pasta e o gateway lê todos os <span class="mono">.xml</span>
+                de uma vez.
+              </div>
+              <div class="grade" style="grid-template-columns:1fr auto;gap:10px">
+                <input id="nePasta" class="mono" maxlength="400"
+                       placeholder="C:\\Users\\...\\XMLs recebidos">
+                <button id="btnNePasta">Importar a pasta</button>
+              </div>
+            </div>
+
+            <div class="caixa-amb" style="margin-top:14px">
+              <h4>Ou escolha os arquivos</h4>
+              <input type="file" id="neArquivos" accept=".xml" multiple
+                     style="padding:8px 0">
+              <div class="linha-botoes" style="margin-top:10px">
+                <button id="btnNeEnviar">Importar os escolhidos</button>
+              </div>
+            </div>
+
+            <div id="neImportacao" style="margin-top:14px"></div>
+          </div>
+        </div>
+
       </section>
 
       <section data-tela-conteudo="sistema" hidden>
