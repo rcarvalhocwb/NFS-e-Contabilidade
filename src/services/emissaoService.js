@@ -110,7 +110,7 @@ async function emitir(cnpjEmpresa, dadosRecebidos, contexto = {}) {
    * A conferência acontece ANTES de reservar número: uma recusa depois da
    * reserva deixaria buraco na sequência fiscal. */
   const mun = await municipios.obter(empresa.codigo_municipio);
-  const impedimento = emissorMunicipal.conferirPodeEmitir(mun);
+  const impedimento = emissorMunicipal.conferirPodeEmitir(mun, empresa);
   if (impedimento) throw Object.assign(new Error(impedimento), { status: 422 });
 
   /* Conferência do leiaute ANTES de reservar número. A Sefin só recusaria

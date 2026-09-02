@@ -55,15 +55,22 @@ test('município com provedor próprio segue pelo provedor', () => {
 /* ------------------------------------------------------------- a trava */
 
 test('provedor próprio nasce bloqueado', () => {
-  /* O endereço veio de documentação de terceiros e não foi testado daqui com
-     certificado. Deixar emitir seria apostar a numeração fiscal nisso. */
+  /* O endereço e o protocolo vieram de documentação, e o formato do que vai
+     dentro do envelope ainda é palpite. Deixar emitir seria apostar a
+     numeração fiscal nisso.
+
+     Esta mensagem fala do PROTOCOLO, e não do credenciamento: são coisas
+     diferentes, e misturá-las foi o erro da primeira versão. O credenciamento
+     é da empresa, e tem mensagem própria. */
   const i = conferirPodeEmitir(BETHA);
   assert.ok(i, 'precisa impedir enquanto ninguém confirmou');
   assert.match(i, /buraco na numera/);
-  assert.match(i, /credenciamento/);
+  assert.match(i, /a conversa com ele funciona/);
+  assert.ok(!/POR EMPRESA/.test(i), 'a trava do município não fala de credenciamento');
 });
 
 test('confirmado, emite — e continua indo pelo provedor', () => {
+  /* Sem exigência de credenciamento por empresa, confirmar o protocolo basta. */
   const confirmado = Object.assign({}, BETHA, { emissor_confirmado: true });
   assert.strictEqual(conferirPodeEmitir(confirmado), null);
   assert.strictEqual(transporte(confirmado).nome, 'Betha e-Nota');
@@ -135,4 +142,77 @@ test('quem confirma fica registrado', () => {
   const rota = fonte('src', 'routes', 'municipios.js');
   assert.match(rota, /emissor_confirmado_por/);
   assert.match(rota, /auditoria'\)\.registrar/);
+});
+
+/* ------------------------------------ credenciamento: do sistema ou da empresa? */
+
+/* A pergunta foi feita e corrigiu o desenho. Na primeira versão a confirmação
+   ficou toda no MUNICÍPIO, como se credenciar fosse uma coisa só, feita uma
+   vez. Não é: em Fazenda Rio Grande cada prestador pede autorização à
+   Secretaria de Finanças, que responde por e-mail. Dez clientes do escritório
+   ali são dez credenciamentos. */
+
+const BETHA_OK = Object.assign({}, BETHA, {
+  emissor_confirmado: true, exige_credenciamento: true,
+  url_ws: 'https://nota-eletronica.betha.cloud/dps/ws'
+});
+const CREDENCIADA = { razao_social: 'CLIENTE A LTDA', emissor_credenciado: true };
+const SEM_CREDENCIAL = { razao_social: 'CLIENTE B LTDA', emissor_credenciado: false };
+
+test('são duas perguntas, e as duas precisam ser sim', () => {
+  const protocoloNaoConferido = Object.assign({}, BETHA_OK, { emissor_confirmado: false });
+  assert.ok(conferirPodeEmitir(protocoloNaoConferido, CREDENCIADA),
+    'empresa credenciada não basta se o gateway não sabe falar com o provedor');
+  assert.ok(conferirPodeEmitir(BETHA_OK, SEM_CREDENCIAL),
+    'protocolo conferido não basta se a empresa não tem autorização');
+  assert.strictEqual(conferirPodeEmitir(BETHA_OK, CREDENCIADA), null);
+});
+
+test('confirmar por causa de um cliente não libera os outros', () => {
+  /* É o cenário que motivou a correção. Com a trava só no município, os outros
+     nove passariam a tentar emitir sem autorização — cada tentativa reservando
+     número e falhando. */
+  const clientes = Array.from({ length: 10 }, (_, n) => ({
+    razao_social: 'CLIENTE ' + (n + 1), emissor_credenciado: n === 0
+  }));
+  const liberados = clientes.filter(c => conferirPodeEmitir(BETHA_OK, c) === null);
+  assert.strictEqual(liberados.length, 1);
+  assert.strictEqual(liberados[0].razao_social, 'CLIENTE 1');
+});
+
+test('a mensagem diz que o credenciamento é por empresa', () => {
+  /* "Não credenciado" faria a pessoa procurar uma configuração do sistema. */
+  const i = conferirPodeEmitir(BETHA_OK, SEM_CREDENCIAL);
+  assert.match(i, /POR EMPRESA/);
+  assert.match(i, /CLIENTE B LTDA/);
+  assert.match(i, /Secretaria de Finanças/);
+});
+
+test('onde o provedor não exige credenciamento, a trava por empresa não aparece', () => {
+  const semExigencia = Object.assign({}, BETHA_OK, { exige_credenciamento: false });
+  assert.strictEqual(conferirPodeEmitir(semExigencia, SEM_CREDENCIAL), null);
+});
+
+test('o endereço e o protocolo são os da documentação do próprio Betha', () => {
+  /* A primeira versão usou /v2/nfsen por POST de XML puro, de documentação de
+     terceiros. O WSDL do Betha diz outra coisa: /dps/ws, SOAP, operação
+     RecepcionarDps. */
+  const s = fonte('src', 'nfse', 'emissorMunicipal.js');
+  assert.match(s, /www\.betha\.com\.br\/e-nota-dps-service/);
+  assert.match(s, /RecepcionarDpsEnvio/);
+  assert.match(s, /soapAction: 'RecepcionarDps'/);
+  assert.match(s, /SOAPAction: soapAction/);
+  assert.ok(!/v2\/nfsen/.test(s), 'o caminho de terceiros não pode voltar');
+
+  const sql = fonte('migrations', '038_credenciamento_empresa.sql');
+  assert.match(sql, /nota-eletronica\.betha\.cloud\/dps\/ws/);
+});
+
+test('o que ainda é palpite está dito em voz alta', () => {
+  /* O WSDL aponta para um XSD que não consegui ler: como a DPS vai dentro do
+     envelope continua sendo suposição. Fingir certeza aqui é o que produz
+     buraco na numeração. */
+  const s = fonte('src', 'nfse', 'emissorMunicipal.js');
+  assert.match(s, /O QUE AINDA NÃO SEI/);
+  assert.match(s, /é só isso: um palpite/);
 });

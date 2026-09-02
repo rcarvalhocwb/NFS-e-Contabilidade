@@ -135,7 +135,7 @@ test('bloqueio de município diz para onde ir', () => {
   /* E quem chama continua devolvendo 422. */
   const emissao = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'services', 'emissaoService.js'), 'utf8');
-  assert.match(emissao, /conferirPodeEmitir\(mun\)[\s\S]{0,160}status: 422/);
+  assert.match(emissao, /conferirPodeEmitir\(mun, empresa\)[\s\S]{0,160}status: 422/);
 });
 
 test('o bloqueio acontece antes de reservar número', () => {
