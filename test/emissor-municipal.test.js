@@ -198,21 +198,42 @@ test('o endereço e o protocolo são os da documentação do próprio Betha', ()
      terceiros. O WSDL do Betha diz outra coisa: /dps/ws, SOAP, operação
      RecepcionarDps. */
   const s = fonte('src', 'nfse', 'emissorMunicipal.js');
-  assert.match(s, /www\.betha\.com\.br\/e-nota-dps-service/);
+  /* O namespace é o do XSD (e-nota-dps), NÃO o do WSDL (e-nota-dps-service).
+     Com o do WSDL o serviço devolve 404; com o do XSD, responde. Conferido
+     enviando, em 03/09/2026. */
+  assert.match(s, /NS_BETHA = 'http:\/\/www\.betha\.com\.br\/e-nota-dps'/);
   assert.match(s, /RecepcionarDpsEnvio/);
   assert.match(s, /soapAction: 'RecepcionarDps'/);
   assert.match(s, /SOAPAction: soapAction/);
-  assert.ok(!/v2\/nfsen/.test(s), 'o caminho de terceiros não pode voltar');
+  /* Sem os comentários: o texto que registra o caminho errado o menciona, e
+     conferir o arquivo cru acusaria a própria explicação. */
+  const codigo = s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.ok(!/v2\/nfsen/.test(codigo), 'o caminho de terceiros não pode voltar');
+  /* A DPS vai inline. O gzip+base64 que eu supus, copiando a Sefin, era falso. */
+  assert.ok(!/gzipSync/.test(codigo), 'a DPS não vai compactada para o Betha');
 
   const sql = fonte('migrations', '038_credenciamento_empresa.sql');
   assert.match(sql, /nota-eletronica\.betha\.cloud\/dps\/ws/);
 });
 
-test('o que ainda é palpite está dito em voz alta', () => {
-  /* O WSDL aponta para um XSD que não consegui ler: como a DPS vai dentro do
-     envelope continua sendo suposição. Fingir certeza aqui é o que produz
-     buraco na numeração. */
+test('a DPS é montada no formato do destino, antes de assinar', () => {
+  /* A assinatura cobre o infDPS: trocar o namespace ou a caixa do atributo id
+     depois de assinar quebraria a assinatura. O Betha quer o namespace dele e
+     `id` minúsculo — as duas coisas descobertas enviando, não lendo. */
   const s = fonte('src', 'nfse', 'emissorMunicipal.js');
-  assert.match(s, /O QUE AINDA NÃO SEI/);
-  assert.match(s, /é só isso: um palpite/);
+  assert.match(s, /namespaceDps: NS_BETHA/);
+  assert.match(s, /atributoId: 'id'/);
+  assert.match(s, /namespaceDps: 'http:\/\/www\.sped\.fazenda\.gov\.br\/nfse'/);
+
+  const emissao = fonte('src', 'services', 'emissaoService.js');
+  const monta = emissao.indexOf('montarDps(');
+  const assina = emissao.indexOf('assinarXml(');
+  assert.ok(monta > 0 && assina > monta, 'monta antes de assinar');
+  assert.match(emissao, /namespace: destino\.namespaceDps, atributoId: destino\.atributoId/);
+});
+
+test('a caixa do atributo id é parametrizada, e o padrão continua o nacional', () => {
+  const b = fonte('src', 'nfse', 'dpsBuilder.js');
+  assert.match(b, /opts\.atributoId \|\| 'Id'/);
+  assert.match(b, /opts\.namespace \|\| 'http:\/\/www\.sped\.fazenda\.gov\.br\/nfse'/);
 });

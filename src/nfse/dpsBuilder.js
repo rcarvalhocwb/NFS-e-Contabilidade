@@ -462,8 +462,18 @@ function montarDps(empresa, dados, opts) {
 
   const xml =
 `<?xml version="1.0" encoding="UTF-8"?>` +
-`<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="${versao}">` +
-`<infDPS Id="${idDps}">` +
+/* O namespace vem de fora porque provedor municipal usa o seu.
+     Conferido contra o Betha de Fazenda Rio Grande em 03/09/2026: ele recusa a
+     DPS no namespace nacional dizendo que esperava
+     {http://www.betha.com.br/e-nota-dps}infDPS. A estrutura é idêntica —
+     muda só o xmlns, e por isso ele entra aqui e não num segundo construtor.
+     Como a assinatura cobre o infDPS, ela precisa ser feita DEPOIS disto. */
+  `<DPS xmlns="${opts.namespace || 'http://www.sped.fazenda.gov.br/nfse'}" versao="${versao}">` +
+/* A caixa do atributo muda por provedor, e isso foi conferido enviando:
+     o padrão nacional usa `Id`, e o Betha recusa dizendo que espera `id`.
+     O assinador referencia por XPath e o xml-crypto reconhece as duas formas,
+     então trocar aqui não mexe na assinatura. */
+  `<infDPS ${opts.atributoId || 'Id'}="${idDps}">` +
   tag('tpAmb', opts.tpAmb) +
   tag('dhEmi', fmtDataHoraLocal(new Date(Date.now() - MARGEM_EMISSAO_S * 1000))) +
   tag('verAplic', opts.verAplic) +

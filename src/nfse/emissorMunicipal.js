@@ -18,14 +18,13 @@ const sefin = require('./sefinClient');
 
 /* ---------------------------------------------------------------- Betha */
 
-/* O provedor Betha, com o layout nacional.
+/* O provedor Betha.
  *
- * ATENÇÃO: o endereço veio de documentação de terceiros e NÃO foi testado
- * daqui com certificado e credenciamento. É por isso que o município carrega
- * `emissor_confirmado`, e é ele — não este código — que autoriza a primeira
- * emissão. Este projeto já assumiu dois endpoints da Sefin que não existiam:
- * o /eventos devolve 405 e o /parametros_municipais devolve 501, os dois
- * conferidos com certificado real.
+ * O ENDEREÇO E O PROTOCOLO FORAM CONFERIDOS contra o serviço real, com o
+ * certificado A1, em 03/09/2026: o serviço aceitou o mTLS e respondeu com
+ * validação de esquema de verdade. O que falta para a primeira nota não é mais
+ * saber falar com ele — é a DPS ser montada no namespace dele, o que este
+ * módulo agora pede ao construtor.
  */
 function credenciaisTls(cert) {
   if (cert && cert.keyPem && cert.certPem) {
@@ -68,31 +67,33 @@ function postar({ url, corpo, cert, tipo, soapAction }) {
   });
 }
 
-/* O envelope SOAP do Betha.
+/* O envelope SOAP do Betha — CONFERIDO contra o serviço real em 03/09/2026.
  *
- * Da documentação do próprio Betha (o WSDL em /dps/ws/service.wsdl):
- *   namespace  http://www.betha.com.br/e-nota-dps-service
- *   operação   RecepcionarDps  (soapAction: RecepcionarDps)
- *   entrada    RecepcionarDpsEnvio
+ * O que a sondagem respondeu, e que a documentação de terceiros errava:
  *
- * O QUE AINDA NÃO SEI: como a DPS vai DENTRO do envelope. O WSDL aponta para
- * schemas/nfse_dps_v01.xsd, que não consegui ler. A Sefin Nacional manda o XML
- * compactado em gzip e codificado em base64, e o Betha adotou o layout
- * nacional — então é o palpite mais provável, e é só isso: um palpite. É por
- * ele que a trava do município existe.
+ *   endereço   /dps/ws                                     (era /v2/nfsen)
+ *   protocolo  SOAP 1.1, text/xml, SOAPAction RecepcionarDps
+ *              — SOAP 1.2 devolve 500 "Unable to internalize message"
+ *   namespace  http://www.betha.com.br/e-nota-dps          (o do XSD, não o
+ *              do WSDL, que é ...-dps-service)
+ *   a DPS vai INLINE, não compactada. O gzip+base64 que eu tinha suposto,
+ *              copiando o padrão da Sefin, estava errado.
+ *
+ * E o achado que só apareceu enviando: o Betha recusa a DPS no namespace
+ * NACIONAL. Ele quer {http://www.betha.com.br/e-nota-dps}infDPS. Como a
+ * assinatura cobre o infDPS, a DPS precisa ser MONTADA E ASSINADA no namespace
+ * dele — não dá para trocar o xmlns depois.
  */
-const NS_BETHA = 'http://www.betha.com.br/e-nota-dps-service';
+const NS_BETHA = 'http://www.betha.com.br/e-nota-dps';
 
 function envelopeRecepcionarDps(dpsXmlAssinado) {
-  const zlib = require('zlib');
-  const compactado = zlib.gzipSync(Buffer.from(dpsXmlAssinado, 'utf8')).toString('base64');
+  /* A DPS entra inteira, com a assinatura. O prólogo <?xml?> sai: um envelope
+     SOAP não aceita declaração XML no meio do corpo. */
+  const dps = dpsXmlAssinado.replace(/^\s*<\?xml[^>]*\?>\s*/, '');
   return '<?xml version="1.0" encoding="UTF-8"?>' +
-    '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' +
-      'xmlns:dps="' + NS_BETHA + '">' +
-      '<soapenv:Header/><soapenv:Body>' +
-        '<dps:RecepcionarDpsEnvio>' +
-          '<dpsXmlGZipB64>' + compactado + '</dpsXmlGZipB64>' +
-        '</dps:RecepcionarDpsEnvio>' +
+    '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +
+      '<soapenv:Body>' +
+        '<RecepcionarDpsEnvio xmlns="' + NS_BETHA + '">' + dps + '</RecepcionarDpsEnvio>' +
       '</soapenv:Body></soapenv:Envelope>';
 }
 
@@ -110,14 +111,25 @@ const BETHA = {
       url,
       corpo: envelopeRecepcionarDps(dpsXmlAssinado),
       cert,
+      /* SOAP 1.1. O 1.2 (application/soap+xml) devolve 500 neste serviço. */
       tipo: 'text/xml; charset=utf-8',
       soapAction: 'RecepcionarDps'
     });
-  }
+  },
+  /* O construtor precisa saber disto ANTES de assinar: a assinatura cobre o
+     infDPS, então trocar qualquer um dos dois depois quebraria a assinatura.
+
+     A caixa do `id` foi descoberta enviando: com `Id`, o Betha responde
+     "cvc-complex-type.3.2.2: O atributo 'Id' não pode aparecer no elemento
+     'infDPS'". Com `id`, a validação de esquema passa inteira. */
+  namespaceDps: NS_BETHA,
+  atributoId: 'id'
 };
 
 const SEFIN = {
   nome: 'Sefin Nacional',
+  namespaceDps: 'http://www.sped.fazenda.gov.br/nfse',
+  atributoId: 'Id',
   enviarDps(_municipio, ambiente, dpsXmlAssinado, cert) {
     return sefin.enviarDps(ambiente, dpsXmlAssinado, cert);
   }

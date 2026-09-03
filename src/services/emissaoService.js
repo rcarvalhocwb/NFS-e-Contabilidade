@@ -143,10 +143,16 @@ async function emitir(cnpjEmpresa, dadosRecebidos, contexto = {}) {
     numero
   });
 
+  /* A DPS é montada NO FORMATO DO DESTINO, antes de assinar.
+     A assinatura cobre o infDPS: trocar namespace ou a caixa do atributo id
+     depois de assinar quebraria a assinatura. Conferido contra o Betha em
+     03/09/2026 — com o formato nacional ele recusa na validação de esquema. */
+  const destino = emissorMunicipal.transporte(mun);
   const dpsXml = montarDps(
     Object.assign({}, empresa, { omitir_im: await omitirIm(empresa, empresa.ambiente) }),
     dados,
-    { tpAmb: amb.tpAmb, verAplic: config.verAplic, idDps, serie, numero });
+    { tpAmb: amb.tpAmb, verAplic: config.verAplic, idDps, serie, numero,
+      namespace: destino.namespaceDps, atributoId: destino.atributoId });
   const dpsAssinada = assinarXml(dpsXml, 'infDPS', cert);
 
   let nota;
