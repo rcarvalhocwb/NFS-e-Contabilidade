@@ -111,7 +111,9 @@ test('o provedor municipal recebe a MESMA DPS', () => {
 
 test('o transporte é escolhido na hora de transmitir, não na de montar', () => {
   const fila = fonte('src', 'services', 'filaEmissao.js');
-  assert.match(fila, /emissorMunicipal'\)\.transporte\(mun\)/);
+  /* A empresa entrou na escolha quando a CGSN 189/2026 passou a mandar o
+     optante do Simples pela Sefin, mesmo em município com provedor próprio. */
+  assert.match(fila, /emissorMunicipal'\)\.transporte\(mun, empresa\)/);
   assert.match(fila, /transporte\.enviarDps\(/);
 });
 
@@ -305,4 +307,61 @@ test('a trava vale para o Fiorilli também', () => {
   assert.ok(conferirPodeEmitir(naoConfirmado, { emissor_credenciado: true }));
   assert.ok(conferirPodeEmitir(FIORILLI_MUN, { razao_social: 'X', emissor_credenciado: false }));
   assert.strictEqual(conferirPodeEmitir(FIORILLI_MUN, { emissor_credenciado: true }), null);
+});
+
+/* ------------------------------ o regime vence o município (CGSN 189/2026) */
+
+/* Em vigor desde 01/09/2026: optantes do Simples Nacional emitem
+   EXCLUSIVAMENTE pelo Emissor Nacional, mesmo em municípios com sistema
+   próprio. Continuam no municipal: Lucro Real, Lucro Presumido, órgãos
+   públicos, e emissões feitas pelo tomador ou intermediário.
+
+   Sem isto, um cliente do Simples em Fazenda Rio Grande sairia pelo Betha —
+   emitindo fora da regra, e em silêncio. */
+
+const SIMPLES = { razao_social: 'CLIENTE SIMPLES', op_simp_nac: 3,
+                  emissor_credenciado: false };
+const PRESUMIDO = { razao_social: 'CLIENTE PRESUMIDO', op_simp_nac: 1,
+                    emissor_credenciado: true };
+
+test('optante do Simples vai pela Sefin, mesmo com provedor municipal', () => {
+  assert.strictEqual(transporte(BETHA_OK, SIMPLES).nome, 'Sefin Nacional');
+  assert.strictEqual(transporte(FIORILLI_MUN, SIMPLES).nome, 'Sefin Nacional');
+});
+
+test('fora do Simples continua indo pelo provedor do município', () => {
+  assert.strictEqual(transporte(BETHA_OK, PRESUMIDO).nome, 'Betha e-Nota');
+  assert.strictEqual(transporte(FIORILLI_MUN, PRESUMIDO).nome, 'Fiorilli IssWeb');
+});
+
+test('op_simp_nac 2 e 3 são os dois optantes', () => {
+  assert.strictEqual(transporte(BETHA_OK, { op_simp_nac: 2 }).nome, 'Sefin Nacional');
+  assert.strictEqual(transporte(BETHA_OK, { op_simp_nac: 3 }).nome, 'Sefin Nacional');
+  assert.strictEqual(transporte(BETHA_OK, { op_simp_nac: 1 }).nome, 'Betha e-Nota');
+});
+
+test('as travas do provedor não bloqueiam quem nem passa por ele', () => {
+  /* O optante do Simples vai pela Sefin: exigir credenciamento municipal ou
+     confirmação de protocolo dele seria travar uma emissão que não usa nada
+     disso. */
+  const naoConfirmado = Object.assign({}, BETHA_OK, { emissor_confirmado: false });
+  assert.strictEqual(conferirPodeEmitir(naoConfirmado, SIMPLES), null);
+  assert.strictEqual(conferirPodeEmitir(BETHA_OK, SIMPLES), null);
+  /* E continuam valendo para quem de fato passa pelo provedor. */
+  assert.ok(conferirPodeEmitir(naoConfirmado, PRESUMIDO));
+});
+
+test('sem empresa informada, o município decide — como antes', () => {
+  /* Nenhum caminho antigo muda de comportamento por causa desta regra. */
+  assert.strictEqual(transporte(BETHA_OK).nome, 'Betha e-Nota');
+  assert.strictEqual(transporte(NACIONAL).nome, 'Sefin Nacional');
+});
+
+test('a decisão do destino recebe a empresa nos dois pontos', () => {
+  /* Montar a DPS e transmiti-la são momentos diferentes; se só um souber do
+     regime, a DPS sairia num formato e iria para outro destino. */
+  const emissao = fonte('src', 'services', 'emissaoService.js');
+  assert.match(emissao, /transporte\(mun, empresa\)/);
+  const fila = fonte('src', 'services', 'filaEmissao.js');
+  assert.match(fila, /transporte\(mun, empresa\)/);
 });

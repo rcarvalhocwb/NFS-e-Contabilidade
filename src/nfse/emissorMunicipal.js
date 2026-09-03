@@ -190,9 +190,32 @@ const SEFIN = {
 
 const PROVEDORES = { sefin: SEFIN, betha: BETHA, fiorilli: FIORILLI };
 
-/* Quem transmite por este município. Sem município cadastrado, a Sefin — que
-   é como sempre funcionou e cobre a maioria. */
-function transporte(municipio) {
+/* Optante do Simples Nacional: 2 = ME/EPP, 3 = ME/EPP com excesso de
+   sublimite. Mesma leitura do resto do sistema. */
+function optanteSimples(empresa) {
+  return !!empresa && [2, 3].includes(Number(empresa.op_simp_nac));
+}
+
+/* Quem transmite esta nota.
+ *
+ * DUAS COISAS DECIDEM, e a segunda é mais forte que a primeira:
+ *
+ *   1. o município — quem tem provedor próprio recebe pelo endereço dele
+ *   2. o REGIME da empresa — e aqui está a regra que inverte tudo
+ *
+ * A Resolução CGSN nº 189/2026, em vigor desde 01/09/2026, obriga os optantes
+ * do Simples Nacional (ME e EPP) a emitir NFS-e EXCLUSIVAMENTE pelo Emissor
+ * Nacional, *mesmo em municípios com sistema próprio*. Continuam no sistema
+ * municipal: Lucro Real, Lucro Presumido, órgãos públicos, e as emissões
+ * feitas pelo tomador ou intermediário.
+ *
+ * Ou seja: um cliente do Simples em Fazenda Rio Grande NÃO vai pelo Betha —
+ * vai pela Sefin. Mandar para o município seria emitir fora da regra, e o
+ * gateway não pode fazer isso em silêncio só porque o município tem provedor.
+ *
+ * É por isso que a empresa entra nesta decisão, e não só o município. */
+function transporte(municipio, empresa) {
+  if (optanteSimples(empresa)) return SEFIN;
   const p = (municipio && municipio.provedor) || 'sefin';
   return PROVEDORES[p] || SEFIN;
 }
@@ -215,6 +238,12 @@ function transporte(municipio) {
  * sequência fiscal: uma recusa depois da reserva deixaria buraco. */
 function conferirPodeEmitir(municipio, empresa) {
   if (!municipio) return null;                       // desconhecido: segue pela Sefin
+
+  /* Optante do Simples vai pela Sefin por obrigação legal, e a Sefin não tem
+     trava nenhuma: nem protocolo a confirmar, nem credenciamento municipal.
+     Conferir as travas do provedor aqui bloquearia uma emissão que na verdade
+     nem passa por ele. */
+  if (optanteSimples(empresa)) return null;
 
   const provedor = municipio.provedor || 'sefin';
   if (provedor === 'sefin') {
@@ -262,4 +291,4 @@ function conferirPodeEmitir(municipio, empresa) {
   return null;
 }
 
-module.exports = { transporte, conferirPodeEmitir, PROVEDORES };
+module.exports = { transporte, conferirPodeEmitir, optanteSimples, PROVEDORES };

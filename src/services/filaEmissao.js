@@ -130,7 +130,7 @@ async function transmitir(nota) {
        maioria, o provedor municipal onde ele aceita o layout nacional. O
        documento é o mesmo — muda o carteiro. */
     const mun = await require('./municipiosService').obter(empresa.codigo_municipio);
-    const transporte = require('../nfse/emissorMunicipal').transporte(mun);
+    const transporte = require('../nfse/emissorMunicipal').transporte(mun, empresa);
     resp = await transporte.enviarDps(
       mun, nota.ambiente || empresa.ambiente, nota.dps_xml, cert);
   } catch (e) {

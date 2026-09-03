@@ -147,7 +147,7 @@ async function emitir(cnpjEmpresa, dadosRecebidos, contexto = {}) {
      A assinatura cobre o infDPS: trocar namespace ou a caixa do atributo id
      depois de assinar quebraria a assinatura. Conferido contra o Betha em
      03/09/2026 — com o formato nacional ele recusa na validação de esquema. */
-  const destino = emissorMunicipal.transporte(mun);
+  const destino = emissorMunicipal.transporte(mun, empresa);
   const dpsXml = montarDps(
     Object.assign({}, empresa, { omitir_im: await omitirIm(empresa, empresa.ambiente) }),
     dados,
