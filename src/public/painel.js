@@ -532,6 +532,7 @@
   function preencherPortalEmpresa(e) {
     el('empModoEmissao').value = e.modo_emissao || 'gateway';
     mostrarCredenciamento(e);
+    carregarProntidao(e.cnpj);
     el('empPortalLiberado').checked = !!e.portal_liberado;
     el('empWhatsappDireto').checked = !!e.whatsapp_direto;
     atualizarAvisoDireto();
@@ -873,6 +874,36 @@
   };
 
 
+
+  /* ------------------------------------------- esta empresa emite? */
+
+  /* A pergunta que o contador faz de verdade é "posso soltar este cliente?".
+     As conferências existiam espalhadas — padrão fiscal na lista, cadeia do
+     WhatsApp no diagnóstico — e nenhuma respondia isso. Sem elas juntas, a
+     resposta chegava pela nota recusada. */
+  function carregarProntidao(cnpj) {
+    var cartao = el('vgProntidaoCartao');
+    if (!cartao) return;
+    return api('/empresas/' + encodeURIComponent(cnpj) + '/prontidao').then(function (d) {
+      cartao.hidden = false;
+
+      el('vgProntidao').innerHTML = d.itens.map(function (i) {
+        var cor = i.estado === 'ok' ? 's-ok' : i.estado === 'falta' ? 's-erro' : 's-alerta';
+        return '<div style="display:flex;gap:11px;padding:9px 0;' +
+          'border-bottom:1px solid var(--linha)">' +
+          '<div style="flex:none;width:14px"><span class="' + cor + '">●</span></div>' +
+          '<div style="flex:1"><div>' + esc(i.o_que) + '</div>' +
+          (i.detalhe ? '<div class="ajuda">' + esc(i.detalhe) + '</div>' : '') +
+          (i.resolver ? '<div class="ajuda" style="color:var(--acento)">→ ' +
+            esc(i.resolver) + '</div>' : '') +
+          '</div></div>';
+      }).join('');
+
+      var selo = el('vgProntidaoSelo');
+      selo.className = 'selo-status ' + (d.pronta ? 's-ok' : 's-erro');
+      selo.textContent = d.resumo;
+    }).catch(function () { cartao.hidden = true; });
+  }
 
   /* -------------------------- credenciamento no provedor do município */
 

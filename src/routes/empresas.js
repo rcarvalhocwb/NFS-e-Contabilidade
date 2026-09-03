@@ -143,6 +143,20 @@ router.get('/', async (req, res, next) => {
 });
 
 /* Detalhar empresa */
+/* Esta empresa está pronta para emitir?
+ *
+ * Os campos sempre existiram no cadastro; o que faltava era alguém dizer
+ * quando ele está completo. Sem isso, a resposta chegava pela nota recusada. */
+router.get('/:cnpj/prontidao', exigirEmpresaVisivel, async (req, res, next) => {
+  try {
+    const { limparDocumento } = require('../util/documento');
+    res.json(await require('../services/prontidaoEmpresa')
+      .conferir(limparDocumento(req.params.cnpj)));
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message });
+  }
+});
+
 router.get('/:cnpj', exigirEmpresaVisivel, async (req, res, next) => {
   try {
     const r = await db.query('SELECT * FROM empresas WHERE cnpj = $1', [limparCnpj(req.params.cnpj)]);
