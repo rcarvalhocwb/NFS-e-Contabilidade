@@ -126,6 +126,59 @@ const BETHA = {
   atributoId: 'id'
 };
 
+/* ------------------------------------------------------------- Fiorilli
+ *
+ * CONFERIDO contra o serviço real (Assis/SP) em 03/09/2026, com o certificado
+ * A1. Mais simples que o Betha, e por um motivo que importa: o Fiorilli aceita
+ * a DPS NO NAMESPACE NACIONAL, sem alterar nada. O WSDL dele importa
+ * http://www.sped.fazenda.gov.br/nfse e usa esse tipo direto.
+ *
+ * Ou seja: a mesma DPS que vai para a Sefin vai para cá. Muda só o envelope.
+ * Enviando uma DPS sem assinatura, ele respondeu "E172: Arquivo enviado com
+ * erro na assinatura" — o que prova que toda a estrutura passou e só faltava o
+ * que eu tinha omitido de propósito.
+ *
+ * O ENDEREÇO É POR MUNICÍPIO: cada prefeitura tem o seu host
+ * (nfsews.<cidade>.<uf>.gov.br). Por isso ele vem de `municipios.url_ws`, e
+ * não de uma constante.
+ *
+ * O Fiorilli mantém também um webservice ABRASF antigo. Não é usado aqui: o
+ * proprio Fiorilli documenta que emissoes em ABRASF deixaram de ser aceitas em
+ * 01/08/2026, e que o nacional deve ser priorizado nas integrações.
+ */
+const NS_FIORILLI = 'http://www.fiorilli.com.br/nfse-nacional';
+
+const FIORILLI = {
+  nome: 'Fiorilli IssWeb',
+  /* Namespace nacional: a DPS não muda. */
+  namespaceDps: 'http://www.sped.fazenda.gov.br/nfse',
+  atributoId: 'Id',
+
+  async enviarDps(municipio, _ambiente, dpsXmlAssinado, cert) {
+    const url = (municipio.url_ws || '').replace(/\/+$/, '');
+    if (!url) {
+      throw Object.assign(new Error(
+        'O município ' + (municipio.nome || municipio.codigo_municipio) +
+        ' está marcado como Fiorilli, mas sem endereço de webservice. Cada ' +
+        'prefeitura tem o seu: preencha na tela de Municípios.'), { status: 400 });
+    }
+    const dps = dpsXmlAssinado.replace(/^\s*<\?xml[^>]*\?>\s*/, '');
+    return postar({
+      url,
+      corpo: '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +
+          '<soapenv:Body><RecepcionarDpsEnvio xmlns="' + NS_FIORILLI + '">' +
+            dps +
+          '</RecepcionarDpsEnvio></soapenv:Body></soapenv:Envelope>',
+      cert,
+      tipo: 'text/xml; charset=utf-8',
+      /* A ação difere da operação na caixa: a operação é `recepcionarDps` e o
+         soapAction é `recepcionarDPS`. Está assim no WSDL. */
+      soapAction: 'recepcionarDPS'
+    });
+  }
+};
+
 const SEFIN = {
   nome: 'Sefin Nacional',
   namespaceDps: 'http://www.sped.fazenda.gov.br/nfse',
@@ -135,7 +188,7 @@ const SEFIN = {
   }
 };
 
-const PROVEDORES = { sefin: SEFIN, betha: BETHA };
+const PROVEDORES = { sefin: SEFIN, betha: BETHA, fiorilli: FIORILLI };
 
 /* Quem transmite por este município. Sem município cadastrado, a Sefin — que
    é como sempre funcionou e cobre a maioria. */

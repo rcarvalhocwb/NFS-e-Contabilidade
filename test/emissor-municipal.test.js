@@ -237,3 +237,72 @@ test('a caixa do atributo id é parametrizada, e o padrão continua o nacional',
   assert.match(b, /opts\.atributoId \|\| 'Id'/);
   assert.match(b, /opts\.namespace \|\| 'http:\/\/www\.sped\.fazenda\.gov\.br\/nfse'/);
 });
+
+/* ------------------------------------------------------------- Fiorilli */
+
+/* Conferido contra o serviço real (Assis/SP) em 03/09/2026. A diferença que
+   importa em relação ao Betha: o Fiorilli aceita a DPS NO NAMESPACE NACIONAL,
+   sem alterar nada. Enviando uma sem assinatura, respondeu "E172: Arquivo
+   enviado com erro na assinatura" — toda a estrutura passou. */
+
+const FIORILLI_MUN = {
+  codigo_municipio: '3504206', nome: 'Assis', modo_emissao: 'proprio',
+  provedor: 'fiorilli', exige_credenciamento: true,
+  url_ws: 'https://nfsews.assis.sp.gov.br/IssWeb-ejb/IssWebWSNacional/IssWebWSNacionalPortType',
+  emissor_confirmado: true
+};
+
+test('Fiorilli usa a DPS nacional sem alterar nada', () => {
+  /* É o que o torna barato: a mesma DPS que vai para a Sefin vai para lá.
+     O Betha exige o namespace dele e `id` minúsculo; o Fiorilli, não. */
+  const t = transporte(FIORILLI_MUN);
+  assert.strictEqual(t.nome, 'Fiorilli IssWeb');
+  assert.strictEqual(t.namespaceDps, 'http://www.sped.fazenda.gov.br/nfse');
+  assert.strictEqual(t.atributoId, 'Id');
+});
+
+test('o envelope do Fiorilli é o dele, a DPS é a nacional', () => {
+  const s = fonte('src', 'nfse', 'emissorMunicipal.js');
+  assert.match(s, /NS_FIORILLI = 'http:\/\/www\.fiorilli\.com\.br\/nfse-nacional'/);
+  assert.match(s, /RecepcionarDpsEnvio xmlns=" \+ NS_FIORILLI|NS_FIORILLI \+ '">/);
+  /* A caixa do soapAction difere da operação, e está assim no WSDL. */
+  assert.match(s, /soapAction: 'recepcionarDPS'/);
+});
+
+test('o endereço do Fiorilli é por município', () => {
+  /* Cada prefeitura tem o seu host. Uma constante única emitiria tudo para a
+     cidade errada. */
+  const s = fonte('src', 'nfse', 'emissorMunicipal.js');
+  const i = s.indexOf('const FIORILLI');
+  const corpo = s.slice(i, s.indexOf('\n};', i));
+  assert.match(corpo, /municipio\.url_ws/);
+  assert.match(corpo, /Cada.*prefeitura tem o seu/s);
+
+  const sem = Object.assign({}, FIORILLI_MUN, { url_ws: null });
+  assert.rejects(() => transporte(sem).enviarDps(sem, 'producao', '<x/>', {}),
+    /sem endereço de webservice/);
+});
+
+test('o ABRASF antigo do Fiorilli não é usado', () => {
+  /* O próprio Fiorilli documenta que emissões em ABRASF deixaram de ser
+     aceitas em 01/08/2026. Integrar o legado seria construir um segundo
+     construtor de documento para algo que já saiu de uso. */
+  const s = fonte('src', 'nfse', 'emissorMunicipal.js');
+  const codigo = s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.ok(!/IssWebWS\/IssWebWS|abrasf/i.test(codigo));
+});
+
+test('os três provedores convivem, e a Sefin continua o padrão', () => {
+  assert.strictEqual(transporte({ provedor: 'fiorilli' }).nome, 'Fiorilli IssWeb');
+  assert.strictEqual(transporte({ provedor: 'betha' }).nome, 'Betha e-Nota');
+  assert.strictEqual(transporte({ provedor: 'sefin' }).nome, 'Sefin Nacional');
+  /* Provedor desconhecido não pode virar erro no meio de uma emissão. */
+  assert.strictEqual(transporte({ provedor: 'inexistente' }).nome, 'Sefin Nacional');
+});
+
+test('a trava vale para o Fiorilli também', () => {
+  const naoConfirmado = Object.assign({}, FIORILLI_MUN, { emissor_confirmado: false });
+  assert.ok(conferirPodeEmitir(naoConfirmado, { emissor_credenciado: true }));
+  assert.ok(conferirPodeEmitir(FIORILLI_MUN, { razao_social: 'X', emissor_credenciado: false }));
+  assert.strictEqual(conferirPodeEmitir(FIORILLI_MUN, { emissor_credenciado: true }), null);
+});
