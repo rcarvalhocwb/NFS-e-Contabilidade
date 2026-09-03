@@ -531,6 +531,7 @@
 
   function preencherPortalEmpresa(e) {
     el('empModoEmissao').value = e.modo_emissao || 'gateway';
+    mostrarCredenciamento(e);
     el('empPortalLiberado').checked = !!e.portal_liberado;
     el('empWhatsappDireto').checked = !!e.whatsapp_direto;
     atualizarAvisoDireto();
@@ -871,6 +872,64 @@
       .then(function () { b.disabled = false; });
   };
 
+
+
+  /* -------------------------- credenciamento no provedor do município */
+
+  /* A caixa só aparece quando faz diferença: município com provedor próprio E
+     empresa fora do Simples. Optante do Simples emite pelo Nacional desde a
+     CGSN 189/2026 e não precisa de credenciamento municipal nenhum — mostrar a
+     caixa para ele seria pedir uma coisa que não muda nada. */
+  function mostrarCredenciamento(e) {
+    var caixa = el('empCaixaCredenciamento');
+    if (!caixa) return;
+
+    api('/municipios').then(function (lista) {
+      var mun = (lista || []).filter(function (m) {
+        return String(m.codigo_municipio) === String(e.codigo_municipio);
+      })[0];
+
+      var optante = [2, 3].indexOf(Number(e.op_simp_nac)) >= 0;
+      var provedorProprio = mun && mun.provedor && mun.provedor !== 'sefin';
+      caixa.hidden = !(provedorProprio && mun.exige_credenciamento && !optante);
+      if (caixa.hidden) return;
+
+      el('empCredExplica').innerHTML =
+        '<strong>' + esc(mun.nome || e.codigo_municipio) + '</strong> emite pelo ' +
+        esc(mun.emissor || mun.provedor) + ', e cada prestador precisa da própria ' +
+        'autorização — o credenciamento é por CNPJ, não do sistema. ' +
+        (mun.url_portal ? 'Pede-se em <span class="mono">' + esc(mun.url_portal) +
+          '</span>; a resposta vem por e-mail.' : 'Pede-se na Secretaria de Finanças.');
+
+      el('empCredenciado').checked = !!e.emissor_credenciado;
+      el('empCredRef').value = e.emissor_credenciado_ref || '';
+      el('empCredEstado').textContent = e.emissor_credenciado
+        ? 'Credenciada' + (e.emissor_credenciado_em
+            ? ' em ' + fmtData(e.emissor_credenciado_em) : '') +
+          (e.emissor_credenciado_por ? ' por ' + e.emissor_credenciado_por : '')
+        : 'Ainda não credenciada: a emissão por este município fica travada.';
+    }).catch(function () { caixa.hidden = true; });
+  }
+
+  el('btnSalvarCredenciamento').onclick = function () {
+    var b = el('btnSalvarCredenciamento');
+    if (el('empCredenciado').checked &&
+        !confirm('Confirmar que esta empresa está credenciada na prefeitura?\n\n' +
+                 'Marque só depois de a prefeitura ter respondido. Se não estiver, ' +
+                 'a nota sai, é recusada, e o número da sequência fiscal vai junto.')) return;
+    b.disabled = true;
+    /* A mesma rota que já cuida da liberação do portal e do WhatsApp direto:
+       é a aba Integração inteira, e ela guarda quem decidiu o quê. */
+    api('/empresas/' + encodeURIComponent(estado.editando) + '/portal', {
+      method: 'PUT', body: JSON.stringify({
+        emissorCredenciado: el('empCredenciado').checked,
+        emissorCredenciadoRef: el('empCredRef').value.trim() || null
+      })
+    })
+      .then(function () { aviso('Credenciamento salvo.', 'ok'); abrirEmpresa(estado.editando); })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
 
   /* ------------------------------------------ quem alcança o painel */
 
@@ -3765,7 +3824,15 @@
         var tr = document.createElement('tr');
         tr.innerHTML =
           '<td class="mono">' + esc(m.codigo_municipio) + '</td>' +
-          '<td>' + esc(m.nome || '—') + '</td>' +
+          '<td>' + esc(m.nome || '—') +
+            /* O provedor muda para onde a nota vai. Não mostrá-lo faria a
+               coluna "Emissão" dizer só "próprio", sem dizer de quem. */
+            (m.provedor && m.provedor !== 'sefin'
+              ? '<div class="ajuda">' + esc(m.emissor || m.provedor) +
+                (m.emissor_confirmado
+                  ? ' · <span class="s-ok">conferido</span>'
+                  : ' · <span class="s-erro">a conferir</span>') + '</div>'
+              : '') + '</td>' +
           '<td class="mono">' + esc(m.uf || '—') + '</td>' +
           '<td><span class="selo-status ' + (MODO_SELO[m.modo_emissao]||'s-neutro') + ' sem-ponto">' +
             esc(MODO_TEXTO[m.modo_emissao] || m.modo_emissao) + '</span></td>' +
@@ -3776,9 +3843,42 @@
         b.className = 'pequeno'; b.textContent = 'Editar';
         b.onclick = function () { abrirMunicipio(m); };
         tr.lastChild.appendChild(b);
+
+        /* Confirmar que o gateway fala com o provedor. É a trava que protege a
+           numeração: enquanto ninguém conferiu, um envio malformado reservaria
+           o número, assinaria a DPS e falharia. */
+        if (m.provedor && m.provedor !== 'sefin') {
+          var c = document.createElement('button');
+          c.className = 'pequeno' + (m.emissor_confirmado ? '' : ' primario');
+          c.textContent = m.emissor_confirmado ? 'Retirar conferência' : 'Confirmar emissor';
+          c.onclick = function () { confirmarEmissor(m); };
+          tr.lastChild.appendChild(document.createTextNode(' '));
+          tr.lastChild.appendChild(c);
+        }
         tb.appendChild(tr);
       });
     }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  /* A conferência é de quem instalou, não do operador: ela afirma que uma nota
+     de teste chegou ao provedor e voltou com resposta. */
+  function confirmarEmissor(m) {
+    var ligando = !m.emissor_confirmado;
+    if (ligando && !confirm(
+      'Confirmar que o gateway consegue emitir por ' + (m.emissor || m.provedor) +
+      ' em ' + (m.nome || m.codigo_municipio) + '?\n\n' +
+      'Marque só depois de ter conferido com uma nota de valor baixo. Se a ' +
+      'conversa com o provedor não estiver certa, cada tentativa reserva um ' +
+      'número da sequência fiscal e falha.')) return;
+
+    api('/municipios/' + encodeURIComponent(m.codigo_municipio) + '/confirmar-emissor', {
+      method: 'POST', body: JSON.stringify({ confirmado: ligando })
+    })
+      .then(function () {
+        aviso(ligando ? 'Emissor confirmado.' : 'Conferência retirada.', 'ok');
+        carregarMunicipios();
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); });
   }
 
   function abrirMunicipio(m) {

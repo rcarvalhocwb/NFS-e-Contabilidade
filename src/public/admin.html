@@ -756,6 +756,31 @@
               </div>
             </div>
 
+            <div class="caixa-amb" id="empCaixaCredenciamento" hidden>
+              <h4>Credenciamento na prefeitura</h4>
+              <div class="ajuda" style="margin-bottom:12px" id="empCredExplica"></div>
+
+              <label style="display:flex;align-items:flex-start;gap:9px;font-weight:400">
+                <input type="checkbox" id="empCredenciado" style="width:auto;margin-top:4px">
+                <span>Esta empresa está credenciada na prefeitura
+                  <div class="ajuda">Marque só depois de a prefeitura ter
+                    respondido. Marcar antes faz a nota sair, ser recusada, e o
+                    número da sequência fiscal ir junto.</div></span>
+              </label>
+
+              <div style="margin-top:12px;max-width:340px">
+                <label for="empCredRef">Número ou protocolo da autorização</label>
+                <input id="empCredRef" maxlength="80" placeholder="opcional">
+                <div class="ajuda">Se a prefeitura devolveu um, guarde aqui —
+                  é o que se mostra quando alguém perguntar.</div>
+              </div>
+
+              <div class="linha-botoes" style="margin-top:14px">
+                <button class="pequeno primario" id="btnSalvarCredenciamento">Salvar</button>
+                <span class="ajuda" id="empCredEstado"></span>
+              </div>
+            </div>
+
             <div class="caixa-amb">
               <h4>WhatsApp autorizado</h4>
               <div class="ajuda" style="margin-bottom:12px">

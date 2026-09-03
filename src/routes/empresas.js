@@ -114,6 +114,8 @@ router.get('/', async (req, res, next) => {
       `SELECT e.id, e.cnpj, e.razao_social, e.nome_fantasia, e.inscricao_municipal,
               e.codigo_municipio, e.op_simp_nac, e.reg_esp_trib, e.ambiente, e.ativo,
               e.uf, e.email, e.portal_liberado,
+              e.emissor_credenciado, e.emissor_credenciado_em,
+              e.emissor_credenciado_por, e.emissor_credenciado_ref,
               e.cod_tributacao_padrao, e.descricao_padrao, e.perc_total_tributos,
               c.valido_ate AS certificado_valido_ate, c.subject AS certificado_subject,
               n.serie AS serie_dps, n.prox_numero AS prox_num_dps
@@ -362,6 +364,19 @@ router.put('/:cnpj/portal', somenteAdmin, exigirEmpresaVisivel, async (req, res,
       /* Emissão sem gente olhando. Só faz sentido com o portal liberado — sem
          isso o pedido nem chega a ficar aguardando. */
       põe('whatsapp_direto', !!b.whatsappDireto);
+    }
+
+    /* Credenciamento no provedor municipal. É POR EMPRESA: cada prestador pede
+       a autorização à prefeitura e recebe a resposta dela. Quem marca aqui
+       está afirmando que isso aconteceu, e o nome fica registrado — se a
+       primeira nota falhar, há a quem perguntar. */
+    if (b.emissorCredenciado !== undefined) {
+      põe('emissor_credenciado', !!b.emissorCredenciado);
+      põe('emissor_credenciado_em', b.emissorCredenciado ? new Date() : null);
+      põe('emissor_credenciado_por',
+        b.emissorCredenciado ? auditoria.autorDe(req).autor : null);
+      põe('emissor_credenciado_ref',
+        b.emissorCredenciado ? (b.emissorCredenciadoRef || null) : null);
     }
 
     if (b.liberado !== undefined) {
