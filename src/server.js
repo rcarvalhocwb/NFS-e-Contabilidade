@@ -215,6 +215,21 @@ app.use('/nfse', fixarEscopoEmpresa, nfseRouter);
 
 // tratamento central de erros
 app.use((err, _req, res, _next) => {
+  /* Erro do multer é problema do envio, não do servidor: arquivo grande demais,
+     campo com outro nome, arquivos a mais. Sem isto, subir um certificado no
+     campo errado devolvia 500 — e "erro interno do servidor" manda a pessoa
+     procurar ajuda em vez de olhar o próprio formulário. */
+  if (err && err.name === 'MulterError') {
+    const explicacao = {
+      LIMIT_FILE_SIZE: 'O arquivo é grande demais para este envio.',
+      LIMIT_FILE_COUNT: 'Arquivos demais de uma vez.',
+      LIMIT_UNEXPECTED_FILE: 'O arquivo veio num campo que esta tela não espera.'
+    }[err.code];
+    return res.status(400).json({
+      erro: explicacao || 'Não foi possível receber o arquivo enviado.',
+      detalhe: err.code
+    });
+  }
   const status = err.status || 500;
   if (status >= 500) console.error(err);
   res.status(status).json({ erro: err.message || 'Erro interno' });

@@ -3,8 +3,32 @@
 const forge = require('node-forge');
 
 function lerPfx(pfxBuffer, senha) {
-  const p12Asn1 = forge.asn1.fromDer(pfxBuffer.toString('binary'));
-  const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, senha);
+  /* Ler o arquivo que a pessoa mandou é sempre problema DELA, nunca do
+     servidor — e o `status` diz isso a quem responde a requisição.
+
+     Sem ele, a rota classificava pela mensagem do erro (`/senha|password|PKCS|
+     Invalid/`), e a senha errada caía certo, em 400, mas um arquivo que nem é
+     PFX escapava: "Too few bytes to read ASN.1 value" não casa com nenhuma
+     daquelas palavras, virava 500 e a tela mostrava um erro de servidor para
+     quem só escolheu o arquivo errado na pasta.
+
+     Aqui a origem é conhecida, então o julgamento é feito aqui. */
+  let p12Asn1, p12;
+  try {
+    p12Asn1 = forge.asn1.fromDer(pfxBuffer.toString('binary'));
+  } catch (e) {
+    throw Object.assign(
+      new Error('Este arquivo não parece um certificado .pfx/.p12. ' +
+                'Confira se escolheu o arquivo certo.'),
+      { status: 400, causa: e.message });
+  }
+  try {
+    p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, senha);
+  } catch (e) {
+    throw Object.assign(
+      new Error('Não foi possível abrir o certificado. A senha confere?'),
+      { status: 400, causa: e.message });
+  }
 
   let keyObj = null;
   let certObj = null;
@@ -19,7 +43,12 @@ function lerPfx(pfxBuffer, senha) {
       }
     }
   }
-  if (!keyObj || !certObj) throw new Error('Não foi possível extrair chave/certificado do PFX. Senha correta?');
+  if (!keyObj || !certObj) {
+    throw Object.assign(
+      new Error('O arquivo abriu, mas não tem chave e certificado dentro. ' +
+                'Confira se é o .pfx do e-CNPJ da empresa.'),
+      { status: 400 });
+  }
 
   const subject = certObj.subject.attributes.map(a => `${a.shortName || a.name}=${a.value}`).join(', ');
   const cn = (certObj.subject.getField('CN') || {}).value || '';

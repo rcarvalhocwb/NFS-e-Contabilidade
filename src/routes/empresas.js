@@ -638,8 +638,11 @@ router.post('/:cnpj/certificado', somenteAdmin, exigirEmpresaVisivel,
       validoAte: cert.valido_ate
     });
   } catch (e) {
-    if (/senha|password|PKCS|Invalid/i.test(e.message)) {
-      return res.status(400).json({ erro: 'Não foi possível ler o PFX. Verifique arquivo e senha.', detalhe: e.message });
+    /* Quem sabe se o erro é do arquivo ou do servidor é quem tentou lê-lo:
+       lerPfx marca os dele com status 400. Classificar aqui pela mensagem
+       deixava passar todo erro cuja frase não tivesse as palavras esperadas. */
+    if (e.status === 400) {
+      return res.status(400).json({ erro: e.message, detalhe: e.causa || undefined });
     }
     next(e);
   }
