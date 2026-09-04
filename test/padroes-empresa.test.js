@@ -74,10 +74,17 @@ test('o serviço de emissão aplica os padrões antes de conferir o leiaute', ()
      próprio gateway ia completar. */
   const s = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'services', 'emissaoService.js'), 'utf8');
-  const aplica = s.indexOf('aplicarPadroes(empresa, dadosRecebidos)');
+  /* Casa com a CHAMADA, não com o nome do argumento: ele já mudou uma vez, de
+     `dadosRecebidos` para `comHeranca`, quando a substituição passou a herdar
+     da nota original — e o teste quebrou sem que nada de errado tivesse
+     acontecido. O que precisa valer é a ordem. */
+  const aplica = s.indexOf('aplicarPadroes(empresa,');
   const confere = s.indexOf('conferirEmissao(dados)');
-  assert.ok(aplica > 0 && confere > 0);
+  assert.ok(aplica > 0, 'emitir() precisa continuar aplicando os padrões da empresa');
+  assert.ok(confere > 0, 'e continuar conferindo o leiaute');
   assert.ok(aplica < confere, 'preencher vem antes de conferir');
+  /* E o que se confere é o resultado do preenchimento, não o pedido cru. */
+  assert.match(s, /const dados = aplicarPadroes\(empresa,/);
 });
 
 test('todo caminho de emissão passa pelo mesmo lugar', () => {

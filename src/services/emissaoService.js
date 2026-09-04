@@ -4,6 +4,7 @@ const config = require('../config');
 const { montarDps, gerarIdDps } = require('../nfse/dpsBuilder');
 const { conferirEmissao, conferirCancelamento } = require('../nfse/regrasDps');
 const { aplicarPadroes } = require('../nfse/padroesEmpresa');
+const { herdarDaOriginal } = require('../nfse/heranca');
 const emissorMunicipal = require('../nfse/emissorMunicipal');
 const { montarPedidoCancelamento } = require('../nfse/eventoBuilder');
 const { assinarXml } = require('../nfse/assinador');
@@ -59,6 +60,16 @@ async function buscarPorReferencia(empresaId, referencia) {
   return r.rows[0] || null;
 }
 
+/* A DPS da nota que está sendo substituída, dentro do escopo da empresa.
+   O empresa_id no WHERE não é zelo: sem ele, uma chave de acesso de OUTRA
+   empresa herdaria dados dela para dentro desta nota. */
+async function dpsDaChave(empresaId, chaveAcesso) {
+  const r = await db.query(
+    'SELECT dps_xml FROM notas WHERE empresa_id = $1 AND chave_acesso = $2 LIMIT 1',
+    [empresaId, chaveAcesso]);
+  return r.rows.length ? r.rows[0].dps_xml : null;
+}
+
 /**
  * Fluxo de emissão:
  * 1. Carrega empresa e certificado
@@ -77,7 +88,18 @@ async function emitir(cnpjEmpresa, dadosRecebidos, contexto = {}) {
    * aplicação aqui, os quatro caminhos passam a valer o mesmo.
    *
    * O que o chamador informou continua vencendo: isto só preenche buraco. */
-  const dados = aplicarPadroes(empresa, dadosRecebidos);
+
+  /* Numa SUBSTITUIÇÃO, a nota original vem antes do padrão da empresa.
+     "Corrigir" é mudar um campo e manter o resto, e o resto está na nota que
+     está sendo substituída — não no cadastro. A ordem, então, é: o que o
+     chamador mandou, depois a original, depois a empresa. */
+  const comHeranca = dadosRecebidos.substituicao &&
+                     dadosRecebidos.substituicao.chaveSubstituida
+    ? herdarDaOriginal(dadosRecebidos,
+        await dpsDaChave(empresa.id, dadosRecebidos.substituicao.chaveSubstituida))
+    : dadosRecebidos;
+
+  const dados = aplicarPadroes(empresa, comHeranca);
 
   // Idempotência antes de qualquer efeito colateral: se já existe nota com
   // esta referência, devolve a que existe sem reservar número nem transmitir.
