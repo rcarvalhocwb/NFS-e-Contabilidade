@@ -178,3 +178,25 @@ test('cada arquivo importado tem seu desfecho na tela', () => {
   assert.match(painel, /x\.motivo/);
   assert.match(painel, /já estava aqui/);
 });
+
+test('prestador sem documento no XML não se mistura com outro', () => {
+  /* GROUP BY prestador_doc junta pelo documento, que é quem identifica o
+     prestador de verdade — o nome muda entre notas do mesmo CNPJ. Mas quando o
+     documento NÃO veio no XML, todos ficam com o mesmo "" e viram uma linha só:
+     o nome de um, o dinheiro de todos.
+
+     Reproduzido em banco separado antes da correção: duas notas de entrada,
+     dois prestadores distintos, uma linha de R$ 1.777 — e o segundo prestador
+     não aparecia em lugar nenhum. Numa apuração, é o contador conferindo um
+     fornecedor que não existe.
+
+     Acontece com prestador de fora (NIF em vez de CNPJ/CPF) e com XML fora do
+     leiaute — pouco, e justamente onde a conferência importa. */
+  const fn = SERVICO.slice(SERVICO.indexOf('async function fornecedores'));
+  const corpo = fn.slice(0, fn.indexOf('\n}\n'));
+
+  assert.match(corpo, /GROUP BY prestador_doc,/,
+    'o documento continua sendo o agrupador principal');
+  assert.match(corpo, /CASE WHEN coalesce\(prestador_doc, ''\) = ''\s*THEN prestador_nome END/,
+    'sem documento, o nome passa a ser a identidade — é o único dado que resta');
+});

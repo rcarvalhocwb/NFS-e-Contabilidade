@@ -271,11 +271,27 @@ async function fornecedores(empresasVisiveis = null) {
     p.push(empresasVisiveis);
     filtro = 'WHERE empresa_id = ANY($1::int[])';
   }
+  /* Agrupa pelo documento, que é quem identifica o prestador de verdade — o
+     nome varia entre notas do mesmo CNPJ (razão social, fantasia, abreviação).
+     Mas quando o documento NÃO veio no XML, agrupar por ele junta prestadores
+     que não têm nada a ver um com o outro: todos ficam com o mesmo "" e viram
+     uma linha só, com o nome de um e o dinheiro de todos.
+
+     Visto na prática: duas notas de entrada, dois prestadores distintos, uma
+     linha de R$ 1.777 — e a segunda empresa nem aparecia na tela. Numa
+     apuração, isso é o contador conferindo um fornecedor que não existe.
+
+     "Sem documento" acontece com prestador de fora (NIF em vez de CNPJ/CPF) e
+     com XML fora do leiaute. É pouco, mas some justamente onde a conferência
+     importa. Sem documento, o nome passa a ser a identidade: é o único dado
+     que resta para distinguir um do outro. */
   const r = await db.query(
-    `SELECT prestador_doc, max(prestador_nome) nome, count(*)::int notas,
-            sum(valor_servico) total
+    `SELECT prestador_doc, max(prestador_nome) nome,
+            count(*)::int notas, sum(valor_servico) total
        FROM notas_entrada ${filtro}
-      GROUP BY prestador_doc ORDER BY total DESC NULLS LAST LIMIT 50`, p);
+      GROUP BY prestador_doc,
+               CASE WHEN coalesce(prestador_doc, '') = '' THEN prestador_nome END
+      ORDER BY total DESC NULLS LAST LIMIT 50`, p);
   return r.rows;
 }
 
