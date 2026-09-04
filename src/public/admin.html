@@ -21,7 +21,7 @@
   .acao-rapida .tit { display:block; font-weight:600; font-size:14px; }
   .acao-rapida .des { display:block; font-size:12px; color:var(--texto-2); }
   .caixa-amb { border:1px solid var(--linha); border-radius:var(--raio); padding:16px; margin-bottom:13px; }
-  .caixa-amb h4 { margin:0 0 12px; font-size:13.5px; display:flex; align-items:center; gap:9px; }
+  .caixa-amb h3, .caixa-amb h4 { margin:0 0 12px; font-size:13.5px; display:flex; align-items:center; gap:9px; }
   pre.xml { background:var(--superficie-2); border:1px solid var(--linha); border-radius:var(--raio-sm);
             padding:13px; overflow-x:auto; font-family:ui-monospace,Consolas,monospace;
             font-size:12px; line-height:1.5; max-height:330px; white-space:pre; margin:0; }
@@ -115,6 +115,7 @@
 <!-- ===================== APLICAÇÃO ===================== -->
 <div class="app" id="app" hidden>
 
+  <a class="pular-para-conteudo" href="#conteudoPrincipal">Pular para o conteúdo</a>
   <aside class="sidebar" id="sidebar">
     <div class="marca">
       <div class="logo">NF</div>
@@ -179,7 +180,7 @@
       <a class="botao primario pequeno" href="/nota">✎ Emitir nota</a>
     </header>
 
-    <div class="pagina">
+    <main class="pagina" id="conteudoPrincipal" tabindex="-1">
       <div id="aviso" class="aviso"></div>
 
       <!-- ---------------- INÍCIO ---------------- -->
@@ -268,7 +269,7 @@
           <div class="cartao-cab">
             <h2>O que vence</h2>
             <div style="display:flex;gap:9px;align-items:center">
-              <select id="agDias" style="width:auto">
+              <select id="agDias" style="width:auto" aria-label="Período da agenda">
                 <option value="15">próximos 15 dias</option>
                 <option value="30" selected>próximos 30 dias</option>
                 <option value="60">próximos 60 dias</option>
@@ -280,7 +281,7 @@
           <div class="cartao-corpo" style="padding:0">
             <table class="tabela">
               <thead><tr><th>Vence</th><th>Cliente</th><th>Obrigação</th>
-                         <th>Competência</th><th></th></tr></thead>
+                         <th>Competência</th><th><span class="so-leitor">Ações</span></th></tr></thead>
               <tbody id="agLista"></tbody>
             </table>
           </div>
@@ -333,7 +334,7 @@
               <table>
                 <thead><tr>
                   <th>CNPJ</th><th>Empresa</th><th>Município</th>
-                  <th>Ambiente</th><th>Certificado</th><th>Série/Próx.</th><th></th>
+                  <th>Ambiente</th><th>Certificado</th><th>Série/Próx.</th><th><span class="so-leitor">Ações</span></th>
                 </tr></thead>
                 <tbody id="corpoEmpresas"></tbody>
               </table>
@@ -404,16 +405,16 @@
             </div>
 
             <div class="caixa-amb">
-              <h4>Últimos 12 meses</h4>
+              <h3>Últimos 12 meses</h3>
               <div id="vgHistorico" style="display:flex;align-items:flex-end;gap:4px;height:90px"></div>
               <div class="ajuda" style="margin-top:8px">Notas por mês. Passe o mouse para ver o total.</div>
             </div>
 
             <div class="caixa-amb">
-              <h4>Últimas notas <span class="espaco"></span></h4>
+              <h3>Últimas notas <span class="espaco"></span></h3>
               <div class="tabela-area">
                 <table>
-                  <thead><tr><th>Nota</th><th>Cliente</th><th>Valor</th><th>Situação</th><th>Data</th><th></th></tr></thead>
+                  <thead><tr><th>Nota</th><th>Cliente</th><th>Valor</th><th>Situação</th><th>Data</th><th><span class="so-leitor">Ações</span></th></tr></thead>
                   <tbody id="vgNotas"></tbody>
                 </table>
               </div>
@@ -424,11 +425,11 @@
 
             <div class="grade c2">
               <div class="caixa-amb" style="margin:0">
-                <h4>Lotes recentes</h4>
+                <h3>Lotes recentes</h3>
                 <div id="vgLotes"></div>
               </div>
               <div class="caixa-amb" style="margin:0">
-                <h4>Cadastros</h4>
+                <h3>Cadastros</h3>
                 <dl class="kv">
                   <dt>Clientes</dt><dd id="vgClientes">—</dd>
                   <dt>Serviços salvos</dt><dd id="vgServicos">—</dd>
@@ -485,7 +486,7 @@
                    confirmação, e não um campo salvo junto com o telefone. -->
               <div class="caixa-amb" id="blocoAmbiente" hidden
                    style="margin-top:18px;grid-column:1/-1">
-                <h4>Ambiente de operação <span id="seloAmbienteEmpresa"></span></h4>
+                <h3>Ambiente de operação <span id="seloAmbienteEmpresa"></span></h3>
                 <div class="ajuda" id="textoAmbiente" style="margin-bottom:13px"></div>
                 <dl class="kv" style="margin-bottom:14px">
                   <dt>Próxima nota</dt><dd id="proximaNota">—</dd>
@@ -555,7 +556,7 @@
 
           <div class="painel-aba" id="aba-fiscais">
             <div class="caixa-amb">
-              <h4>Padrões de emissão desta empresa</h4>
+              <h3>Padrões de emissão desta empresa</h3>
               <div class="ajuda" style="margin-bottom:14px">
                 O que esta empresa costuma emitir. Vem preenchido em toda nota,
                 e continua editável nota a nota — são padrões, não travas.
@@ -622,7 +623,7 @@
               Emitir em teste não consome números da sequência oficial.
             </div>
             <div class="caixa-amb">
-              <h4>Homologação <span class="selo-status s-ok sem-ponto">teste</span></h4>
+              <h3>Homologação <span class="selo-status s-ok sem-ponto">teste</span></h3>
               <div class="grade c3">
                 <div><label for="f_serie_h">Série</label><input id="f_serie_h" maxlength="5"></div>
                 <div><label for="f_num_h">Próximo número</label><input id="f_num_h" type="number" min="1"></div>
@@ -630,7 +631,7 @@
               </div>
             </div>
             <div class="caixa-amb">
-              <h4>Produção <span class="selo-status s-erro sem-ponto">valor fiscal</span></h4>
+              <h3>Produção <span class="selo-status s-erro sem-ponto">valor fiscal</span></h3>
               <div class="grade c3">
                 <div><label for="f_serie_p">Série</label><input id="f_serie_p" maxlength="5"></div>
                 <div><label for="f_num_p">Próximo número</label><input id="f_num_p" type="number" min="1"></div>
@@ -670,7 +671,7 @@
               <div class="cartao-corpo" style="padding:0">
                 <table class="tabela">
                   <thead><tr><th>Obrigação</th><th>Competência</th><th>Vence</th>
-                             <th>Situação</th><th></th></tr></thead>
+                             <th>Situação</th><th><span class="so-leitor">Ações</span></th></tr></thead>
                   <tbody id="obLista"></tbody>
                 </table>
               </div>
@@ -729,7 +730,7 @@
 
           <div class="painel-aba" id="aba-integracao">
             <div class="caixa-amb" style="margin-top:0">
-              <h4>Portal do cliente</h4>
+              <h3>Portal do cliente</h3>
               <div class="ajuda" style="margin-bottom:12px">
                 Enquanto estiver bloqueado, o pedido que o cliente fizer no
                 portal é recusado e ele lê o motivo na tela dele. Libere depois
@@ -769,7 +770,7 @@
             </div>
 
             <div class="caixa-amb" id="empCaixaCredenciamento" hidden>
-              <h4>Credenciamento na prefeitura</h4>
+              <h3>Credenciamento na prefeitura</h3>
               <div class="ajuda" style="margin-bottom:12px" id="empCredExplica"></div>
 
               <label style="display:flex;align-items:flex-start;gap:9px;font-weight:400">
@@ -794,7 +795,7 @@
             </div>
 
             <div class="caixa-amb">
-              <h4>WhatsApp autorizado</h4>
+              <h3>WhatsApp autorizado</h3>
               <div class="ajuda" style="margin-bottom:12px">
                 Números que podem pedir nota desta empresa pelo WhatsApp.
                 O mesmo número pode constar em várias empresas — quando isso
@@ -807,7 +808,7 @@
                 <table>
                   <thead><tr>
                     <th>Número</th><th>Quem é</th><th>Teto por nota</th>
-                    <th>Último uso</th><th></th>
+                    <th>Último uso</th><th><span class="so-leitor">Ações</span></th>
                   </tr></thead>
                   <tbody id="waLista"></tbody>
                 </table>
@@ -836,15 +837,15 @@
             </div>
             <div id="intResumo"></div>
             <div class="caixa-amb" style="margin-top:14px">
-              <h4>Tokens de acesso</h4>
+              <h3>Tokens de acesso</h3>
               <div id="intTokens"></div>
             </div>
             <div class="caixa-amb">
-              <h4>Endpoints</h4>
+              <h3>Endpoints</h3>
               <div id="intEndpoints" class="mono" style="line-height:1.9"></div>
             </div>
             <div class="caixa-amb">
-              <h4>Exemplo de emissão</h4>
+              <h3>Exemplo de emissão</h3>
               <pre class="xml" id="intExemplo">—</pre>
             </div>
           </div>
@@ -903,7 +904,7 @@
               <table>
                 <thead><tr>
                   <th>Nº</th><th>Empresa</th><th>Série/Nº</th><th>Ambiente</th>
-                  <th>Status</th><th>Referência</th><th>Data</th><th></th>
+                  <th>Status</th><th>Referência</th><th>Data</th><th><span class="so-leitor">Ações</span></th>
                 </tr></thead>
                 <tbody id="corpoNotas"></tbody>
               </table>
@@ -954,7 +955,7 @@
               <table>
                 <thead><tr>
                   <th>Nº</th><th>Descrição</th><th>Empresa</th><th>Ambiente</th>
-                  <th>Resultado</th><th>Data</th><th></th>
+                  <th>Resultado</th><th>Data</th><th><span class="so-leitor">Ações</span></th>
                 </tr></thead>
                 <tbody id="corpoLotes"></tbody>
               </table>
@@ -1025,7 +1026,7 @@
 
             <div id="rpCaixaLocal" hidden>
               <div class="caixa-amb" style="margin-top:18px">
-                <h4>O repassador</h4>
+                <h3>O repassador</h3>
                 <div class="grade c3">
                   <div><label for="rpPorta">Porta interna</label>
                     <input id="rpPorta" type="number" min="1024" max="65535" value="8080">
@@ -1052,7 +1053,7 @@
               </div>
 
               <div class="caixa-amb" style="margin-top:16px">
-                <h4>O endereço público</h4>
+                <h3>O endereço público</h3>
                 <div class="ajuda" style="margin-bottom:12px">
                   O túnel dá um endereço em https <strong>sem abrir porta no
                   roteador</strong>: a conexão é de saída, desta máquina para a
@@ -1095,7 +1096,7 @@
               </div>
 
               <div class="caixa-amb" style="margin-top:16px">
-                <h4>Os dois processos, agora</h4>
+                <h3>Os dois processos, agora</h3>
                 <div id="rpProcessos"></div>
               </div>
             </div>
@@ -1156,7 +1157,7 @@
             </div>
 
             <div class="caixa-amb" style="margin-top:16px">
-              <h4>WhatsApp do escritório</h4>
+              <h3>WhatsApp do escritório</h3>
               <div class="ajuda" style="margin-bottom:12px">
                 O número por onde os clientes pedem nota. Estes dados saem do
                 painel da Meta (WhatsApp → Configuração da API) e são enviados ao
@@ -1195,7 +1196,7 @@
             </div>
 
             <div class="caixa-amb" style="margin-top:16px">
-              <h4>Cadastro enviado ao portal</h4>
+              <h3>Cadastro enviado ao portal</h3>
               <div class="ajuda" style="margin-bottom:10px">
                 Empresas, serviços e quem acessa cada CNPJ são escritos aqui e
                 copiados para lá. <strong>Um sentido só</strong> — o portal não
@@ -1236,7 +1237,7 @@
           <div class="cartao-cab">
             <h2>Solicitações</h2>
             <div class="linha-botoes" style="margin:0">
-              <select id="ptFiltro" style="max-width:200px">
+              <select id="ptFiltro" style="max-width:200px" aria-label="Situação das solicitações">
                 <option value="aguardando">Esperando aprovação</option>
                 <option value="">Todas</option>
                 <option value="emitida">Emitidas</option>
@@ -1251,7 +1252,7 @@
               <table>
                 <thead><tr>
                   <th>Chegou</th><th>Empresa</th><th>Tomador</th>
-                  <th>Valor</th><th>Situação</th><th></th>
+                  <th>Valor</th><th>Situação</th><th><span class="so-leitor">Ações</span></th>
                 </tr></thead>
                 <tbody id="ptLista"></tbody>
               </table>
@@ -1350,7 +1351,7 @@
           <div class="cartao-cab">
             <h2>Clientes</h2>
             <span class="espaco"></span>
-            <select id="cl_empresa" style="width:auto;min-width:210px"></select>
+            <select id="cl_empresa" style="width:auto;min-width:210px" aria-label="Empresa dos clientes"></select>
           </div>
           <div class="cartao-corpo sem-padding">
             <div class="tabela-area">
@@ -1373,13 +1374,13 @@
           <div class="cartao-cab">
             <h2>Serviços</h2>
             <span class="espaco"></span>
-            <select id="sv_empresa" style="width:auto;min-width:210px"></select>
+            <select id="sv_empresa" style="width:auto;min-width:210px" aria-label="Empresa dos serviços"></select>
             <button class="pequeno primario" id="btnNovoServico">+ Novo serviço</button>
           </div>
           <div class="cartao-corpo sem-padding">
             <div class="tabela-area">
               <table>
-                <thead><tr><th>Apelido</th><th>Código</th><th>Descrição</th><th>Valor padrão</th><th>Usos</th><th></th></tr></thead>
+                <thead><tr><th>Apelido</th><th>Código</th><th>Descrição</th><th>Valor padrão</th><th>Usos</th><th><span class="so-leitor">Ações</span></th></tr></thead>
                 <tbody id="corpoServicos"></tbody>
               </table>
             </div>
@@ -1410,7 +1411,7 @@
               <table>
                 <thead><tr>
                   <th>Nome</th><th>E-mail</th><th>Perfil</th><th>Empresas</th>
-                  <th>Situação</th><th>Último acesso</th><th></th>
+                  <th>Situação</th><th>Último acesso</th><th><span class="so-leitor">Ações</span></th>
                 </tr></thead>
                 <tbody id="corpoUsuarios"></tbody>
               </table>
@@ -1629,7 +1630,7 @@
               <table>
                 <thead><tr>
                   <th>Emitida</th><th>Quem emitiu</th><th>Serviço</th>
-                  <th>Nota</th><th style="text-align:right">Valor</th><th></th>
+                  <th>Nota</th><th style="text-align:right">Valor</th><th><span class="so-leitor">Ações</span></th>
                 </tr></thead>
                 <tbody id="neLista"></tbody>
               </table>
@@ -1650,7 +1651,7 @@
             </div>
 
             <div class="caixa-amb">
-              <h4>De uma pasta do computador</h4>
+              <h3>De uma pasta do computador</h3>
               <div class="ajuda" style="margin-bottom:10px">
                 É como o trabalho já é feito: baixa do e-mail, joga numa pasta.
                 Aponte a pasta e o gateway lê todos os <span class="mono">.xml</span>
@@ -1664,8 +1665,9 @@
             </div>
 
             <div class="caixa-amb" style="margin-top:14px">
-              <h4>Ou escolha os arquivos</h4>
+              <h3>Ou escolha os arquivos</h3>
               <input type="file" id="neArquivos" accept=".xml" multiple
+                     aria-label="Arquivos XML das notas de entrada"
                      style="padding:8px 0">
               <div class="linha-botoes" style="margin-top:10px">
                 <button id="btnNeEnviar">Importar os escolhidos</button>
@@ -1700,7 +1702,7 @@
             <div id="sisResultado" class="ajuda" style="margin-top:12px"></div>
 
             <div class="caixa-amb" id="sisCaixaArquivo" style="margin-top:18px" hidden>
-              <h4>Para mexer no início automático</h4>
+              <h3>Para mexer no início automático</h3>
               <div class="ajuda" style="margin-bottom:10px">
                 Registrar tarefa e serviço no Windows exige permissão de
                 administrador, e uma página no navegador não consegue pedir isso —
@@ -1710,7 +1712,7 @@
                 escolha a opção pelo número.
               </div>
               <div class="mono" id="sisArquivo"
-                   style="padding:10px 12px;background:var(--fundo-alt,#f2f4f3);
+                   style="padding:10px 12px;background:var(--superficie-2);
                           border:1px solid var(--linha);border-radius:4px;
                           word-break:break-all"></div>
             </div>
@@ -1771,7 +1773,7 @@
             </div>
 
             <div class="caixa-amb">
-              <h4>O certificado</h4>
+              <h3>O certificado</h3>
               <div id="rdCertificado" class="ajuda"></div>
               <div class="linha-botoes" style="margin-top:12px">
                 <button id="btnRdGerar">Gerar certificado próprio</button>
@@ -1906,7 +1908,7 @@
             <div class="tabela-area">
               <table>
                 <thead><tr>
-                  <th>Destino</th><th>Manter</th><th>Última cópia</th><th></th>
+                  <th>Destino</th><th>Manter</th><th>Última cópia</th><th><span class="so-leitor">Ações</span></th>
                 </tr></thead>
                 <tbody id="cpLista"></tbody>
               </table>
@@ -2002,7 +2004,7 @@
           <div class="cartao-corpo sem-padding">
             <div class="tabela-area">
               <table>
-                <thead><tr><th>Arquivo</th><th>Tipo</th><th>Tamanho</th><th>Data</th><th></th></tr></thead>
+                <thead><tr><th>Arquivo</th><th>Tipo</th><th>Tamanho</th><th>Data</th><th><span class="so-leitor">Ações</span></th></tr></thead>
                 <tbody id="corpoManutencao"></tbody>
               </table>
             </div>
@@ -2048,7 +2050,7 @@
           <div class="cartao-corpo sem-padding">
             <div class="tabela-area">
               <table>
-                <thead><tr><th>Código IBGE</th><th>Município</th><th>UF</th><th>Emissão</th><th>ISS %</th><th>Fonte</th><th></th></tr></thead>
+                <thead><tr><th>Código IBGE</th><th>Município</th><th>UF</th><th>Emissão</th><th>ISS %</th><th>Fonte</th><th><span class="so-leitor">Ações</span></th></tr></thead>
                 <tbody id="corpoMunicipios"></tbody>
               </table>
             </div>
@@ -2076,7 +2078,7 @@
           <div class="cartao-corpo sem-padding">
             <div class="tabela-area">
               <table>
-                <thead><tr><th>URL</th><th>Empresa</th><th>Ambiente</th><th>Autenticação</th><th>Situação</th><th></th></tr></thead>
+                <thead><tr><th>URL</th><th>Empresa</th><th>Ambiente</th><th>Autenticação</th><th>Situação</th><th><span class="so-leitor">Ações</span></th></tr></thead>
                 <tbody id="corpoWebhooks"></tbody>
               </table>
             </div>
@@ -2088,7 +2090,7 @@
         </div>
       </section>
 
-    </div>
+    </main>
   </div>
 </div>
 

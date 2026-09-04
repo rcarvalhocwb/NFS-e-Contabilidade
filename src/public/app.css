@@ -10,10 +10,24 @@
   --linha:     #e2e8f0;
   --linha-forte:#cbd5e1;
 
-  /* Texto */
+  /* Texto.
+     --texto-3 veste rótulo de métrica, cabeçalho de tabela e legenda: o texto
+     pequeno, que é onde a leitura já custa mais. Era #94a3b8 e dava 2,56:1 no
+     branco e 2,45:1 sobre --superficie-2 — menos da metade dos 4,5:1 que a
+     WCAG pede, medido com axe-core nas 18 telas. Não é só quem usa leitor de
+     tela: é o cabeçalho da tabela de notas às cinco da tarde.
+     #64748b dá 4,76:1 no branco e 4,53:1 sobre --superficie-2. É um passo mais
+     escuro na mesma escala, então o desenho não muda de família. */
   --texto:     #0f172a;
   --texto-2:   #475569;
-  --texto-3:   #94a3b8;
+  --texto-3:   #64748b;
+
+  /* Texto secundário SOBRE a marca (a barra lateral). Estava espalhado em
+     quatro rgba() diferentes — .42, .5, .55, .82 — e os três primeiros
+     falhavam. Vira token para não voltarem a divergir: .66 dá 5,2:1 sobre
+     --marca, e .86 é o do item de menu, que já passava. */
+  --sobre-marca:   rgba(232,238,247,.86);
+  --sobre-marca-2: rgba(232,238,247,.66);
 
   /* Marca: azul profundo passa formalidade — é um sistema fiscal, não um app
      de consumo. O acento mais vivo fica só nas ações. */
@@ -22,6 +36,12 @@
   --acento:    #2563eb;
   --acento-fg: #ffffff;
   --acento-suave:#eff6ff;
+  /* O acento quando ele CARREGA texto branco — botão primário, item de menu
+     ativo, o quadrado da logo. Existe separado porque no modo escuro o acento
+     precisa clarear para servir de texto e borda, e clarear o fundo de um botão
+     branco faz o contrário: no escuro, branco sobre #3b82f6 dava 3,67:1 em 38
+     lugares. Aqui o azul fica onde já estava, e o outro é livre para clarear. */
+  --acento-solido: #2563eb;
 
   /* Estados */
   --ok:#15803d;    --ok-bg:#dcfce7;
@@ -40,9 +60,13 @@
   :root {
     --bg:#0f1216; --superficie:#171b21; --superficie-2:#1d222a;
     --linha:#2a313b; --linha-forte:#3a434f;
-    --texto:#e8eaed; --texto-2:#a3adba; --texto-3:#6b7684;
+    --texto:#e8eaed; --texto-2:#a3adba;
+    /* Sobe de #6b7684 (3,74:1 sobre --superficie, 3,46:1 sobre
+       --superficie-2) para #94a3b8, que da 6,2:1. E exatamente o cinza
+       que reprovou no modo claro: no escuro a escala anda ao contrario. */
+    --texto-3:#94a3b8;
     --marca:#141922; --marca-2:#0f131a;
-    --acento:#3b82f6; --acento-suave:#17233a;
+    --acento:#3b82f6; --acento-solido:#2563eb; --acento-suave:#17233a;
     --ok:#4ade80; --ok-bg:#14321f;
     --alerta:#fbbf24; --alerta-bg:#3a2c0c;
     --erro:#f87171; --erro-bg:#3a1717;
@@ -90,12 +114,12 @@ body {
 }
 .marca .logo {
   width: 32px; height: 32px; border-radius: 8px;
-  background: var(--acento); color: #fff;
+  background: var(--acento-solido); color: #fff;
   display: grid; place-items: center;
   font-weight: 700; font-size: 13px; letter-spacing: -.3px;
 }
 .marca .nome { font-weight: 650; font-size: 15px; letter-spacing: -.2px; }
-.marca .versao { font-size: 11px; color: rgba(232,238,247,.5); }
+.marca .versao { font-size: 11px; color: var(--sobre-marca-2); }
 
 /* Com logo do escritório, a marca empilha: a imagem na primeira linha e o nome
    embaixo. Lado a lado, uma logo horizontal não cabe na largura da barra —
@@ -115,18 +139,18 @@ body {
 .menu { flex: 1; overflow-y: auto; padding: 14px 10px 20px; }
 .menu-grupo {
   font-size: 10.5px; font-weight: 700; letter-spacing: .09em;
-  text-transform: uppercase; color: rgba(232,238,247,.42);
+  text-transform: uppercase; color: var(--sobre-marca-2);
   padding: 16px 10px 7px;
 }
 .menu a {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 11px; border-radius: var(--raio-sm);
-  color: rgba(232,238,247,.82); text-decoration: none;
+  color: var(--sobre-marca); text-decoration: none;
   font-size: 13.5px; margin-bottom: 1px;
   transition: background .12s, color .12s;
 }
 .menu a:hover { background: rgba(255,255,255,.07); color: #fff; }
-.menu a.ativo { background: var(--acento); color: #fff; font-weight: 550; }
+.menu a.ativo { background: var(--acento-solido); color: #fff; font-weight: 550; }
 .menu a .ico { width: 17px; text-align: center; opacity: .9; flex-shrink: 0; }
 .menu a .selo {
   margin-left: auto; font-size: 11px; font-weight: 600;
@@ -136,7 +160,7 @@ body {
 
 .rodape-sidebar {
   padding: 12px 14px; border-top: 1px solid rgba(255,255,255,.09);
-  font-size: 12px; color: rgba(232,238,247,.55);
+  font-size: 12px; color: var(--sobre-marca-2);
   display: flex; align-items: center; gap: 8px;
 }
 .rodape-sidebar button {
@@ -206,7 +230,7 @@ button, .botao {
 }
 button:hover:not(:disabled), .botao:hover { border-color: var(--texto-3); }
 button.primario, .botao.primario {
-  background: var(--acento); color: var(--acento-fg); border-color: transparent; font-weight: 550;
+  background: var(--acento-solido); color: var(--acento-fg); border-color: transparent; font-weight: 550;
 }
 button.primario:hover:not(:disabled), .botao.primario:hover { filter: brightness(1.08); }
 button.perigo { color: var(--erro); border-color: var(--erro-bg); }
@@ -321,7 +345,7 @@ dialog .dsub { color: var(--texto-2); font-size: 13px; margin-bottom: 18px; }
   display: flex; align-items: center; gap: 12px; margin-bottom: 6px;
 }
 .caixa-acesso .logo {
-  width: 40px; height: 40px; border-radius: 10px; background: var(--acento);
+  width: 40px; height: 40px; border-radius: 10px; background: var(--acento-solido);
   color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 15px;
 }
 .caixa-acesso h1 { font-size: 19px; margin: 0; font-weight: 650; }
@@ -340,3 +364,30 @@ dialog .dsub { color: var(--texto-2); font-size: 13px; margin-bottom: 18px; }
   .topo { padding: 0 16px; }
 }
 .abrir-menu { display: none; }
+
+/* ------------------------------------------------------ pular para o conteúdo
+
+   A barra lateral tem vinte links. Quem navega por teclado atravessava os vinte
+   a cada troca de tela para chegar ao primeiro campo — e o teclado não é só de
+   quem precisa dele: numa contabilidade, digitação em série é o normal.
+
+   Fica fora da tela até receber foco, e aí aparece. */
+.pular-para-conteudo {
+  position: absolute; left: 8px; top: -60px; z-index: 100;
+  background: var(--acento-solido); color: var(--acento-fg);
+  padding: 10px 16px; border-radius: var(--raio-sm);
+  font-size: 13.5px; font-weight: 600; text-decoration: none;
+  transition: top .12s;
+}
+.pular-para-conteudo:focus { top: 8px; }
+
+/* O alvo do pulo não é um controle: sem tabindex ele recebe o foco no papel e
+   o próximo Tab volta ao começo da página, que é o oposto do que se pediu. */
+.pagina:focus { outline: none; }
+
+/* Só para leitor de tela: o texto existe, mas não ocupa espaço na tela.
+   Usado nas colunas de ação, cujo cabeçalho é vazio de propósito no desenho. */
+.so-leitor {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}

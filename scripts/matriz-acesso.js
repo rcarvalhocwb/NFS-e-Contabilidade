@@ -459,7 +459,15 @@ function relatorio(linhas, listagens, alheios) {
       await admin.end();
       console.log('banco de teste derrubado. A instalação de verdade não foi tocada.');
     } else {
-      console.log('banco ' + BANCO + ' mantido (--manter).');
+      /* Com --manter, o banco fica de pé para alguém abrir o painel e olhar —
+         acessibilidade, escalas do Windows, o que for. Sem a senha, que é
+         sorteada a cada rodada, o banco mantido não serve para nada. */
+      console.log('\nbanco ' + BANCO + ' mantido (--manter). Para abrir o painel:');
+      console.log('  node src/server.js  com DATABASE_URL apontando para ' + BANCO +
+        ', PORT=' + PORTA + ' e PERMITIR_PRODUCAO=false');
+      console.log('  admin@matriz.teste / ' + SENHA + '   (empresas A e B)');
+      console.log('  op@matriz.teste    / ' + SENHA + '   (só a empresa B)');
+      console.log('\nSão credenciais de um banco descartável. Derrube com --manter ausente.');
     }
     process.exit(falhas ? 1 : 0);
   } catch (e) {
