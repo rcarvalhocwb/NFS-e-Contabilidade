@@ -40,7 +40,13 @@ async function principal() {
 
   const agora = new Date();
   const carimbo = agora.toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  const arquivo = path.join(pasta, `nfse-backup-${carimbo}.json`);
+  /* Um rótulo no nome para a cópia feita antes de atualizar. Sem ele, ela some
+     no meio das diárias, e "restaure a de antes da atualização" vira garimpo
+     por data — justamente quando alguém está com pressa. */
+  const rotulo = argumento('rotulo');
+  const arquivo = path.join(pasta,
+    rotulo ? `nfse-${String(rotulo).replace(/[^\w.-]/g, '')}-${carimbo}.json`
+           : `nfse-backup-${carimbo}.json`);
 
   const dados = { gerado_em: agora.toISOString(), versao: 1, tabelas: {} };
   let total = 0;
