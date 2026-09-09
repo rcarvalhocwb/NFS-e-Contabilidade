@@ -104,7 +104,8 @@ const ARQUIVOS = { empresas: 'empresas', nfse: 'nfse', webhooks: 'webhooks',
   painel: 'painel', atualizacao: 'atualizacao', identidade: 'identidade',
   email: 'email', ponte: 'ponte', obrigacoes: 'obrigacoes', emissor: 'emissor',
   auth: 'auth', usuarios: 'usuarios', manutencao: 'manutencao', lote: 'lote',
-  relatorios: 'relatorios', notasEntrada: 'notasEntrada' };
+  relatorios: 'relatorios', notasEntrada: 'notasEntrada',
+  licenca: 'licenca' };
 
 function inventario() {
   const src = require('fs').readFileSync(path.join(RAIZ, 'src', 'server.js'), 'utf8')

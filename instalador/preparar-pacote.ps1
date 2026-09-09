@@ -51,7 +51,16 @@ foreach ($item in $incluir) {
 }
 
 # Testes e fila de desenvolvimento nao vao para a maquina da contabilidade.
-foreach ($fora in @('relay\teste', 'relay\dados', 'monitor\sessao.txt')) {
+#
+# scripts\licenca-emitir.js sai junto: e a ferramenta de quem VENDE. Sem a
+# chave privada ela nao emite nada -- recusa e diz onde a chave deveria estar --
+# mas nao ha motivo para o cliente receber o emissor de licencas do fornecedor
+# dentro da propria instalacao.
+#
+# A pasta dev/ nunca entra porque o pacote e montado por LISTA DE INCLUSAO e ela
+# nao esta na lista. test/pacote-limpo.test.js confere as duas coisas.
+foreach ($fora in @('relay\teste', 'relay\dados', 'monitor\sessao.txt',
+                    'scripts\licenca-emitir.js')) {
     $p = Join-Path $pacote $fora
     if (Test-Path $p) { Remove-Item $p -Recurse -Force }
 }

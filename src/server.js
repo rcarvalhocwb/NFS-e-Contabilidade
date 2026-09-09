@@ -30,6 +30,7 @@ const manutencaoRouter = require('./routes/manutencao');
 const loteRouter = require('./routes/lote');
 const relatoriosRouter = require('./routes/relatorios');
 const notasEntradaRouter = require('./routes/notasEntrada');
+const licencaRouter = require('./routes/licenca');
 const sessoes = require('./services/sessoes');
 const fila = require('./services/filaEmissao');
 const atualizacao = require('./services/atualizacao');
@@ -206,6 +207,10 @@ app.use('/usuarios', usuariosRouter);
 app.use('/manutencao', manutencaoRouter);
 app.use('/lote', loteRouter);
 app.use('/relatorios', relatoriosRouter);
+
+/* Licença: a leitura é de todo mundo logado (quem opera precisa ver que está
+   vencendo), a escrita se protege dentro do router. */
+app.use('/licenca', licencaRouter);
 /* Importar uma pasta manda dezenas de XMLs de uma vez. O limite geral de 2 MB
    daria uns 250 documentos e cortaria o lote no meio, sem dizer por quê. */
 app.use('/notas-entrada', express.json({ limit: '25mb' }), notasEntradaRouter);

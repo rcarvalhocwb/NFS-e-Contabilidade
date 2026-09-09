@@ -158,6 +158,17 @@ const ACESSO = {
   "GET /nfse/:chaveAcesso": "escopo-token",
   "GET /nfse/:chaveAcesso/eventos": "escopo-token",
   "POST /nfse/:chaveAcesso/cancelamento": "escopo-token",
+
+  /* Licença. A LEITURA é de qualquer um logado de propósito: quem opera precisa
+     ver que está vencendo, senão o aviso morre com o administrador que não
+     abre o sistema há um mês. E não há segredo no que ela diz — o escritório
+     tem direito de ler o que contratou. A escrita é do administrador. */
+  "GET /licenca": "logado",
+  "GET /licenca/terminais": "logado",
+  "POST /licenca": "admin",
+  "DELETE /licenca": "admin",
+  "PUT /licenca/terminais/:id": "admin",
+  "DELETE /licenca/terminais/:id": "admin",
 };
 
 /* ------------------------------------------------- a pilha real do Express */
@@ -167,7 +178,8 @@ const ARQUIVOS = { empresas: 'empresas', nfse: 'nfse', webhooks: 'webhooks',
   painel: 'painel', atualizacao: 'atualizacao', identidade: 'identidade',
   email: 'email', ponte: 'ponte', obrigacoes: 'obrigacoes', emissor: 'emissor',
   auth: 'auth', usuarios: 'usuarios', manutencao: 'manutencao', lote: 'lote',
-  relatorios: 'relatorios', notasEntrada: 'notasEntrada' };
+  relatorios: 'relatorios', notasEntrada: 'notasEntrada',
+  licenca: 'licenca' };
 
 function inventario() {
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'server.js'), 'utf8')
@@ -186,6 +198,11 @@ function inventario() {
     const antesDoAuth = m.index < posAuth;
 
     for (const prefixo of prefixos) {
+      /* Router novo sem entrada no mapa dava TypeError de `path.join` com
+         `undefined` — o teste disparava certo e explicava errado, que é quase
+         tão ruim quanto não disparar. */
+      assert.ok(ARQUIVOS[alvo[1]],
+        'router "' + alvo[1] + '" montado em ' + prefixo + ' e ausente do mapa ARQUIVOS deste teste');
       const router = require(path.join(__dirname, '..', 'src', 'routes', ARQUIVOS[alvo[1]]));
       /* router.use so alcanca o que foi declarado DEPOIS dele. Somando a
          pilha inteira, /usuarios/eu apareceria como admin -- e nao e: o

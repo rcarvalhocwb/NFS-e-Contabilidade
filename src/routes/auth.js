@@ -3,6 +3,7 @@ const config = require('../config');
 const db = require('../db');
 const usuarios = require('../services/usuarios');
 const sessoes = require('../services/sessoes');
+const licencaService = require('../services/licencaService');
 const { limitarLogin, registrarFalhaLogin, limparFalhasLogin } = require('../middleware/protecao');
 
 const router = express.Router();
@@ -87,7 +88,23 @@ router.post('/login', limitarLogin, async (req, res, next) => {
     }
 
     limparFalhasLogin(req);
-    const token = await sessoes.criar(usuario.id, req);
+
+    /* Qual máquina é esta. O adicional cobrado é por terminal instalado, e
+       terminal, no desenho, é só um atalho para o painel — não instala
+       gateway nenhum, porque dois gateways no mesmo banco reservariam a mesma
+       numeração fiscal. Atalho não se conta, então quem conta é o servidor:
+       cada navegador ganha uma marca durável no primeiro login.
+
+       Falhar aqui NÃO pode impedir o login. Contagem para faturar não vale
+       uma pessoa sem acesso ao sistema às cinco da tarde. */
+    let terminalId = null;
+    try {
+      terminalId = await licencaService.registrarAcesso(req, res);
+    } catch (e) {
+      console.error('[auth] não consegui registrar o terminal:', e.message);
+    }
+
+    const token = await sessoes.criar(usuario.id, req, { terminalId });
     sessoes.definirCookie(res, token, cookieSeguro(req));
     db.query('UPDATE usuarios SET ultimo_acesso = now() WHERE id = $1', [usuario.id])
       .catch(e => console.error('[auth] falha ao registrar acesso:', e.message));

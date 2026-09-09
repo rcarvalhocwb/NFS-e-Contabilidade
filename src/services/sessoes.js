@@ -10,13 +10,14 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-async function criar(usuarioId, req) {
+async function criar(usuarioId, req, opcoes = {}) {
   const token = crypto.randomBytes(32).toString('base64url');
   await db.query(
-    `INSERT INTO sessoes (token_hash, usuario_id, expira_em, ip, user_agent)
-     VALUES ($1, $2, now() + ($3 || ' hours')::interval, $4, $5)`,
+    `INSERT INTO sessoes (token_hash, usuario_id, expira_em, ip, user_agent, terminal_id)
+     VALUES ($1, $2, now() + ($3 || ' hours')::interval, $4, $5, $6)`,
     [hashToken(token), usuarioId, String(DURACAO_HORAS),
-     (req.ip || '').slice(0, 45), String(req.get('user-agent') || '').slice(0, 500)]);
+     (req.ip || '').slice(0, 45), String(req.get('user-agent') || '').slice(0, 500),
+     opcoes.terminalId || null]);
   return token;
 }
 
