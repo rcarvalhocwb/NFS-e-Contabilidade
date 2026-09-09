@@ -109,20 +109,35 @@ test('o texto vai antes dos arquivos', () => {
   const i = servidor.indexOf('async function avisarDesfecho');
   const corpo = servidor.slice(i, servidor.indexOf('\n}', i));
   const texto = corpo.indexOf('responderAoCliente');
-  const anexo = corpo.indexOf('subirDocumento');
-  assert.ok(texto > 0 && texto < anexo, 'o aviso vem primeiro');
+  /* O envio do anexo passou a ser `transporte.enviarDocumento`: a Meta deixou
+     de estar soldada aqui quando surgiu o segundo transporte. A ordem, que é o
+     que este teste guarda, não mudou. */
+  const anexo = corpo.indexOf('transporte.enviarDocumento');
+  assert.ok(texto > 0 && anexo > 0, 'aviso e anexo precisam existir');
+  assert.ok(texto < anexo, 'o aviso vem primeiro');
   assert.match(corpo, /if \(!entregue \|\| !docs\) return;/,
     'e sem o aviso entregue, nem tenta o anexo');
 });
 
 test('falhar um anexo não impede o outro', () => {
-  /* A Meta pode recusar o XML pelo tipo. O PDF é o que importa. */
+  /* A Meta pode recusar o XML pelo tipo. O PDF é o que importa.
+
+     O try/catch mudou de casa junto com o envio: mora no adaptador, que é quem
+     sabe falar com cada meio. A garantia é a mesma — falha de um anexo é
+     registrada, nunca propagada — e agora vale para os dois transportes de uma
+     vez, em vez de estar escrita duas. */
   const servidor = fonte('relay', 'servidor.js');
   const i = servidor.indexOf('for (const a of anexos)');
   const corpo = servidor.slice(i, servidor.indexOf('\n  }', i));
-  assert.match(corpo, /try \{/);
-  assert.match(corpo, /catch \(e\)/);
-  assert.ok(!/throw/.test(corpo), 'a falha de um anexo é registrada, não propagada');
+  assert.ok(!/throw/.test(corpo), 'o laço dos anexos não pode propagar falha');
+
+  const t = fonte('relay', 'transporte.js');
+  const j = t.indexOf('async function enviarDocumento');
+  const envio = t.slice(j, t.indexOf('\n}', j));
+  assert.match(envio, /try \{/);
+  assert.match(envio, /catch \(e\)/);
+  assert.match(envio, /return false;/, 'devolve o insucesso em vez de lançar');
+  assert.ok(!/throw/.test(envio));
 });
 
 test('os arquivos não tocam o disco do repassador', () => {

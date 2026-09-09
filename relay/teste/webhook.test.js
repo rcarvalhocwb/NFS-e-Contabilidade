@@ -150,7 +150,16 @@ test('o estado só avança depois de a resposta sair', () => {
   assert.ok(envio > 0 && envio < salva, 'a entrega vem antes de gravar o estado');
   assert.match(s.slice(envio, salva), /if \(!entregue\)[\s\S]*return;/,
     'e não gravando nada quando a entrega falha');
-  assert.match(s, /return true;/, 'responderAoCliente diz se conseguiu');
+  /* Que `responderAoCliente` diga se conseguiu é a premissa do teste inteiro —
+     sem isso, `entregue` seria sempre verdadeiro e a trava acima não travaria
+     nada. O `return true` literal saiu quando a saída passou a ter dois
+     transportes; quem responde agora é o adaptador, e é lá que a promessa
+     precisa continuar de pé. */
+  const t = require('fs').readFileSync(require.resolve('../transporte.js'), 'utf8');
+  assert.match(t, /return true;/, 'o transporte diz quando conseguiu');
+  assert.match(t, /return false;/, 'e quando não conseguiu');
+  assert.match(t, /nunca lança|não lançar/i,
+    'e não lança: exceção aqui derrubaria o tratamento da mensagem inteira');
 });
 
 test('conversa expirada avisa em vez de sumir', () => {

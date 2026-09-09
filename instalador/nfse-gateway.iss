@@ -84,6 +84,11 @@ Name: "{group}\Painel de configuracao"; Filename: "http://localhost:{code:PortaE
 Name: "{group}\Monitor do gateway"; Filename: "{app}\Monitor.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22; Check: EhServidor
 Name: "{autodesktop}\Monitor do gateway"; Filename: "{app}\Monitor.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22; Tasks: atalhoDesktop; Check: EhServidor
 Name: "{group}\Manutencao do sistema"; Filename: "{app}\Manutencao.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 21; Check: EhServidor
+; O modulo do WhatsApp tem icone proprio, como o monitor: sao programas com
+; vidas separadas. A sessao do WhatsApp cai e reconecta; dentro do gateway,
+; cada queda dessas seria uma queda do sistema fiscal.
+Name: "{group}\WhatsApp"; Filename: "{app}\WhatsApp.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 17; Check: EhServidor
+Name: "{autodesktop}\WhatsApp do Gateway"; Filename: "{app}\WhatsApp.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 17; Tasks: atalhoDesktop; Check: EhServidor
 Name: "{group}\Desinstalar {#Nome}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Emitir NFS-e"; Filename: "{app}\{#ExeAtalho}"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 70; Tasks: atalhoDesktop; Check: EhServidor
 

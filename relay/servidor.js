@@ -4,6 +4,7 @@ const crypto = require('crypto');
 
 const meta = require('./meta');
 const conversa = require('./conversa');
+const transporte = require('./transporte');
 const { Memoria } = require('./memoria');
 const receita = require('./receita');
 
@@ -224,7 +225,6 @@ async function avisarDesfecho(para, desfecho) {
   const docs = desfecho.documentos;
   if (!entregue || !docs) return;
 
-  const { phoneNumberId, token } = credenciais();
   const nome = docs.nome || 'NFSe';
 
   const anexos = [
@@ -236,21 +236,21 @@ async function avisarDesfecho(para, desfecho) {
 
   for (const a of anexos) {
     if (!a.conteudo) continue;
-    try {
-      const mediaId = await meta.subirDocumento({
-        conteudo: Buffer.from(a.conteudo, 'base64'),
-        tipo: a.tipo, nomeArquivo: a.arquivo, phoneNumberId, token
-      });
-      await meta.enviarDocumento({
-        para, mediaId, nomeArquivo: a.arquivo, legenda: a.legenda,
-        phoneNumberId, token
-      });
-    } catch (e) {
-      /* O PDF é o que importa; o XML a Meta pode recusar por tipo. Falhar um
-         não pode impedir o outro, e nenhum dos dois pode derrubar o aviso que
-         já foi entregue. */
-      console.error('[aviso] não consegui mandar o ' + a.tipo + ':', e.message);
-    }
+    /* Pelo adaptador, como o texto. Aqui a Meta estava soldada: na sessão
+       própria, o PDF simplesmente não sairia — e ninguém perceberia, porque o
+       aviso de texto continuaria chegando. O anexo some em silêncio é o pior
+       tipo de falha.
+
+       `enviarDocumento` não lança: o PDF é o que importa, o XML a Meta pode
+       recusar por tipo, e nenhum dos dois pode derrubar o aviso que já foi
+       entregue. */
+    await transporte.enviarDocumento({
+      para,
+      conteudo: Buffer.from(a.conteudo, 'base64'),
+      nomeArquivo: a.arquivo,
+      tipo: a.tipo,
+      legenda: a.legenda
+    }, credenciais());
   }
 }
 
@@ -267,24 +267,11 @@ function credenciais() {
 
 /* Devolve `true` só quando a mensagem saiu de verdade. Quem chama usa isso
    para decidir se o estado da conversa pode avançar. */
+/* A saída, seja qual for o meio.
+   Toda a escolha entre a API da Meta e a sessão própria vive em transporte.js;
+   aqui em cima ninguém precisa saber por onde a resposta vai. */
 async function responderAoCliente(para, textoMsg) {
-  try {
-    const { phoneNumberId, token } = credenciais();
-    if (!phoneNumberId || !token) {
-      console.error('[meta] sem número configurado — a resposta para', para, 'não saiu.',
-        'Configure o WhatsApp do escritório na tela "Portal do cliente" do gateway.');
-      return false;
-    }
-    await meta.enviarTexto({ para, texto: textoMsg, phoneNumberId, token });
-    return true;
-  } catch (e) {
-    if (e.foraDaJanela) {
-      console.warn('[meta] janela de 24h fechada para', para, '- a resposta não saiu');
-    } else {
-      console.error('[meta] falha ao responder', para + ':', e.message);
-    }
-    return false;
-  }
+  return transporte.responder(para, textoMsg, credenciais());
 }
 
 /* --------------------------------------------------------------- servidor */
@@ -371,6 +358,33 @@ const servidor = http.createServer(async (req, res) => {
       const bruto = await lerCorpo(req);
       memoria.enfileirar(JSON.parse(bruto));
       return json(res, 201, { ok: true });
+    }
+
+    /* --------------------------------------- entrada da sessao propria */
+    /* O modulo `wa/` normaliza a mensagem para a MESMA forma que o webhook da
+       Meta produz, e entrega aqui. Dali para frente e o mesmo caminho: mesma
+       conversa, mesma memoria, mesma fila. E o que torna o segundo transporte
+       barato -- nao ha uma segunda implementacao de nada.
+
+       O token e o mesmo que o gateway usa (CHAVE_GATEWAY): quem alcanca esta
+       porta ja pode ler as solicitacoes, entao nao ha o que separar. */
+    if (req.method === 'POST' && u.pathname === '/wa/entrada') {
+      if (!chaveDoGatewayConfere(req)) return json(res, 401, { erro: 'chave inválida' });
+      const bruto = await lerCorpo(req);
+      const m = JSON.parse(bruto);
+      if (!m || !m.de) return json(res, 400, { erro: 'mensagem sem remetente' });
+
+      /* Responde ANTES de trabalhar, como no webhook da Meta: o modulo tem uma
+         sessao viva do outro lado e nao pode ficar esperando a conversa
+         inteira rodar para saber que a mensagem chegou. */
+      json(res, 200, { ok: true });
+      enfileirarPorNumero(m.de, () => tratarMensagem({
+        de: String(m.de).replace(/\D/g, ''),
+        texto: m.texto || null,
+        id: m.id || ('wa-' + Date.now()),
+        recebidaEm: m.em || Date.now()
+      })).catch(e => console.error('[wa] falha ao tratar:', e.message));
+      return;
     }
 
     if (req.method === 'GET' && u.pathname === '/saude') {

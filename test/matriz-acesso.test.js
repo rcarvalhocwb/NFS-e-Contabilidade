@@ -106,6 +106,16 @@ const ACESSO = {
   "POST /ponte/cadastro": "admin",
   "GET /ponte/cadastro/previa": "admin",
   "GET /ponte/diagnostico": "admin",
+  /* O módulo do WhatsApp avisa como está a sessão. Quem chama é um PROCESSO,
+     não uma pessoa: ele se autentica com a CHAVE_GATEWAY dentro da própria
+     rota, e por isso ela fica antes do somenteAdmin. A matriz a vê como
+     "logado" porque é o que a pilha do Express instala — a conferência de
+     verdade está no corpo, e o teste de licença/acesso ao vivo confirma que
+     sem a chave ela recusa. */
+  "POST /ponte/whatsapp/situacao": "logado",
+  "GET /ponte/whatsapp": "admin",
+  "POST /ponte/whatsapp/termo": "admin",
+  "PUT /ponte/whatsapp": "admin",
   "GET /ponte/solicitacoes": "logado",
   "POST /ponte/solicitacoes/:id/aprovar": "logado",
   "POST /ponte/solicitacoes/:id/recusar": "logado",

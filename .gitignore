@@ -52,3 +52,13 @@ ferramentas/
 monitor/sessao.txt
 .p.js
 .p2.js
+
+# O módulo do WhatsApp por sessão própria.
+#
+# wa/sessao/ SÃO as credenciais do WhatsApp do escritório: quem tiver esses
+# arquivos manda mensagem como ele. Trate como o certificado A1.
+# wa/token.txt é o token de abertura da janela, sorteado a cada subida.
+# wa/node_modules são 113 MB baixados sob demanda, não versionados.
+wa/sessao/
+wa/token.txt
+wa/node_modules/

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhatsApp — NFS-e Gateway</title>
+<style>
+  :root {
+    --papel:#F4F6F9; --sup:#fff; --sup2:#F8FAFC; --linha:#E2E8F0;
+    --tinta:#0F172A; --t2:#475569; --t3:#64748B;
+    --marca:#1E3A5F; --acento:#2563EB;
+    --ok:#15803D; --ok-bg:#DCFCE7;
+    --aviso:#B45309; --aviso-bg:#FEF3C7;
+    --erro:#B91C1C; --erro-bg:#FEE2E2;
+    --mono:ui-monospace,Consolas,"Courier New",monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --papel:#0F1216; --sup:#171B21; --sup2:#1D222A; --linha:#2A313B;
+      --tinta:#E8EAED; --t2:#A3ADBA; --t3:#94A3B8;
+      --marca:#141922; --acento:#3B82F6;
+      --ok:#4ADE80; --ok-bg:#14321F;
+      --aviso:#FBBF24; --aviso-bg:#3A2C0C;
+      --erro:#F87171; --erro-bg:#3A1717;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--papel); color:var(--tinta);
+    font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  .topo { background:var(--marca); color:#E8EEF7; padding:14px 22px;
+    display:flex; align-items:center; gap:12px; }
+  .topo h1 { font-size:16px; font-weight:650; margin:0; letter-spacing:-.2px; }
+  .topo .sub { font-size:12.5px; color:rgba(232,238,247,.72); }
+  .folha { max-width:900px; margin:0 auto; padding:22px; display:flex;
+    flex-direction:column; gap:18px; }
+  .cartao { background:var(--sup); border:1px solid var(--linha); border-radius:10px;
+    box-shadow:0 1px 2px rgba(15,23,42,.06); overflow:hidden; }
+  .cab { padding:14px 18px; border-bottom:1px solid var(--linha);
+    display:flex; align-items:center; gap:11px; }
+  .cab h2 { font-size:14.5px; font-weight:650; margin:0; }
+  .corpo { padding:18px; display:flex; flex-direction:column; gap:14px; }
+  .espaco { flex:1; }
+
+  .selo { display:inline-block; font-size:11.5px; font-weight:600;
+    text-transform:uppercase; letter-spacing:.04em; padding:3px 9px; border-radius:999px; }
+  .s-ok { background:var(--ok-bg); color:var(--ok); }
+  .s-aviso { background:var(--aviso-bg); color:var(--aviso); }
+  .s-erro { background:var(--erro-bg); color:var(--erro); }
+  .s-neutro { background:var(--sup2); color:var(--t3); }
+
+  button { font:inherit; font-size:13.5px; font-weight:600; padding:9px 17px;
+    border-radius:7px; border:1px solid var(--linha); background:var(--sup);
+    color:var(--t2); cursor:pointer; }
+  button.primario { background:var(--acento); color:#fff; border-color:transparent; }
+  button.perigo { color:var(--erro); border-color:var(--erro); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .linha-botoes { display:flex; gap:9px; flex-wrap:wrap; }
+
+  .aviso { border-left:3px solid var(--aviso); background:var(--aviso-bg);
+    padding:12px 15px; border-radius:0 7px 7px 0; font-size:13.5px; color:var(--tinta); }
+  .aviso b { font-weight:650; }
+
+  #qrCaixa { display:flex; flex-direction:column; align-items:center; gap:12px;
+    padding:8px 0; }
+  #qrImg { width:300px; height:300px; border:1px solid var(--linha); border-radius:9px;
+    background:#fff; }
+  .passos { margin:0; padding-left:20px; color:var(--t2); font-size:13.5px; }
+  .passos li { margin-bottom:5px; }
+
+  .campo { font-family:var(--mono); font-size:12.5px; color:var(--t3); }
+  .mensagens { max-height:280px; overflow-y:auto; border-top:1px solid var(--linha); }
+  .msg { padding:9px 18px; border-bottom:1px solid var(--linha); display:flex; gap:11px;
+    font-size:13px; align-items:baseline; }
+  .msg:last-child { border-bottom:none; }
+  .msg .dir { font-family:var(--mono); font-size:11px; width:56px; flex-shrink:0; }
+  .msg .dir.entrada { color:var(--acento); }
+  .msg .dir.saida { color:var(--ok); }
+  .msg .dir.erro { color:var(--erro); }
+  .msg .num { font-family:var(--mono); font-size:11.5px; color:var(--t3);
+    width:110px; flex-shrink:0; }
+  .msg .txt { color:var(--t2); overflow-wrap:anywhere; }
+  .vazio { padding:20px 18px; color:var(--t3); font-size:13.5px; }
+
+  dialog { border:0; border-radius:11px; padding:0; max-width:660px; width:92%;
+    background:var(--sup); color:var(--tinta); box-shadow:0 20px 60px rgba(0,0,0,.35); }
+  dialog::backdrop { background:rgba(15,23,42,.55); }
+  .dlg-cab { padding:17px 22px; border-bottom:1px solid var(--linha); }
+  .dlg-cab h3 { margin:0; font-size:16.5px; font-weight:650; }
+  .dlg-corpo { padding:20px 22px; display:flex; flex-direction:column; gap:14px; }
+  .dlg-rodape { padding:14px 22px; border-top:1px solid var(--linha);
+    display:flex; gap:9px; justify-content:flex-end; background:var(--sup2); }
+  .resumo { margin:0; padding-left:20px; }
+  .resumo li { margin-bottom:6px; font-weight:600; }
+  #termoTexto { white-space:pre-wrap; font-size:12.5px; line-height:1.6; color:var(--t2);
+    max-height:300px; overflow-y:auto; border:1px solid var(--linha);
+    border-radius:7px; padding:14px; background:var(--sup2); }
+  .aceite { display:flex; gap:10px; align-items:flex-start; font-size:13.5px; }
+  .aceite input { margin-top:3px; }
+</style>
+</head>
+<body data-token="__TOKEN__">
+
+<div class="topo">
+  <div>
+    <h1>WhatsApp</h1>
+    <div class="sub">Módulo do NFS-e Gateway &middot; sessão própria</div>
+  </div>
+  <span class="espaco"></span>
+  <span class="selo s-neutro" id="selo">carregando…</span>
+</div>
+
+<div class="folha">
+
+  <div class="aviso">
+    <b>Este módulo usa automação não oficial do WhatsApp.</b> O número pode ser
+    banido, e não há a quem recorrer. A emissão de notas fiscais não depende
+    disto: se o WhatsApp parar, o painel continua emitindo normalmente.
+  </div>
+
+  <div class="cartao">
+    <div class="cab">
+      <h2>Conexão</h2>
+      <span class="espaco"></span>
+      <span class="campo" id="numero"></span>
+    </div>
+    <div class="corpo">
+      <div id="explicacao"></div>
+      <div id="qrCaixa" hidden>
+        <img id="qrImg" alt="QR code para conectar o WhatsApp">
+        <ol class="passos">
+          <li>Abra o WhatsApp no celular que vai atender.</li>
+          <li>Toque em <b>Mais opções</b> → <b>Dispositivos conectados</b>.</li>
+          <li>Toque em <b>Conectar um dispositivo</b> e aponte para o código.</li>
+        </ol>
+      </div>
+      <div class="linha-botoes">
+        <button class="primario" id="btnLigar">Ligar o WhatsApp</button>
+        <button id="btnDesligar" hidden>Desligar</button>
+        <button class="perigo" id="btnEsquecer" hidden>Desconectar e esquecer a sessão</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <div class="cab">
+      <h2>Últimas mensagens</h2>
+      <span class="espaco"></span>
+      <span class="campo">só desta sessão do módulo</span>
+    </div>
+    <div class="mensagens" id="mensagens">
+      <div class="vazio">Nada ainda.</div>
+    </div>
+  </div>
+
+</div>
+
+<dialog id="dlgTermo">
+  <div class="dlg-cab"><h3>Antes de ligar, leia</h3></div>
+  <div class="dlg-corpo">
+    <ul class="resumo" id="termoResumo"></ul>
+    <div id="termoTexto">carregando…</div>
+    <label class="aceite">
+      <input type="checkbox" id="chkAceite">
+      <span>Li e entendi. Escolho usar assim mesmo, ciente de que o número pode
+      ser banido e de que quem fornece o sistema não se responsabiliza por
+      quedas ou indisponibilidade deste recurso.</span>
+    </label>
+  </div>
+  <div class="dlg-rodape">
+    <button id="btnCancelarTermo">Cancelar</button>
+    <button class="primario" id="btnAceitar" disabled>Aceitar e ligar</button>
+  </div>
+</dialog>
+
+<!-- O token vai na URL do script também: o servidor exige token em TUDO, e uma
+     tag <script> comum não manda cabeçalho nenhum. Sem isto a página carregava,
+     o script levava 403 e a tela ficava eternamente em "carregando…" — falha
+     silenciosa, que é a pior. Abrir exceção para o .js seria mais fácil e
+     deixaria uma regra com furo; o token já está na URL da página, então
+     repeti-lo aqui não expõe nada de novo. -->
+<script src="/janela.js?t=__TOKEN__"></script>
+</body>
+</html>

@@ -111,9 +111,13 @@ test('o repassador prefere o cadastro e cai no .env como reserva', () => {
 });
 
 test('sem número configurado, a falha é dita e não engolida', () => {
-  const servidor = fonte('relay', 'servidor.js');
-  assert.match(servidor, /sem número configurado/);
-  assert.match(servidor, /Portal do cliente" do gateway/,
+  /* A mensagem mudou de casa quando a saída passou a ter dois transportes:
+     mora em transporte.js, que é quem sabe se o meio é a Meta. O que precisa
+     continuar valendo é que ela EXISTE e diz onde resolver — o silêncio aqui
+     significa cliente esperando resposta que nunca vem. */
+  const t = fonte('relay', 'transporte.js');
+  assert.match(t, /sem número da Meta configurado/);
+  assert.match(t, /Portal do cliente" do gateway/,
     'e a mensagem diz onde resolver');
 });
 

@@ -41,9 +41,13 @@ Titulo "2. Copiando o gateway"
 # monitor/ e um programa a parte, com icone proprio: o gateway emite, o
 # monitor olha. Um monitor que morre junto com o que ele monitora nao serve
 # para nada -- e justamente quando o gateway cai que alguem quer olhar.
-$incluir = @('src', 'migrations', 'scripts', 'relay', 'monitor',
+# wa/ e o modulo do WhatsApp por sessao propria: processo separado, icone
+# separado, como o monitor. Vai SEM node_modules -- sao 113 MB, e so quem
+# escolhe usar sessao propria precisa deles. O WhatsApp.bat os baixa na
+# primeira abertura, e quem usa a API oficial da Meta nao carrega esse peso.
+$incluir = @('src', 'migrations', 'scripts', 'relay', 'monitor', 'wa',
              'package.json', 'package-lock.json', '.env.example',
-             'Manutencao.bat', 'Monitor.bat')
+             'Manutencao.bat', 'Monitor.bat', 'WhatsApp.bat')
 foreach ($item in $incluir) {
     $origem = Join-Path $raizProjeto $item
     if (-not (Test-Path $origem)) { throw "nao encontrei $item" }
@@ -60,7 +64,8 @@ foreach ($item in $incluir) {
 # A pasta dev/ nunca entra porque o pacote e montado por LISTA DE INCLUSAO e ela
 # nao esta na lista. test/pacote-limpo.test.js confere as duas coisas.
 foreach ($fora in @('relay\teste', 'relay\dados', 'monitor\sessao.txt',
-                    'scripts\licenca-emitir.js')) {
+                    'scripts\licenca-emitir.js',
+                    'wa\node_modules', 'wa\sessao', 'wa\token.txt')) {
     $p = Join-Path $pacote $fora
     if (Test-Path $p) { Remove-Item $p -Recurse -Force }
 }

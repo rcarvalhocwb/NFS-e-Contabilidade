@@ -111,6 +111,60 @@ router.get('/diagnostico', somenteAdmin, async (_req, res, next) => {
 
 /* ----------------------------------------------------------- solicitações */
 
+/* ------------------------------------------------ o modulo do WhatsApp */
+
+/* O modulo `wa/` avisa como esta a sessao. Guardado no banco para o painel
+   poder mostrar mesmo com o modulo fora do ar -- que e justamente quando
+   alguem quer saber o que houve.
+
+   Autenticado pela CHAVE_GATEWAY, a mesma que o repassador usa: quem a tem ja
+   alcanca as solicitacoes, entao nao ha o que separar. Fica ANTES do
+   somenteAdmin porque quem chama e um processo, nao uma pessoa. */
+router.post('/whatsapp/situacao', async (req, res) => {
+  const config = require('../config');
+  if (!config.apiKey || req.get('X-Chave-Gateway') !== config.apiKey) {
+    return res.status(401).json({ erro: 'chave inválida' });
+  }
+  try {
+    await require('../services/whatsappLocal').registrarSituacao(req.body || {});
+    res.json({ ok: true });
+  } catch (e) {
+    /* O modulo nao pode parar de funcionar porque o gateway nao conseguiu
+       anotar o estado dele. */
+    console.error('[ponte] falha ao registrar situacao do WhatsApp:', e.message);
+    res.json({ ok: false });
+  }
+});
+
+router.get('/whatsapp', somenteAdmin, async (_req, res, next) => {
+  try { res.json(await require('../services/whatsappLocal').situacao()); }
+  catch (e) { next(e); }
+});
+
+router.post('/whatsapp/termo', somenteAdmin, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    res.json(await require('../services/whatsappLocal').aceitarTermo({
+      versao: b.versao,
+      usuarioId: req.auth && req.auth.usuarioId,
+      nome: (req.auth && req.auth.nome) || null
+    }));
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    next(e);
+  }
+});
+
+router.put('/whatsapp', somenteAdmin, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    res.json(await require('../services/whatsappLocal').definirAtivo(!!b.ativo, { porta: b.porta }));
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    next(e);
+  }
+});
+
 router.get('/solicitacoes', async (req, res, next) => {
   try {
     const ids = empresasVisiveis(req);

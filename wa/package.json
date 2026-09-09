@@ -1,0 +1,17 @@
+{
+  "name": "nfse-whatsapp-local",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Modulo separado que mantem a sessao do WhatsApp e conversa com o gateway. Processo proprio, icone proprio.",
+  "main": "servidor.js",
+  "scripts": {
+    "start": "node servidor.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "6.17.16",
+    "qrcode": "^1.5.4"
+  }
+}
