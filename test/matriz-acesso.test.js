@@ -122,6 +122,18 @@ const ACESSO = {
   "GET /ponte/whatsapp/termo/texto": "admin",
   "POST /ponte/whatsapp/ligar": "admin",
   "POST /ponte/whatsapp/desligar": "admin",
+  /* O repassador chama em nome de um cliente que esta conversando: quem chama
+     e um PROCESSO, autenticado pela CHAVE_GATEWAY dentro da propria rota -- por
+     isso ficam antes do somenteAdmin e a matriz as ve como "logado". O escopo e
+     o que as torna seguras: devolvem so as notas nascidas dos pedidos DAQUELE
+     telefone. */
+  "POST /ponte/cliente/notas": "logado",
+  "POST /ponte/cliente/documento": "logado",
+  /* As conversas ficam abertas a quem opera, e nao so ao administrador: quem
+     atende o telefone do escritorio e exatamente quem precisa disto na tela. O
+     escopo por empresa continua valendo dentro da rota. */
+  "GET /ponte/conversas": "logado",
+  "GET /ponte/conversas/:telefone": "logado",
   "GET /ponte/chatbot": "admin",
   "PUT /ponte/chatbot": "admin",
   "GET /ponte/solicitacoes": "logado",

@@ -137,6 +137,7 @@
       <a href="#lotes" data-tela="lotes"><span class="ico">▤</span> Emissão em lote</a>
       <a href="#portal" data-tela="portal"><span class="ico">☁</span> Portal do cliente
         <span class="selo-status s-alerta sem-ponto" id="seloFila" hidden></span></a>
+      <a href="#conversas" data-tela="conversas"><span class="ico">◌</span> Conversas</a>
       <a href="#whatsapp" data-tela="whatsapp" data-admin hidden><span class="ico">✆</span> WhatsApp</a>
       <a href="#entradas" data-tela="entradas"><span class="ico">⬋</span> Notas de entrada</a>
       <a href="#relatorios" data-tela="relatorios"><span class="ico">◲</span> Relatórios</a>
@@ -1690,6 +1691,68 @@
            -- ou seja, conectar o numero exigia ir ate o servidor e sentar nele.
            Num escritorio onde o painel e usado de qualquer maquina, "va ate o
            servidor" e o oposto do que um painel serve. O QR aparece aqui. -->
+      <!-- ============================================== Conversas ======
+           O MESMO fato, lido de tres lados.
+
+           A fila responde "o que preciso aprovar agora". Esta tela responde "o
+           que essa pessoa vem pedindo" -- a pergunta de quando o cliente liga
+           reclamando, e a do dia em que alguem precisa provar que a nota foi
+           pedida por quem diz nao ter pedido.
+
+           As tres visoes saem da MESMA linha do tempo, de proposito: visoes que
+           buscassem cada uma por conta divergiriam, e ai nenhuma serviria de
+           prova. -->
+      <section data-tela-conteudo="conversas" hidden>
+
+        <div class="cartao" style="margin:0 0 18px">
+          <div class="cartao-cab">
+            <h2>Quem pediu nota por WhatsApp</h2>
+            <span class="espaco"></span>
+            <button class="pequeno" id="btnRecarregarConversas">Atualizar</button>
+          </div>
+          <div class="cartao-corpo" style="padding:0">
+            <table class="tabela">
+              <thead><tr>
+                <th>Quem</th><th>Empresa</th><th>Pedidos</th>
+                <th>Aguardando</th><th>Ultimo contato</th>
+                <th><span class="so-leitor">Acoes</span></th>
+              </tr></thead>
+              <tbody id="listaConversas"></tbody>
+            </table>
+            <div class="vazio" id="conversasVazio" hidden>
+              Nenhum pedido por WhatsApp ainda. Quando um cliente autorizado
+              pedir uma nota, a conversa aparece aqui &mdash; com tudo que foi
+              dito e o que aconteceu depois.
+            </div>
+          </div>
+        </div>
+
+        <!-- ------------------------------------- a historia de uma pessoa -->
+        <div class="cartao" id="cartaoConversa" hidden style="margin:0">
+          <div class="cartao-cab">
+            <h2 id="convTitulo">Conversa</h2>
+            <span id="convSelo" class="selo-status s-neutro"></span>
+            <span class="espaco"></span>
+            <button class="pequeno" id="btnFecharConversa">Fechar</button>
+          </div>
+
+          <div class="cartao-corpo" style="padding-bottom:0">
+            <div class="ajuda" id="convResumo" style="margin-bottom:14px"></div>
+
+            <!-- As tres lentes sobre o mesmo fato. -->
+            <div class="abas" id="convAbas">
+              <button data-visao="cliente" class="ativo">Visao do cliente</button>
+              <button data-visao="emissor">Visao do emissor</button>
+              <button data-visao="contador">Visao do contador</button>
+            </div>
+            <div class="ajuda" id="convExplica" style="margin-top:10px"></div>
+          </div>
+
+          <div class="cartao-corpo" id="convConteudo" style="padding-top:14px"></div>
+        </div>
+
+      </section>
+
       <section data-tela-conteudo="whatsapp" hidden>
 
         <div class="cartao" style="margin:0 0 18px" data-admin hidden>

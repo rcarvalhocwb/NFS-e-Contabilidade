@@ -197,3 +197,84 @@ test('sem pedido anterior, o menu não oferece o que não dá para fazer', async
   assert.match(proximo.resposta, /CNPJ|CPF|documento/i,
     'o caminho ofertado precisa levar a algum lugar');
 });
+
+/* ------------------------------- as notas do próprio cliente */
+
+test('o cliente consulta as notas dele e pede a segunda via', async () => {
+  /* "Me manda de novo aquela nota" era a ligação mais comum ao escritório, e
+     não havia caminho para ela na conversa — virava trabalho de gente para
+     reenviar um PDF que o sistema tinha à mão. */
+  const m = memoriaCom({ nome: 'Contabilidade Recalcatti' });
+  const notas = [
+    { chave_acesso: 'CHAVE-1', criado_em: '2026-09-01T12:00:00Z',
+      valor: '1500', tomador: 'CLIENTE UM LTDA', servico: 'Consultoria' },
+    { chave_acesso: 'CHAVE-2', criado_em: '2026-08-01T12:00:00Z',
+      valor: '900', tomador: 'CLIENTE DOIS ME', servico: 'Manutencao' }
+  ];
+
+  const dizer = (texto, anterior, extra) => conversa.responder(Object.assign({
+    texto, telefone: '5541999998888',
+    vinculos: m.empresasDe('5541999998888'),
+    conversa: anterior, memoria: m, buscarCnpj: async () => null,
+    notasDoCliente: async () => notas,
+    documentoDoCliente: async (tel, chave) => ({
+      chave, nome: 'NFSe-1-7', pdf: 'JVBERi0x', xml: 'PHhtbD4='
+    })
+  }, extra || {}));
+
+  const seguir = s => (s.estado ? { estado: s.estado, dados: s.dados } : null);
+
+  const oi = await dizer('oi', null);
+  assert.match(oi.resposta, /Minhas notas/, 'o caminho precisa estar no menu');
+
+  /* A opção é a última da lista; responde-se pelo número. */
+  const qual = oi.dados.opcoes.indexOf('notas') + 1;
+  const lista = await dizer(String(qual), seguir(oi));
+  assert.match(lista.resposta, /CLIENTE UM LTDA/);
+  assert.match(lista.resposta, /1\.500,00/, 'o valor sai formatado');
+  assert.equal(lista.estado, 'escolhendo_nota');
+
+  const doc = await dizer('1', seguir(lista));
+  assert.ok(doc.documento, 'a conversa devolve o documento para o transporte enviar');
+  assert.equal(doc.documento.tipo, 'application/pdf');
+  assert.match(doc.documento.nome, /\.pdf$/);
+});
+
+test('sem gateway alcançável, a conversa não promete o que não cumpre', async () => {
+  /* Repassador na nuvem, ou gateway fora do ar. Dizer "já te mando" faria a
+     pessoa esperar por algo que não vem — pior que dizer a verdade. */
+  const m = memoriaCom({ nome: 'Contabilidade Recalcatti' });
+  const dizer = (texto, anterior) => conversa.responder({
+    texto, telefone: '5541999998888',
+    vinculos: m.empresasDe('5541999998888'),
+    conversa: anterior, memoria: m, buscarCnpj: async () => null,
+    notasDoCliente: async () => null        // é o que gateway.js devolve sem URL
+  });
+
+  const oi = await dizer('oi', null);
+  const qual = oi.dados.opcoes.indexOf('notas') + 1;
+  const r = await dizer(String(qual), { estado: oi.estado, dados: oi.dados });
+  assert.match(r.resposta, /Peça ao escritório|Não consigo consultar/);
+  assert.equal(r.estado, null, 'e não deixa a pessoa esperando num estado morto');
+});
+
+test('a chave de outra pessoa não vira documento', async () => {
+  /* O gateway confere que a chave pertence a um pedido DAQUELE telefone e
+     responde 404. A conversa precisa transformar isso em frase, e na MESMA
+     frase de "não existe" — distinguir as duas diria a quem tentasse que
+     aquela chave existe em algum lugar. */
+  const m = memoriaCom({ nome: 'Contabilidade Recalcatti' });
+  const negado = Object.assign(new Error('Não encontrei essa nota entre as suas.'),
+    { status: 404 });
+
+  const r = await conversa.responder({
+    texto: '1', telefone: '5541999998888',
+    vinculos: m.empresasDe('5541999998888'),
+    conversa: { estado: 'escolhendo_nota',
+                dados: { cnpj: '11111111000191', notas: [{ chave: 'DE-OUTRO' }] } },
+    memoria: m, buscarCnpj: async () => null,
+    documentoDoCliente: async () => { throw negado; }
+  });
+  assert.match(r.resposta, /Não encontrei essa nota entre as suas/);
+  assert.ok(!r.documento, 'e nada de documento junto');
+});

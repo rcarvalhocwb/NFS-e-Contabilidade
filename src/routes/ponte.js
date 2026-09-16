@@ -218,6 +218,81 @@ router.post('/whatsapp/desligar', somenteAdmin, async (req, res, next) => {
   }
 });
 
+/* ------------------------------- o que o CLIENTE pode consultar sozinho */
+
+/* Estas duas o REPASSADOR chama, em nome de um cliente que está conversando.
+ *
+ * Autenticadas pela CHAVE_GATEWAY e ficam ANTES do somenteAdmin, porque quem
+ * chama é um processo — mesma razão de /whatsapp/situacao.
+ *
+ * O ESCOPO É O QUE AS TORNA SEGURAS: devolvem só as notas que nasceram dos
+ * pedidos DAQUELE telefone. Não as da empresa, não as do escritório — as dele.
+ * Assim, mesmo que a chave vaze, o que se alcança é o que aquele número já
+ * tinha pedido e recebido.
+ */
+function chaveDeProcesso(req) {
+  const config = require('../config');
+  if (!config.apiKey) return false;
+  const vindo = String(req.get('X-Chave-Gateway') || '');
+  const a = Buffer.from(vindo);
+  const b = Buffer.from(config.apiKey);
+  if (a.length !== b.length) return false;
+  return require('crypto').timingSafeEqual(a, b);
+}
+
+router.post('/cliente/notas', async (req, res) => {
+  if (!chaveDeProcesso(req)) return res.status(401).json({ erro: 'chave inválida' });
+  try {
+    const b = req.body || {};
+    res.json(await require('../services/conversas').notasDoCliente(b.telefone, b.limite));
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message });
+  }
+});
+
+router.post('/cliente/documento', async (req, res) => {
+  if (!chaveDeProcesso(req)) return res.status(401).json({ erro: 'chave inválida' });
+  try {
+    const b = req.body || {};
+    const doc = await require('../services/conversas')
+      .documentoDoCliente(b.telefone, b.chave);
+    /* Fica registrado: uma segunda via é um documento fiscal saindo desta
+       máquina, e "quem pediu, quando" é a pergunta do dia seguinte. */
+    await auditoria.registrar(req, doc.empresaId, 'nota.segunda_via',
+      'Segunda via pedida pelo cliente no WhatsApp', { referencia: doc.chave });
+    res.json(doc);
+  } catch (e) {
+    res.status(e.status || 500).json({ erro: e.message });
+  }
+});
+
+/* As conversas, por pessoa.
+ *
+ * A fila responde "o que preciso aprovar agora". Estas respondem "o que essa
+ * pessoa vem pedindo" — a pergunta de quando o cliente liga reclamando, e a do
+ * dia em que alguém precisa provar que a nota foi pedida por quem diz não ter
+ * pedido.
+ *
+ * Aberta a quem opera, e não só ao administrador: quem atende o telefone do
+ * escritório é exatamente quem precisa disto aberto na tela. O escopo por
+ * empresa continua valendo — um operador vê as conversas das empresas dele. */
+router.get('/conversas', async (req, res, next) => {
+  try {
+    res.json(await require('../services/conversas')
+      .listar({ empresasVisiveis: empresasVisiveis(req) }));
+  } catch (e) { next(e); }
+});
+
+router.get('/conversas/:telefone', async (req, res, next) => {
+  try {
+    res.json(await require('../services/conversas')
+      .historico(req.params.telefone, { empresasVisiveis: empresasVisiveis(req) }));
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    next(e);
+  }
+});
+
 /* As palavras do robô.
  *
  * Ficam aqui e não em /identidade porque é o atendimento do WhatsApp que as

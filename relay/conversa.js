@@ -67,7 +67,12 @@ function menu(opcoes) {
 /* Recebe a mensagem e devolve { resposta, estado, dados, pedido? }.
  * Função pura: não grava nem envia nada. Quem chama decide o que fazer com o
  * resultado — o que torna a conversa inteira testável sem WhatsApp nenhum. */
-async function responder({ texto, telefone, vinculos, conversa, memoria, buscarCnpj }) {
+async function responder({ texto, telefone, vinculos, conversa, memoria, buscarCnpj,
+                          notasDoCliente, documentoDoCliente }) {
+  /* As consultas ao gateway entram por INJECAO, como a base publica ja entrava.
+     E o que mantem a conversa exercitavel sem gateway nenhum -- inclusive os
+     caminhos de erro, que sao os que ninguem testa a mao. */
+  const consultas = { telefone, notasDoCliente, documentoDoCliente };
   const estado = conversa ? conversa.estado : 'inicio';
   const dados = conversa ? Object.assign({}, conversa.dados) : {};
   const t = String(texto || '').trim();
@@ -134,8 +139,9 @@ async function responder({ texto, telefone, vinculos, conversa, memoria, buscarC
        quem fosse investigar. Sem empresa escolhida, a conversa ainda não
        começou — então começa. */
     case 'inicio':
-      return empresa ? doInicio(t, empresa, contato, memoria, dados)
+      return empresa ? doInicio(t, empresa, contato, memoria, dados, consultas)
                      : escolherEmpresa(vinculos, telefone, memoria);
+    case 'escolhendo_nota': return doEscolherNota(t, dados, consultas);
     case 'documento_novo': return doDocumento(t, empresa, memoria, dados, buscarCnpj);
     case 'conferindo_cliente': return doConferirCliente(t, empresa, memoria, dados);
     case 'nome_novo':       return doNomeNovo(t, empresa, memoria, dados);
@@ -254,7 +260,122 @@ function opcoesDoInicio(empresa) {
     chave: 'novo',
     sinonimos: ['novo', 'cliente novo', 'outro cliente', 'nota', 'emitir', 'outra', 'nova']
   });
+  /* Consultar o que já saiu é o segundo pedido mais comum depois de emitir, e
+     era o que mais gerava ligação para o escritório: "me manda de novo aquela
+     nota". Fica no menu porque esconder o caminho não faz a pergunta sumir —
+     só a transfere para o telefone de alguém. */
+  opcoes.push({ rotulo: 'Minhas notas · pedir 2ª via', chave: 'notas',
+                sinonimos: ['notas', 'minhas notas', 'segunda via', '2a via',
+                            '2ª via', 'consultar', 'historico', 'histórico'] });
   return opcoes;
+}
+
+/* ------------------------------------------ as notas do próprio cliente */
+
+/* "Me manda de novo aquela nota" era a ligação mais comum ao escritório, e não
+ * havia caminho para ela na conversa — então virava trabalho de gente para
+ * reenviar um PDF que o sistema tinha à mão.
+ *
+ * O ALCANCE É ESTREITO, e é o que permite isto existir sem abrir nada: o
+ * gateway devolve só as notas que nasceram dos pedidos DAQUELE telefone. Não as
+ * da empresa, não as do escritório. A conversa não escolhe esse recorte — ela
+ * nem saberia como; quem o aplica é quem tem o banco.
+ */
+async function doMinhasNotas(dados, consultas) {
+  const buscar = consultas && consultas.notasDoCliente;
+  const lista = buscar ? await buscar(consultas.telefone, 5).catch(() => null) : null;
+
+  if (lista === null) {
+    /* Repassador na nuvem, ou gateway fora do ar. Prometer "já te mando" seria
+       pior que dizer a verdade: a pessoa esperaria por algo que não vem. */
+    return {
+      resposta: 'Não consigo consultar suas notas por aqui agora.\n\n' +
+                'Peça ao escritório — eles têm todas à mão.',
+      estado: null
+    };
+  }
+
+  if (!lista.length) {
+    return {
+      resposta: 'Ainda não há nenhuma nota emitida a partir dos seus pedidos.\n\n' +
+                'Assim que a primeira sair, ela aparece aqui.',
+      estado: null
+    };
+  }
+
+  const linhas = lista.map((n, i) =>
+    (i + 1) + ' — ' + dataCurta(n.criado_em) + ' · ' +
+    (n.valor ? dinheiro(n.valor) : 'valor não registrado') + '\n' +
+    '     ' + (n.tomador || 'cliente não identificado') +
+    (n.servico ? '\n     _' + n.servico + '_' : '')
+  ).join('\n\n');
+
+  return {
+    resposta: 'Suas últimas notas:\n\n' + linhas +
+      '\n\nQuer o PDF de alguma? Responda com o número. ' +
+      'Ou "cancelar" para encerrar.',
+    estado: 'escolhendo_nota',
+    dados: Object.assign({}, dados, {
+      notas: lista.map(n => ({ chave: n.chave_acesso, quando: n.criado_em }))
+    })
+  };
+}
+
+async function doEscolherNota(t, dados, consultas) {
+  const notas = dados.notas || [];
+  const i = Number(String(t).trim()) - 1;
+
+  if (!Number.isInteger(i) || i < 0 || i >= notas.length) {
+    return naoEntendi(dados, () => ({
+      resposta: 'Responda com o número da nota que você quer receber, ' +
+                'de 1 a ' + notas.length + '.',
+      estado: 'escolhendo_nota', dados
+    }));
+  }
+
+  const pedir = consultas && consultas.documentoDoCliente;
+  if (!pedir) {
+    return { resposta: 'Não consigo buscar o documento agora. Peça ao escritório.',
+             estado: null };
+  }
+
+  let doc;
+  try {
+    doc = await pedir(consultas.telefone, notas[i].chave);
+  } catch (e) {
+    /* 404 aqui quer dizer "essa nota não é sua" — mesma resposta de "não
+       existe", de propósito: distinguir as duas diria a quem tentasse que
+       aquela chave existe em algum lugar. */
+    return {
+      resposta: e.status === 409
+        ? 'Essa nota ainda não tem documento pronto. Assim que tiver, eu mando.'
+        : 'Não encontrei essa nota entre as suas.',
+      estado: null
+    };
+  }
+
+  if (!doc) {
+    return { resposta: 'Não consegui buscar o documento agora. Tente daqui a pouco.',
+             estado: null };
+  }
+
+  return {
+    resposta: 'Aqui está. 👇',
+    estado: null,
+    /* Quem envia é o transporte, não a conversa: ela recebe texto e devolve
+       texto, e um documento é o mesmo desenho com um anexo a tiracolo. */
+    documento: {
+      conteudo: doc.pdf, nome: doc.nome + '.pdf',
+      tipo: 'application/pdf', legenda: 'NFS-e ' + doc.nome
+    }
+  };
+}
+
+function dataCurta(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return String(d.getDate()).padStart(2, '0') + '/' +
+         String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
 }
 
 function abertura(empresa, contato, memoria, prefixo) {
@@ -288,10 +409,12 @@ function abertura(empresa, contato, memoria, prefixo) {
   };
 }
 
-function doInicio(t, empresa, contato, memoria, dados) {
+function doInicio(t, empresa, contato, memoria, dados, consultas) {
   const anterior = empresa.ultimoPedido;
   const escolha = escolher(t, opcoesDoInicio(empresa));
   if (!escolha) return naoEntendi(dados, () => abertura(empresa, contato, memoria));
+
+  if (escolha.chave === 'notas') return doMinhasNotas(dados, consultas);
 
   if (escolha.chave === 'novo') {
     /* Só o documento. Pedir razão social, endereço e CEP por WhatsApp é onde a

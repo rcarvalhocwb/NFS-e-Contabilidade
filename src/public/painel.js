@@ -321,6 +321,7 @@
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
     webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks },
     portal:      { titulo:'Portal do cliente', sub:'Pedidos de nota que chegam pelo site', carregar: carregarPonte },
+    conversas:   { titulo:'Conversas',     sub:'O que cada cliente pediu, e o que aconteceu', carregar: carregarConversas },
     whatsapp:    { titulo:'WhatsApp',      sub:'Por onde sai, o numero do escritorio e o atendimento', carregar: carregarWhatsapp }
   };
 
@@ -1558,6 +1559,287 @@
       .then(function () { b.disabled = false; });
   };
 
+
+  /* ------------------------------------------------------- conversas */
+
+  /* O mesmo fato, lido de três lados.
+   *
+   * As três visões desenham a MESMA lista de pedidos, vinda de uma chamada só.
+   * Se cada uma buscasse por conta, elas divergiriam — e uma tela em que as
+   * três versões do mesmo pedido discordam não serve de prova para nenhuma.
+   */
+
+  var conversaAberta = null;   // { telefone, dados }
+  var visaoAtual = 'cliente';
+
+  var EXPLICA = {
+    cliente: 'O que a pessoa digitou e o que ela recebeu de volta, na ordem. ' +
+             'É este texto que ela vai ler em voz alta ao telefone quando ' +
+             'discordar de alguma coisa.',
+    emissor: 'O que o sistema montou com aquilo: empresa, tomador, serviço e ' +
+             'valor. É onde se vê se a conversa entendeu o que foi dito.',
+    contador: 'Quem liberou, quando, e o que a Sefin devolveu. É a ' +
+              'responsabilidade — e é o que uma fiscalização pergunta.'
+  };
+
+  function carregarConversas() {
+    return api('/ponte/conversas').then(function (lista) {
+      el('conversasVazio').hidden = lista.length > 0;
+      el('listaConversas').innerHTML = lista.map(function (c) {
+        var quem = c.nome ? esc(c.nome) : '<span class="ajuda">sem cadastro</span>';
+        return '<tr>' +
+          '<td><strong>' + quem + '</strong><br>' +
+            '<span class="ajuda mono">' + esc(formatarTelefoneBr(c.remetente)) + '</span>' +
+            (c.autorizado ? '' : ' <span class="selo-status s-alerta sem-ponto">não autorizado</span>') +
+          '</td>' +
+          '<td>' + esc((c.empresas || []).join(', ') || '—') + '</td>' +
+          '<td>' + c.pedidos + '</td>' +
+          '<td>' + (c.aguardando
+            ? '<span class="selo-status s-alerta sem-ponto">' + c.aguardando + '</span>'
+            : '<span class="ajuda">—</span>') + '</td>' +
+          '<td>' + esc(quando(c.ultima_em)) + '</td>' +
+          '<td><button class="pequeno" data-conversa="' + esc(c.remetente) + '">Abrir</button></td>' +
+        '</tr>';
+      }).join('');
+
+      $$('#listaConversas [data-conversa]').forEach(function (b) {
+        b.onclick = function () { abrirConversa(this.dataset.conversa); };
+      });
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  /* O telefone chega só com dígitos. Sem formatação, um número de treze
+     dígitos na tela é indistinguível de um código de erro. */
+  function formatarTelefoneBr(t) {
+    var d = String(t || '').replace(/\D/g, '');
+    if (d.length >= 12) d = d.slice(2);            // tira o 55
+    if (d.length === 11) return '(' + d.slice(0, 2) + ') ' + d.slice(2, 7) + '-' + d.slice(7);
+    if (d.length === 10) return '(' + d.slice(0, 2) + ') ' + d.slice(2, 6) + '-' + d.slice(6);
+    return String(t || '');
+  }
+
+  function quando(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  function dinheiroBr(v) {
+    var n = Number(v);
+    if (!isFinite(n)) return '—';
+    return 'R$ ' + n.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+
+  function abrirConversa(telefone) {
+    return api('/ponte/conversas/' + encodeURIComponent(telefone)).then(function (d) {
+      conversaAberta = { telefone: telefone, dados: d };
+      el('cartaoConversa').hidden = false;
+
+      var nome = (d.autorizacoes[0] || {}).nome;
+      el('convTitulo').textContent = nome || formatarTelefoneBr(telefone);
+
+      var aguardando = d.pedidos.filter(function (p) { return p.situacao === 'aguardando'; }).length;
+      var selo = el('convSelo');
+      selo.className = 'selo-status ' + (aguardando ? 's-alerta' : 's-ok');
+      selo.textContent = aguardando ? aguardando + ' aguardando' : 'em dia';
+
+      /* O resumo diz de quais empresas esta pessoa pode pedir. É por empresa de
+         propósito: o número da financeira de um cliente não deve emitir pelo
+         CNPJ de outro. */
+      el('convResumo').innerHTML =
+        '<strong>' + esc(formatarTelefoneBr(telefone)) + '</strong> · ' +
+        d.pedidos.length + ' pedido(s). ' +
+        (d.autorizacoes.length
+          ? 'Autorizado a pedir por: ' +
+            d.autorizacoes.map(function (a) { return esc(a.razao_social || a.cnpj); }).join(', ') + '.'
+          : '<span class="s-erro">Este número não está autorizado a pedir notas.</span>');
+
+      pintarVisao();
+      el('cartaoConversa').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  $$('#convAbas button').forEach(function (b) {
+    b.onclick = function () {
+      $$('#convAbas button').forEach(function (o) { o.classList.remove('ativo'); });
+      this.classList.add('ativo');
+      visaoAtual = this.dataset.visao;
+      pintarVisao();
+    };
+  });
+
+  el('btnFecharConversa').onclick = function () {
+    el('cartaoConversa').hidden = true;
+    conversaAberta = null;
+  };
+
+  el('btnRecarregarConversas').onclick = function () {
+    var b = this; b.disabled = true;
+    carregarConversas().then(function () {
+      if (conversaAberta) return abrirConversa(conversaAberta.telefone);
+    }).then(function () { b.disabled = false; });
+  };
+
+  function pintarVisao() {
+    if (!conversaAberta) return;
+    el('convExplica').textContent = EXPLICA[visaoAtual];
+    var pedidos = conversaAberta.dados.pedidos;
+
+    if (!pedidos.length) {
+      el('convConteudo').innerHTML = '<div class="vazio">Nenhum pedido registrado.</div>';
+      return;
+    }
+
+    el('convConteudo').innerHTML = pedidos.map(function (p) {
+      return '<div class="caixa-amb" style="margin-bottom:14px">' +
+        cabecaDoPedido(p) +
+        (visaoAtual === 'cliente'  ? visaoCliente(p)  :
+         visaoAtual === 'emissor'  ? visaoEmissor(p)  : visaoContador(p)) +
+      '</div>';
+    }).join('');
+  }
+
+  function seloDaSituacao(s) {
+    var mapa = {
+      aguardando: ['s-alerta', 'aguardando aprovação'],
+      emitida:    ['s-ok', 'emitida'],
+      recusada:   ['s-erro', 'recusada'],
+      devolvida:  ['s-erro', 'devolvida'],
+      erro:       ['s-erro', 'erro']
+    };
+    var m = mapa[s] || ['s-neutro', s || '—'];
+    return '<span class="selo-status ' + m[0] + ' sem-ponto">' + esc(m[1]) + '</span>';
+  }
+
+  function cabecaDoPedido(p) {
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
+      '<h3 style="margin:0">' + esc(quando(p.recebida_em)) + '</h3>' +
+      seloDaSituacao(p.situacao) +
+      '<span class="espaco" style="flex:1"></span>' +
+      '<span class="ajuda mono">' + esc(p.id_externo || '') + '</span>' +
+    '</div>';
+  }
+
+  /* ------------------------------------------------- visão do cliente */
+
+  /* A conversa como ela aconteceu. Balões, e não tabela: a pessoa do outro lado
+     viu isto num aplicativo de mensagem, e ler numa grade muda o que se entende
+     do tom. */
+  function visaoCliente(p) {
+    var linhas = p.transcricao || [];
+    if (!linhas.length) {
+      return '<div class="ajuda">Sem transcrição — este pedido não veio por conversa.</div>';
+    }
+    return '<div style="display:flex;flex-direction:column;gap:8px;max-width:640px">' +
+      linhas.map(function (l) {
+        var doCliente = l.de === 'cliente';
+        return '<div style="align-self:' + (doCliente ? 'flex-end' : 'flex-start') + ';' +
+          'max-width:82%;padding:9px 13px;border-radius:12px;font-size:13.5px;' +
+          'white-space:pre-wrap;overflow-wrap:anywhere;' +
+          (doCliente
+            ? 'background:var(--acento);color:#fff;border-bottom-right-radius:3px'
+            : 'background:var(--superficie-2);border:1px solid var(--linha);' +
+              'border-bottom-left-radius:3px') + '">' +
+          esc(l.texto || '') +
+        '</div>';
+      }).join('') +
+    '</div>' +
+    (p.chave_acesso
+      ? '<div class="ajuda" style="margin-top:12px">A nota desta conversa: ' +
+        '<span class="mono">' + esc(p.chave_acesso) + '</span></div>'
+      : '');
+  }
+
+  /* ------------------------------------------------- visão do emissor */
+
+  /* O que o sistema montou com o que foi dito. É onde se descobre que a
+     conversa entendeu "mil e quinhentos" como 1500 e não como 1.500.000. */
+  function visaoEmissor(p) {
+    var d = p.payload || {};
+    var t = d.tomador || {};
+    var s = d.servico || {};
+    var v = d.valores || {};
+    var end = t.endereco || {};
+
+    var campos = [
+      ['Empresa que emite', (p.empresa || '—') + (p.empresa_cnpj ? ' · ' + p.empresa_cnpj : '')],
+      ['Tomador', t.razaoSocial || t.nome || '—'],
+      ['Documento do tomador', t.cnpj || t.cpf || t.documento || p.cnpj_informado || '—'],
+      ['Município da prestação', end.codigoMunicipio || '—'],
+      ['Endereço', [end.logradouro, end.numero, end.bairro, end.cep]
+        .filter(Boolean).join(', ') || '—'],
+      ['Serviço', s.descricao || '—'],
+      ['Código de tributação', s.codigoTributacaoNacional || s.codigoTributacao || '—'],
+      ['Valor', dinheiroBr(v.valorServico != null ? v.valorServico : v.valor)],
+      ['Origem', p.origem || '—']
+    ];
+
+    return '<table class="tabela" style="margin:0">' +
+      campos.map(function (c) {
+        return '<tr><th style="width:230px;text-align:left;font-weight:500">' +
+          esc(c[0]) + '</th><td>' + esc(String(c[1])) + '</td></tr>';
+      }).join('') +
+    '</table>';
+  }
+
+  /* ------------------------------------------------ visão do contador */
+
+  /* Quem liberou, quando, e o que a Sefin respondeu. Um pedido sem decisão
+     registrada é um pedido pelo qual ninguém respondeu — e é isso que precisa
+     ficar visível, não escondido atrás de um traço. */
+  function visaoContador(p) {
+    var partes = [];
+
+    partes.push('<table class="tabela" style="margin:0 0 12px">' +
+      '<tr><th style="width:230px;text-align:left;font-weight:500">Recebido em</th>' +
+        '<td>' + esc(quando(p.recebida_em)) + '</td></tr>' +
+      '<tr><th style="text-align:left;font-weight:500">Situação</th>' +
+        '<td>' + seloDaSituacao(p.situacao) + '</td></tr>' +
+      '<tr><th style="text-align:left;font-weight:500">Decidido por</th>' +
+        '<td>' + (p.decidido_por
+          ? esc(p.decidido_por) + ' <span class="ajuda">em ' + esc(quando(p.decidido_em)) + '</span>'
+          : '<span class="ajuda">ainda não decidido</span>') + '</td></tr>' +
+      (p.motivo ? '<tr><th style="text-align:left;font-weight:500">Motivo</th>' +
+        '<td>' + esc(p.motivo) + '</td></tr>' : '') +
+    '</table>');
+
+    if (p.chave_acesso) {
+      partes.push('<div class="caixa-amb" style="margin:0 0 12px">' +
+        '<h3 style="margin:0 0 8px">A nota</h3>' +
+        '<div class="ajuda mono" style="overflow-wrap:anywhere">' + esc(p.chave_acesso) + '</div>' +
+        '<div class="ajuda" style="margin-top:6px">' +
+          'Série ' + esc(String(p.serie || '—')) + ' · número ' + esc(String(p.numero || '—')) +
+          ' · ' + esc(p.status_nota || '—') +
+          (p.ambiente ? ' · ' + esc(p.ambiente) : '') +
+        '</div>' +
+        '<div class="linha-botoes" style="margin-top:10px">' +
+          '<a class="botao pequeno" target="_blank" rel="noopener" href="/nfse/' +
+            encodeURIComponent(p.chave_acesso) + '/danfse">DANFSe</a>' +
+          '<a class="botao pequeno" target="_blank" rel="noopener" href="/nfse/' +
+            encodeURIComponent(p.chave_acesso) + '/xml">XML</a>' +
+        '</div>' +
+      '</div>');
+    } else if (p.ultimo_erro) {
+      partes.push('<div class="ajuda" style="border-left:3px solid var(--erro);' +
+        'padding-left:12px;margin-bottom:12px">' + esc(p.ultimo_erro) + '</div>');
+    }
+
+    var aud = p.auditoria || [];
+    partes.push('<h3 style="margin:0 0 8px">Registro</h3>' +
+      (aud.length
+        ? '<table class="tabela" style="margin:0">' +
+          '<thead><tr><th>Quando</th><th>O que</th><th>Quem</th></tr></thead><tbody>' +
+          aud.map(function (a) {
+            return '<tr><td>' + esc(quando(a.ocorrido_em)) + '</td>' +
+              '<td>' + esc(a.acao) + '</td>' +
+              '<td>' + esc(a.autor || '—') + '</td></tr>';
+          }).join('') + '</tbody></table>'
+        : '<div class="ajuda">Nenhum registro de decisão para este pedido.</div>'));
+
+    return partes.join('');
+  }
 
   /* ------------------------------------------------------- WhatsApp */
 

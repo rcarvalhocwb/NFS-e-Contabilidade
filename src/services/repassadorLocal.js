@@ -197,6 +197,13 @@ function ambienteDoRelay(c) {
     WA_TRANSPORTE: c.wa_transporte === 'local' ? 'local' : 'meta',
     WA_MODULO_URL: 'http://127.0.0.1:' + (c.wa_modulo_porta || 3200),
 
+    /* O caminho de volta, para o cliente poder consultar as PROPRIAS notas e
+       pedir segunda via sem sair da conversa.
+       So existe porque este repassador roda NESTA maquina. Um repassador na
+       nuvem nao recebe esta variavel, e a conversa entao diz que o escritorio
+       vai retornar -- em vez de prometer o que nao pode cumprir. */
+    GATEWAY_URL: 'http://127.0.0.1:' + (process.env.PORT || 3000),
+
     ARQUIVO_DADOS: path.join(RAIZ, 'dados-relay', 'relay.json')
   };
 }

@@ -7,6 +7,7 @@ const conversa = require('./conversa');
 const transporte = require('./transporte');
 const { Memoria } = require('./memoria');
 const receita = require('./receita');
+const gateway = require('./gateway');
 
 /* O repassador entre o WhatsApp e o gateway do escritório.
  *
@@ -161,7 +162,12 @@ async function tratarMensagem(m) {
       memoria,
       /* A consulta pública entra por aqui: a conversa não sabe de onde os dados
          vêm, o que a mantém testável sem rede. */
-      buscarCnpj: receita.consultarCnpj
+      buscarCnpj: receita.consultarCnpj,
+      /* As notas do proprio cliente, pela mesma porta de injecao. Quando o
+         repassador esta na nuvem, gateway.js devolve null e a conversa diz que
+         o escritorio vai retornar -- em vez de prometer o que nao cumpre. */
+      notasDoCliente: gateway.notasDoCliente,
+      documentoDoCliente: gateway.documentoDoCliente
     });
     if (expirou) {
       saida = Object.assign({}, saida, {
@@ -193,6 +199,22 @@ async function tratarMensagem(m) {
    * estava, e a pessoa continua de onde parou quando o canal voltar.
    */
   const entregue = await responderAoCliente(m.de, saida.resposta);
+
+  /* A segunda via vai DEPOIS do texto, e so se o texto chegou.
+     Mandar o PDF antes deixaria o documento aparecer solto na conversa, sem
+     nada dizendo o que e -- e um anexo sem contexto no WhatsApp e exatamente
+     o que ninguem abre. */
+  if (entregue && saida.documento) {
+    const d = saida.documento;
+    const foi = await transporte.enviarDocumento({
+      para: m.de,
+      conteudo: d.conteudo, nomeArquivo: d.nome, tipo: d.tipo, legenda: d.legenda
+    }, credenciais());
+    if (!foi) {
+      await responderAoCliente(m.de,
+        'Nao consegui anexar o arquivo agora. Peca ao escritorio que eles mandam.');
+    }
+  }
   if (!entregue) {
     console.warn('[conversa] resposta não entregue a', m.de, '— o estado não avançou');
     return;
