@@ -17,6 +17,8 @@
  * recomeçar, em vez de prender a pessoa num canto.
  */
 
+const mensagens = require('./mensagens');
+
 const dinheiro = v => 'R$ ' + Number(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
 /* Leitura de valor em português. Mesma regra do gateway: vírgula é decimal,
@@ -97,15 +99,7 @@ async function responder({ texto, telefone, vinculos, conversa, memoria, buscarC
     return { resposta: 'Cancelado. É só chamar quando precisar.', estado: null };
   }
   if (HUMANO.test(t)) {
-    const casa = memoria.escritorio() || {};
-    return {
-      resposta: 'Claro. Eu sou automático e só sei emitir nota — para o resto, ' +
-        'fale direto com ' + (casa.nome || 'a contabilidade') + ':\n\n' +
-        (casa.telefone ? '📞 ' + formatarTelefone(casa.telefone) + '\n' : '') +
-        (casa.email ? '✉ ' + casa.email : '') +
-        (!casa.telefone && !casa.email ? 'procure o escritório pelos canais de sempre.' : ''),
-      estado: null
-    };
+    return { resposta: mensagens.falarComGente(memoria, formatarTelefone), estado: null };
   }
   /* A trava vem ANTES do menu, e não depois.
      Colocada depois, um "oi" recebia a lista de opções de uma empresa que não
@@ -249,14 +243,11 @@ function abertura(empresa, contato, memoria, prefixo) {
   /* QUEM ESTÁ FALANDO vem antes de tudo.
      Do outro lado é uma janela de WhatsApp e um número que a pessoa não
      conhece. Sem o nome do escritório, a primeira mensagem parece golpe — e
-     alguém que emite nota fiscal por um sistema que parece golpe não emite. */
-  /* Dizer que é automático é a primeira regra de conversa por robô, e a que
-     mais evita frustração: a pessoa calibra o que pedir. Junto vai a saída para
-     gente, porque ninguém perdoa ficar preso num bot. */
-  const casa = (memoria.escritorio() || {}).nome;
-  const apresentacao = casa
-    ? '*' + casa + '*\n_Atendimento automático para emissão de notas._\n\n'
-    : '';
+     alguém que emite nota fiscal por um sistema que parece golpe não emite.
+
+     O texto em si mora em mensagens.js, com o padrão de quando o escritório não
+     escolheu nada. */
+  const apresentacao = mensagens.apresentacao(memoria);
 
   /* A empresa vai escrita por extenso, com CNPJ, e volta na conferência. É o
      que substitui a barra fixa do painel: no WhatsApp a pessoa rola a tela e

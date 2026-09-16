@@ -114,6 +114,13 @@ class Memoria {
     return (this.dados.cadastro || {}).escritorio || null;
   }
 
+  /* As palavras escolhidas pelo escritório. Objeto vazio quando o gateway ainda
+     não mandou nada — `mensagens.js` trata nulo como "use o padrão", então não
+     há caso de erro a distinguir aqui. */
+  chatbot() {
+    return (this.dados.cadastro || {}).chatbot || {};
+  }
+
   servicosDa(cnpj) {
     return ((this.dados.cadastro || {}).servicos || []).filter(s => s.cnpj === cnpj);
   }

@@ -114,6 +114,14 @@ async function montar() {
     `SELECT nome, descricao, telefone, email FROM identidade LIMIT 1`);
   const id = ident.rows[0] || {};
 
+  /* E COM QUE PALAVRAS. Nulo aqui é resposta legítima: significa "use o texto
+     padrão", e quem sabe qual é o padrão é o repassador. Mandar o padrão daqui
+     seria mantê-lo em dois lugares, que é o mesmo que mantê-lo em nenhum. */
+  const bot = await db.query(
+    `SELECT saudacao, atendente, horario FROM chatbot WHERE id = TRUE`)
+    .catch(() => ({ rows: [] }));
+  const b = bot.rows[0] || {};
+
   const retrato = {
     geradoEm: new Date().toISOString(),
     escritorio: {
@@ -121,6 +129,11 @@ async function montar() {
       descricao: id.descricao || null,
       telefone: id.telefone || null,
       email: id.email || null
+    },
+    chatbot: {
+      saudacao: b.saudacao || null,
+      atendente: b.atendente || null,
+      horario: b.horario || null
     },
     canal: {
       numero: c.wa_numero || null,

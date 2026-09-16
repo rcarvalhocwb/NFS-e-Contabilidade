@@ -37,17 +37,84 @@ test('o instalador descobre em que situação está antes de perguntar', () => {
   }
 });
 
+/* Recorta ShouldSkipPage inteira. A âncora antiga era a string
+   `if ModoDetectado = 'atualizacao' then`, que aparece DUAS vezes no .iss: a
+   primeira dentro de InitializeWizard, montando o texto da tela de resumo. O
+   `indexOf` pegava essa, e a fatia só alcançava a regra de verdade por ser
+   larga o bastante para atravessar as duas — passava por acidente de distância.
+   Bastou um `Exit;` novo entrar no meio para a fatia encurtar e o teste acusar
+   uma página que estava sendo pulada corretamente. Agora se recorta a função
+   pelo nome dela, que é o que a asserção sempre quis dizer. */
+function shouldSkipPage() {
+  const i = ISS.indexOf('function ShouldSkipPage');
+  assert.ok(i > 0, 'ShouldSkipPage sumiu do .iss');
+  const fim = ISS.indexOf('\nfunction ', i + 1);
+  return ISS.slice(i, fim > 0 ? fim : ISS.length);
+}
+
 test('numa atualização o assistente não pergunta nada', () => {
   /* A falha central do instalador antigo. Todas as páginas que coletam algo
      precisam ser puladas — se uma escapar, ela pergunta na pior hora. */
-  const i = ISS.indexOf("if ModoDetectado = 'atualizacao' then");
+  const corpo = shouldSkipPage();
+  const i = corpo.indexOf("if ModoDetectado = 'atualizacao' then");
   assert.ok(i > 0, 'o desvio da atualização sumiu do ShouldSkipPage');
-  const bloco = ISS.slice(i, ISS.indexOf('end;', ISS.indexOf('Exit;', i)));
+  const bloco = corpo.slice(i, corpo.indexOf('end;', corpo.indexOf('Exit;', i)));
   for (const pagina of ['PaginaBanco', 'PaginaBancoUrl', 'PaginaUsuario',
                         'PaginaEscritorio', 'PaginaRede', 'CaixaMigracao']) {
     assert.ok(bloco.includes(pagina + '.ID'),
       pagina + ' não está sendo pulada numa atualização — ela vai perguntar');
   }
+});
+
+test('as telas de comissionamento só aparecem numa instalação nova', () => {
+  /* Elas cadastram a primeira empresa e o primeiro serviço. Aparecer numa
+     atualização seria perguntar de novo o que já está no banco; aparecer numa
+     migração criaria uma empresa duplicada ao lado da que vai ser importada. */
+  /* O grupo é declarado num lugar só, para não virar três listas que divergem
+     na próxima página acrescentada. */
+  const grupo = ISS.slice(ISS.indexOf('function EhPaginaComissionamento'),
+                          ISS.indexOf('function ShouldSkipPage'));
+  for (const pagina of ['PaginaEmpresa', 'PaginaCertificado', 'PaginaCertSenha',
+                        'PaginaServico', 'PaginaWhatsapp', 'PaginaWhatsappDados',
+                        'PaginaChatbot']) {
+    assert.ok(grupo.includes(pagina + '.ID'),
+      pagina + ' não é reconhecida como página de comissionamento');
+  }
+
+  /* E consultado de dentro de ShouldSkipPage, senão o grupo não pula nada. */
+  assert.match(shouldSkipPage(), /EhPaginaComissionamento\(PageID\)/);
+
+  /* A condição que governa todas elas, num lugar só. */
+  const guarda = ISS.slice(ISS.indexOf('function VaiComissionar'),
+                           ISS.indexOf('function TransporteWa'));
+  assert.match(guarda, /ModoDetectado = 'nova'/);
+  assert.match(guarda, /EhServidor/);
+  assert.match(guarda, /not VaiMigrar/);
+});
+
+test('pular o comissionamento não impede de instalar', () => {
+  /* Instalação que trava porque alguém não tem o certificado em mãos é pior que
+     instalação incompleta: a pessoa desiste no meio e fica sem as duas coisas. */
+  const i = ISS.indexOf('CaixaComissionar := CreateInputOptionPage');
+  assert.ok(i > 0, 'a escolha de comissionar sumiu');
+  assert.match(ISS.slice(i, i + 900), /Nao, faco tudo depois no painel/,
+    'precisa haver uma saída explícita');
+
+  /* E o certificado, dentro do comissionamento, também é opcional. */
+  const cert = ISS.slice(ISS.indexOf('PaginaCertificado := CreateInputFilePage'),
+                         ISS.indexOf('PaginaCertSenha := CreateInputQueryPage'));
+  assert.match(cert, /Pode deixar em/,
+    'a tela do certificado precisa dizer que dá para pular');
+});
+
+test('o módulo do WhatsApp não pode nascer na porta do painel', () => {
+  /* São dois processos. Na mesma porta, o segundo não sobe — e não sobe em
+     silêncio, que é como se descobre três dias depois. */
+  const i = ISS.indexOf('if (CurPageID = PaginaWhatsappDados.ID)');
+  assert.ok(i > 0, 'a validação da página de WhatsApp sumiu');
+  const bloco = ISS.slice(i, ISS.indexOf('\nend;', i));
+  assert.match(bloco, /Porta = PortaEscolhida/,
+    'a colisão com a porta do painel precisa ser barrada no assistente');
 });
 
 /* ------------------------------------------------- servidor x terminal */
@@ -193,4 +260,84 @@ test('a atualização termina mostrando o que aconteceu', () => {
   assert.match(rel, /copiaAnterior/);
   assert.match(rel, /empresasQueNaoEmitem/,
     'dizer que a atualização terminou sem dizer quem ainda não emite é meio relatório');
+});
+
+/* ------------------------------------------------ o comissionamento */
+
+const PRIMEIRA = ler('scripts', 'primeira-empresa.js');
+const WA_CONFIG = ler('scripts', 'configurar-whatsapp.js');
+const WA_PS = ler('instalador', 'whatsapp.ps1');
+
+test('a primeira empresa nasce em homologação', () => {
+  /* Instalação recém-feita, certificado recém-enviado e município ainda não
+     conferido: emitir direto em produção é como se descobre, pela via cara,
+     que o código do município estava errado. Nota em produção tem valor fiscal
+     e numeração que não se reaproveita. */
+  assert.match(PRIMEIRA, /VALUES \(\$1,\$2,\$3,\$4,\$5,\$6,'homologacao'\)/,
+    'o ambiente precisa ser homologação no INSERT, não configurável');
+  assert.ok(!/ambiente.*=.*d\.ambiente/.test(PRIMEIRA),
+    'não pode haver caminho que faça a instalação nascer em produção');
+});
+
+test('o instalador NÃO aceita o termo do WhatsApp por sessão própria', () => {
+  /* O termo diz que o número pode ser banido e que quem fornece o gateway não
+     responde por isso. Aceite embutido em "Avançar" não é aceite de ninguém —
+     e o registro com nome e data perderia justamente o que lhe dá valor.
+     Quem lê e marca é uma pessoa, na tela do módulo. */
+  for (const [nome, fonte] of [['configurar-whatsapp.js', WA_CONFIG],
+                               ['whatsapp.ps1', WA_PS],
+                               ['configurar.ps1', CONFIGURAR]]) {
+    const codigo = fonte.replace(/\/\*[\s\S]*?\*\//g, '')
+                        .replace(/^\s*(\/\/|#).*$/gm, '');
+    assert.ok(!/aceitarTermo|termo_aceito|aceitarTermoWhatsapp/.test(codigo),
+      nome + ' não pode registrar aceite de termo em nome de ninguém');
+  }
+  /* E não liga o transporte local, porque ligar depende do aceite. */
+  const codigo = WA_CONFIG.replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/definirAtivo\s*\(\s*true/.test(codigo),
+    'ligar a sessão própria exige o aceite; o instalador só deixa pronto');
+});
+
+test('a empresa só é liberada quando alguém foi autorizado a pedir', () => {
+  /* `portal_liberado` nasce FALSE de propósito: liberar é ato do contador, e o
+     padrão fechado impede que credenciar um cliente credencie os outros nove.
+     Autorizar um número em nome da empresa É esse ato — mas sem número
+     autorizado a empresa continua fechada, como sempre esteve. */
+  const i = PRIMEIRA.indexOf('async function autorizarNumero');
+  assert.ok(i > 0, 'a função que autoriza o número sumiu');
+  const corpo = PRIMEIRA.slice(i, PRIMEIRA.indexOf('\n/* ---', i));
+
+  assert.match(corpo, /if \(!d\.whatsappNumero\) return;/,
+    'sem número informado, nada é liberado');
+  assert.match(corpo, /portal_liberado = TRUE/);
+  assert.match(corpo, /portal_decidido_por = 'instalação'/,
+    'a decisão precisa ficar assinada para a auditoria');
+
+  /* E em lugar nenhum fora daí. */
+  const fora = PRIMEIRA.slice(0, i) + PRIMEIRA.slice(PRIMEIRA.indexOf('\n/* ---', i));
+  assert.ok(!/portal_liberado = TRUE/.test(fora),
+    'liberar fora da autorização abriria a empresa sem ninguém ter pedido');
+});
+
+test('o cloudflared só entra se estiver assinado pela Cloudflare', () => {
+  /* Baixar um executável e rodá-lo sem conferir de quem é seria colocar um
+     binário desconhecido para falar com a internet de dentro da máquina que
+     guarda os certificados A1 do escritório. */
+  const i = WA_PS.indexOf('function BaixarTunel');
+  assert.ok(i > 0);
+  const corpo = WA_PS.slice(i, WA_PS.indexOf('\n# ---', i));
+  assert.match(corpo, /Get-AuthenticodeSignature/);
+  assert.match(corpo, /Status -ne 'Valid'/);
+  assert.match(corpo, /notmatch 'Cloudflare'/);
+  assert.match(corpo, /Remove-Item \$temp -Force/,
+    'o arquivo recusado precisa sumir, não ficar em disco para alguém rodar');
+});
+
+test('as pendências chegam à última tela', () => {
+  /* Instalação que termina dizendo só "concluído" quando o certificado não
+     entrou está mentindo por omissão: a pessoa só descobre na primeira nota
+     que não sai, sem ligação nenhuma com o que aconteceu ali. */
+  assert.match(CONFIGURAR, /pendencias\.json/);
+  assert.match(ISS, /LerPendencias/);
+  assert.match(ISS, /FALTA ISTO para o sistema emitir/);
 });

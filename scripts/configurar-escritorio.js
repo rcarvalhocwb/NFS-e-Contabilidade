@@ -35,10 +35,22 @@ async function principal() {
 
   const feito = [];
 
-  /* A identidade: é o que aparece na tela de acesso e no DANFSe. */
+  /* A identidade: é o que aparece na tela de acesso, no DANFSe — e nas respostas
+     do WhatsApp.
+
+     O telefone e o e-mail não são enfeite. `relay/conversa.js` monta a resposta
+     de "falar com atendente" com estes três campos; enquanto só o nome era
+     gravado aqui, o robô dizia o nome do escritório e mandava a pessoa procurar
+     a contabilidade sem dizer por onde. O sintoma aparecia meses depois, na
+     reclamação de um cliente, e não em nenhum log. */
   if (dados.nome) {
     const identidade = require('../src/services/identidade');
-    await identidade.salvar({ nome: String(dados.nome).trim() });
+    await identidade.salvar({
+      nome: String(dados.nome).trim(),
+      telefone: dados.telefone ? String(dados.telefone).trim() : undefined,
+      email: dados.email ? String(dados.email).trim() : undefined,
+      site: dados.site ? String(dados.site).trim() : undefined
+    });
     feito.push('identidade');
   }
 

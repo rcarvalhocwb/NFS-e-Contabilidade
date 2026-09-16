@@ -66,6 +66,7 @@ Source: "pacote\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs create
 Source: "Iniciar Gateway.bat"; DestDir: "{app}"; Flags: ignoreversion; Check: EhServidor
 Source: "configurar.ps1"; DestDir: "{app}"; Flags: ignoreversion; Check: EhServidor
 Source: "firewall.ps1"; DestDir: "{app}"; Flags: ignoreversion; Check: EhServidor
+Source: "whatsapp.ps1"; DestDir: "{app}"; Flags: ignoreversion; Check: EhServidor
 ; O terminal leva so o script que cria os atalhos e testa a conexao.
 Source: "terminal.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -136,6 +137,24 @@ var
   PaginaMigracaoSenha: TInputQueryWizardPage;
   PaginaUsuario: TInputQueryWizardPage;
   PaginaResumo: TOutputMsgWizardPage;
+
+  { --- o comissionamento: deixar o sistema pronto para emitir ---
+
+    Estas paginas existem porque "configurar depois, no painel" costuma ser
+    nunca. Sem UMA empresa e UM servico cadastrados, a conversa do WhatsApp
+    responde "fale com o escritorio" e encerra: nao quebra, so nao funciona,
+    que e a falha mais cara de diagnosticar.
+
+    TODAS sao opcionais. Pular deixa pendencia escrita no relatorio, nunca
+    trava a instalacao -- um site nao preenchido nao pode custar o gateway. }
+  CaixaComissionar: TInputOptionWizardPage;
+  PaginaEmpresa: TInputQueryWizardPage;
+  PaginaCertificado: TInputFileWizardPage;
+  PaginaCertSenha: TInputQueryWizardPage;
+  PaginaServico: TInputQueryWizardPage;
+  PaginaWhatsapp: TInputOptionWizardPage;
+  PaginaWhatsappDados: TInputQueryWizardPage;
+  PaginaChatbot: TInputQueryWizardPage;
 
 { ------------------------------------------------------ o diagnostico }
 
@@ -215,6 +234,29 @@ begin
   Result := CaixaMigracao.SelectedValueIndex = 1;
 end;
 
+{ Comissionar = deixar pronto para emitir, e nao so instalado.
+
+  Quem traz dados de outra maquina ja tem empresas, servicos e contatos: pedir
+  de novo criaria uma segunda empresa duplicada da que vai ser importada. }
+function VaiComissionar: Boolean;
+begin
+  Result := (ModoDetectado = 'nova') and EhServidor and (not VaiMigrar) and
+            (CaixaComissionar <> nil) and (CaixaComissionar.SelectedValueIndex = 0);
+end;
+
+function TransporteWa: String;
+begin
+  if PaginaWhatsapp = nil then Result := 'nenhum'
+  else if PaginaWhatsapp.SelectedValueIndex = 0 then Result := 'meta'
+  else if PaginaWhatsapp.SelectedValueIndex = 1 then Result := 'local'
+  else Result := 'nenhum';
+end;
+
+function UsaWhatsapp: Boolean;
+begin
+  Result := VaiComissionar and (TransporteWa <> 'nenhum');
+end;
+
 { --------------------------------------------------------- as telas }
 
 procedure InitializeWizard;
@@ -243,13 +285,21 @@ begin
   PaginaServidorTerminal.Values[0] := '192.168.0.10:3000';
 
   { --- o escritorio --- }
+  { O telefone e o e-mail NAO sao enfeite de relatorio.
+
+    Quando um cliente pede "falar com atendente" no WhatsApp, a resposta e
+    montada com estes tres campos. Enquanto ficaram em branco, o robo dizia o
+    nome do escritorio e mais nada -- mandava a pessoa procurar a contabilidade
+    sem dizer por onde. }
   PaginaEscritorio := CreateInputQueryPage(PaginaServidorTerminal.ID,
     'O escritorio',
     'De quem e este sistema?',
-    'Aparece na tela de acesso e nos relatorios. Da para mudar depois, no painel.');
+    'Aparece na tela de acesso, nos relatorios e nas respostas do WhatsApp.');
   PaginaEscritorio.Add('Nome do escritorio:', False);
   PaginaEscritorio.Add('CNPJ:', False);
-  PaginaEscritorio.Add('E-mail para avisos do sistema:', False);
+  PaginaEscritorio.Add('E-mail do escritorio (avisos e contato):', False);
+  PaginaEscritorio.Add('Telefone de atendimento:', False);
+  PaginaEscritorio.Add('Site (opcional):', False);
 
   { --- onde ficam os dados --- }
   PaginaBanco := CreateInputOptionPage(PaginaEscritorio.ID,
@@ -312,6 +362,91 @@ begin
   PaginaUsuario.Add('Senha (minimo 8 caracteres):', True);
   PaginaUsuario.Add('Repita a senha:', True);
 
+  { --- comissionamento: da instalacao ate a primeira nota --- }
+
+  CaixaComissionar := CreateInputOptionPage(PaginaUsuario.ID,
+    'Deixar pronto para emitir',
+    'Quer cadastrar a primeira empresa e o WhatsApp agora?',
+    'Sao mais cinco telas. Instalado nao e o mesmo que pronto: sem uma empresa ' +
+    'e um servico cadastrados, o sistema abre mas nao emite nada.',
+    True, False);
+  CaixaComissionar.Add('Sim, configurar agora (recomendado)' + #13#10 +
+    '     Primeira empresa, primeiro servico e WhatsApp.');
+  CaixaComissionar.Add('Nao, faco tudo depois no painel' + #13#10 +
+    '     O sistema instala e abre, mas ainda nao emite.');
+  CaixaComissionar.SelectedValueIndex := 0;
+
+  PaginaEmpresa := CreateInputQueryPage(CaixaComissionar.ID,
+    'A primeira empresa',
+    'Qual empresa vai emitir notas por aqui?',
+    'E o CNPJ que assina a nota — o cliente da contabilidade, nao o escritorio. ' +
+    'As outras voce cadastra depois, no painel, sem limite.');
+  PaginaEmpresa.Add('CNPJ da empresa:', False);
+  PaginaEmpresa.Add('Razao social:', False);
+  PaginaEmpresa.Add('Codigo IBGE do municipio (7 digitos):', False);
+  PaginaEmpresa.Add('Inscricao municipal (opcional):', False);
+
+  { O certificado e do cliente e tem senha. Nao da para inventar um, e por isso
+    esta pagina aceita ficar vazia: sem ele o cadastro fica pronto e a pendencia
+    vai escrita no relatorio, em vez de a instalacao parar. }
+  PaginaCertificado := CreateInputFilePage(PaginaEmpresa.ID,
+    'Certificado digital',
+    'O arquivo A1 (.pfx) da empresa',
+    'Sem ele o sistema instala e cadastra, mas nao assina nota. Pode deixar em ' +
+    'branco e enviar depois, no painel, em "Certificado".');
+  PaginaCertificado.Add('Arquivo do certificado:',
+    'Certificado A1|*.pfx;*.p12|Todos os arquivos|*.*', '.pfx');
+
+  PaginaCertSenha := CreateInputQueryPage(PaginaCertificado.ID,
+    'Senha do certificado',
+    'A senha que abre o arquivo .pfx',
+    'Ela e guardada cifrada com a chave desta maquina. Nem nos conseguimos ler.');
+  PaginaCertSenha.Add('Senha do certificado:', True);
+
+  PaginaServico := CreateInputQueryPage(PaginaCertSenha.ID,
+    'O primeiro servico',
+    'O que essa empresa vende?',
+    'E o item que vai na nota. Sem ao menos um cadastrado, o pedido por ' +
+    'WhatsApp responde "fale com o escritorio" e para por ali.');
+  PaginaServico.Add('Apelido (como aparece na lista):', False);
+  PaginaServico.Add('Codigo de tributacao nacional (6 digitos):', False);
+  PaginaServico.Add('Descricao que vai na nota:', False);
+  PaginaServico.Add('Valor padrao (opcional, ex: 1500,00):', False);
+
+  PaginaWhatsapp := CreateInputOptionPage(PaginaServico.ID,
+    'WhatsApp',
+    'Como o escritorio vai receber pedidos de nota?',
+    'Os dois caminhos usam a mesma conversa. Muda so o meio — e da para trocar ' +
+    'depois, no painel, sem perder nada.',
+    True, False);
+  PaginaWhatsapp.Add('Plataforma oficial (Meta) — recomendado' + #13#10 +
+    '     Estavel e com suporte. Exige conta aprovada na Meta.');
+  PaginaWhatsapp.Add('Sessao propria (numero lido por QR)' + #13#10 +
+    '     Comeca hoje, sem aprovacao. Automacao nao oficial: o numero pode ser banido.');
+  PaginaWhatsapp.Add('Nenhum por enquanto' + #13#10 +
+    '     So o painel. Da para ligar depois.');
+  PaginaWhatsapp.SelectedValueIndex := 1;
+
+  PaginaWhatsappDados := CreateInputQueryPage(PaginaWhatsapp.ID,
+    'WhatsApp: quem pode pedir',
+    'O numero que vai pedir notas, e as credenciais se forem da Meta',
+    'So numeros cadastrados conseguem pedir nota. Qualquer outro recebe uma ' +
+    'recusa educada — e e isso que impede um estranho de emitir em nome da empresa.');
+  PaginaWhatsappDados.Add('Numero autorizado (com DDD, ex: 41999998888):', False);
+  PaginaWhatsappDados.Add('Meta — Phone Number ID:', False);
+  PaginaWhatsappDados.Add('Meta — Token de envio:', True);
+  PaginaWhatsappDados.Add('Porta do modulo WhatsApp:', False);
+  PaginaWhatsappDados.Values[3] := '3200';
+
+  PaginaChatbot := CreateInputQueryPage(PaginaWhatsappDados.ID,
+    'Como o robo se apresenta',
+    'As palavras que o cliente le antes de falar com gente',
+    'Tudo opcional: em branco, o sistema usa o nome do escritorio e um texto ' +
+    'padrao. Da para reescrever depois, no painel.');
+  PaginaChatbot.Add('Saudacao (ex: Ola! Aqui e a Contabilidade Recalcatti):', False);
+  PaginaChatbot.Add('Nome de quem assina o atendimento:', False);
+  PaginaChatbot.Add('Horario de atendimento (ex: seg a sex, 8h as 18h):', False);
+
   { --- o que vai acontecer, quando nao ha nada a perguntar --- }
   if ModoDetectado = 'atualizacao' then
   begin
@@ -345,9 +480,56 @@ begin
       'O que vou fazer', 'Este computador ja tem o NFS-e Gateway', Texto);
 end;
 
+{ As paginas de comissionamento como um grupo.
+
+  Perguntar isso tres vezes (uma por modo, uma por papel) espalharia a mesma
+  regra por tres listas que vao divergir na proxima pagina acrescentada. Uma
+  condicao so, num lugar so: VaiComissionar ja responde por modo, papel e
+  migracao juntos. }
+function EhPaginaComissionamento(PageID: Integer): Boolean;
+begin
+  Result := (PaginaEmpresa <> nil) and
+            ((PageID = PaginaEmpresa.ID) or (PageID = PaginaCertificado.ID) or
+             (PageID = PaginaCertSenha.ID) or (PageID = PaginaServico.ID) or
+             (PageID = PaginaWhatsapp.ID) or (PageID = PaginaWhatsappDados.ID) or
+             (PageID = PaginaChatbot.ID));
+end;
+
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := False;
+
+  { A pergunta "quer configurar agora?" so faz sentido numa instalacao nova de
+    servidor que nao esta importando dados. Fora disso, nem ela nem o que vem
+    depois dela aparecem. }
+  if (PageID = CaixaComissionar.ID) then
+  begin
+    Result := (ModoDetectado <> 'nova') or EhTerminal or VaiMigrar;
+    Exit;
+  end;
+
+  if EhPaginaComissionamento(PageID) then
+  begin
+    if not VaiComissionar then
+    begin
+      Result := True;
+      Exit;
+    end;
+    { Senha de certificado sem certificado escolhido e uma tela que so confunde. }
+    if (PageID = PaginaCertSenha.ID) and (Trim(PaginaCertificado.Values[0]) = '') then
+    begin
+      Result := True;
+      Exit;
+    end;
+    { Quem nao vai usar WhatsApp nao precisa de numero, credencial nem robo. }
+    if ((PageID = PaginaWhatsappDados.ID) or (PageID = PaginaChatbot.ID)) and
+       (TransporteWa = 'nenhum') then
+    begin
+      Result := True;
+      Exit;
+    end;
+    Exit;
+  end;
 
   { Numa atualizacao nao se pergunta NADA. Era a falha central do instalador
     antigo: ele perguntava "onde os dados vao ficar guardados?" a quem so
@@ -408,7 +590,7 @@ end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
-  Endereco, Email, Senha, Cnpj, Porta: String;
+  Endereco, Email, Senha, Cnpj, Porta, Numero: String;
   P: Integer;
 begin
   Result := True;
@@ -497,6 +679,112 @@ begin
       MsgBox('As duas senhas nao sao iguais.', mbError, MB_OK); Result := False; Exit;
     end;
   end;
+
+  { --- comissionamento ---
+    Aqui se confere FORMATO, nao existencia. Se o CNPJ existe na Receita e se o
+    codigo do municipio e o certo quem sabe e o gateway, com o banco de pe e a
+    base publica a mao. Um assistente que tentasse validar contra a rede
+    travaria a instalacao de quem esta sem internet. }
+
+  if (CurPageID = PaginaEmpresa.ID) and VaiComissionar then
+  begin
+    Cnpj := SoDigitos(PaginaEmpresa.Values[0]);
+    if Length(Cnpj) <> 14 then
+    begin
+      MsgBox('O CNPJ da empresa tem 14 digitos. Voce informou ' +
+             IntToStr(Length(Cnpj)) + '.', mbError, MB_OK);
+      Result := False; Exit;
+    end;
+    if Trim(PaginaEmpresa.Values[1]) = '' then
+    begin
+      MsgBox('Informe a razao social da empresa.', mbError, MB_OK);
+      Result := False; Exit;
+    end;
+    if Length(SoDigitos(PaginaEmpresa.Values[2])) <> 7 then
+    begin
+      MsgBox('O codigo IBGE do municipio tem 7 digitos.' + #13#10#13#10 +
+             'Curitiba, por exemplo, e 4106902.', mbError, MB_OK);
+      Result := False; Exit;
+    end;
+  end;
+
+  if (CurPageID = PaginaCertSenha.ID) and VaiComissionar then
+  begin
+    { Certificado escolhido e senha em branco e quase sempre engano: o arquivo
+      nao abre sem ela, e a pendencia so apareceria no fim. }
+    if (Trim(PaginaCertificado.Values[0]) <> '') and
+       (Length(PaginaCertSenha.Values[0]) = 0) then
+    begin
+      if MsgBox('Voce escolheu um certificado mas nao informou a senha.' + #13#10#13#10 +
+                'Sem ela o arquivo nao abre, e o certificado tera de ser enviado ' +
+                'de novo pelo painel.' + #13#10#13#10 +
+                'Continuar assim mesmo?', mbConfirmation, MB_YESNO) = IDNO then
+      begin
+        Result := False; Exit;
+      end;
+    end;
+  end;
+
+  if (CurPageID = PaginaServico.ID) and VaiComissionar then
+  begin
+    if Trim(PaginaServico.Values[0]) = '' then
+    begin
+      MsgBox('Informe o apelido do servico — e como ele aparece na lista.',
+             mbError, MB_OK);
+      Result := False; Exit;
+    end;
+    if Length(SoDigitos(PaginaServico.Values[1])) <> 6 then
+    begin
+      MsgBox('O codigo de tributacao nacional tem 6 digitos.' + #13#10#13#10 +
+             'Ele esta na tabela da NFS-e nacional; o contador da empresa sabe ' +
+             'qual e o do servico dela.', mbError, MB_OK);
+      Result := False; Exit;
+    end;
+    if Trim(PaginaServico.Values[2]) = '' then
+    begin
+      MsgBox('Informe a descricao que vai na nota.', mbError, MB_OK);
+      Result := False; Exit;
+    end;
+  end;
+
+  if (CurPageID = PaginaWhatsappDados.ID) and UsaWhatsapp then
+  begin
+    Numero := SoDigitos(PaginaWhatsappDados.Values[0]);
+    if (Length(Numero) < 10) or (Length(Numero) > 13) then
+    begin
+      MsgBox('O numero precisa ter DDD e de 10 a 13 digitos.' + #13#10#13#10 +
+             'Exemplo: 41999998888', mbError, MB_OK);
+      Result := False; Exit;
+    end;
+    if TransporteWa = 'meta' then
+    begin
+      if (Trim(PaginaWhatsappDados.Values[1]) = '') or
+         (Trim(PaginaWhatsappDados.Values[2]) = '') then
+      begin
+        MsgBox('A plataforma oficial precisa do Phone Number ID e do token.' + #13#10#13#10 +
+               'Os dois estao no painel da Meta, em WhatsApp > Configuracao da API.' + #13#10#13#10 +
+               'Se ainda nao os tem, volte e escolha "sessao propria" ou ' +
+               '"nenhum por enquanto".', mbError, MB_OK);
+        Result := False; Exit;
+      end;
+    end;
+    Porta := Trim(PaginaWhatsappDados.Values[3]);
+    P := StrToIntDef(Porta, 0);
+    if (P < 1024) or (P > 65535) then
+    begin
+      MsgBox('A porta do modulo precisa ser um numero entre 1024 e 65535.',
+             mbError, MB_OK);
+      Result := False; Exit;
+    end;
+    if Porta = PortaEscolhida('') then
+    begin
+      MsgBox('O modulo do WhatsApp nao pode usar a mesma porta do painel (' +
+             Porta + ').' + #13#10#13#10 +
+             'Sao dois programas: o segundo nao sobe, e em silencio.',
+             mbError, MB_OK);
+      Result := False; Exit;
+    end;
+  end;
 end;
 
 { ------------------------------------------------- as respostas, em arquivo }
@@ -532,7 +820,40 @@ begin
     J := J + '  "EscritorioNome": "' + Escapar(Trim(PaginaEscritorio.Values[0])) + '",' + #13#10;
     J := J + '  "EscritorioCnpj": "' + SoDigitos(PaginaEscritorio.Values[1]) + '",' + #13#10;
     J := J + '  "EscritorioEmail": "' + Escapar(Trim(PaginaEscritorio.Values[2])) + '",' + #13#10;
+    J := J + '  "EscritorioTelefone": "' + Escapar(Trim(PaginaEscritorio.Values[3])) + '",' + #13#10;
+    J := J + '  "EscritorioSite": "' + Escapar(Trim(PaginaEscritorio.Values[4])) + '",' + #13#10;
     J := J + '  "PastaBackup": "' + Escapar(Trim(PaginaRede.Values[1])) + '",' + #13#10;
+  end;
+
+  { O comissionamento vai no MESMO arquivo e no MESMO formato plano do resto.
+    Aninhar so esta parte deixaria o configurar.ps1 lendo de dois jeitos. }
+  if VaiComissionar then
+  begin
+    J := J + '  "Comissionar": true,' + #13#10;
+    J := J + '  "EmpresaCnpj": "' + SoDigitos(PaginaEmpresa.Values[0]) + '",' + #13#10;
+    J := J + '  "EmpresaRazaoSocial": "' + Escapar(Trim(PaginaEmpresa.Values[1])) + '",' + #13#10;
+    J := J + '  "EmpresaMunicipio": "' + SoDigitos(PaginaEmpresa.Values[2]) + '",' + #13#10;
+    J := J + '  "EmpresaInscricaoMunicipal": "' + Escapar(Trim(PaginaEmpresa.Values[3])) + '",' + #13#10;
+    J := J + '  "CertificadoArquivo": "' + Escapar(Trim(PaginaCertificado.Values[0])) + '",' + #13#10;
+    J := J + '  "CertificadoSenha": "' + Escapar(PaginaCertSenha.Values[0]) + '",' + #13#10;
+    J := J + '  "ServicoApelido": "' + Escapar(Trim(PaginaServico.Values[0])) + '",' + #13#10;
+    J := J + '  "ServicoCodigoTributacao": "' + SoDigitos(PaginaServico.Values[1]) + '",' + #13#10;
+    J := J + '  "ServicoDescricao": "' + Escapar(Trim(PaginaServico.Values[2])) + '",' + #13#10;
+    J := J + '  "ServicoValorPadrao": "' + Escapar(Trim(PaginaServico.Values[3])) + '",' + #13#10;
+    J := J + '  "WhatsappTransporte": "' + TransporteWa + '",' + #13#10;
+    if TransporteWa <> 'nenhum' then
+    begin
+      J := J + '  "WhatsappNumero": "' + SoDigitos(PaginaWhatsappDados.Values[0]) + '",' + #13#10;
+      J := J + '  "WhatsappPorta": ' + Trim(PaginaWhatsappDados.Values[3]) + ',' + #13#10;
+      J := J + '  "ChatbotSaudacao": "' + Escapar(Trim(PaginaChatbot.Values[0])) + '",' + #13#10;
+      J := J + '  "ChatbotAtendente": "' + Escapar(Trim(PaginaChatbot.Values[1])) + '",' + #13#10;
+      J := J + '  "ChatbotHorario": "' + Escapar(Trim(PaginaChatbot.Values[2])) + '",' + #13#10;
+    end;
+    if TransporteWa = 'meta' then
+    begin
+      J := J + '  "MetaPhoneNumberId": "' + Escapar(Trim(PaginaWhatsappDados.Values[1])) + '",' + #13#10;
+      J := J + '  "MetaToken": "' + Escapar(Trim(PaginaWhatsappDados.Values[2])) + '",' + #13#10;
+    end;
   end;
 
   if (ModoDetectado <> 'atualizacao') and (not BancoLocal) then
@@ -629,10 +950,66 @@ begin
 end;
 
 { O relatorio da atualizacao, na ultima tela. }
+{ O que ficou faltando para o sistema emitir.
+
+  Uma instalacao que termina dizendo so "concluido" quando o certificado nao
+  entrou e o QR nao foi lido esta mentindo por omissao: a pessoa fecha o
+  instalador achando que acabou e so descobre na primeira nota que nao sai —
+  sem ligacao nenhuma com o que aconteceu aqui.
+
+  Le o JSON com Pos/Copy em vez de um analisador de verdade. E feio, e e
+  suficiente: o arquivo e gerado por nos, tem uma forma so, e um erro de leitura
+  aqui pior caso deixa a tela sem a lista — nunca quebra a instalacao. }
+function LerPendencias(Caminho: String): String;
+var
+  Conteudo: AnsiString;
+  S, Item: String;
+  A, B: Integer;
+begin
+  Result := '';
+  if not LoadStringFromFile(Caminho, Conteudo) then Exit;
+  S := String(Conteudo);
+
+  A := Pos('"pendencias"', S);
+  if A = 0 then Exit;
+  S := Copy(S, A, Length(S));
+
+  { Cada item e uma string entre aspas depois do rotulo. }
+  repeat
+    A := Pos('"', Copy(S, 13, Length(S)));
+    if A = 0 then Break;
+    A := A + 12;
+    B := A + 1;
+    while (B <= Length(S)) and (S[B] <> '"') do B := B + 1;
+    if B > Length(S) then Break;
+    Item := Copy(S, A + 1, B - A - 1);
+    if (Item <> '') and (Item <> 'pendencias') and (Item <> 'geradoEm') then
+      Result := Result + '  - ' + Item + #13#10;
+    S := Copy(S, B + 1, Length(S));
+    S := '            ' + S;
+  until False;
+end;
+
 procedure CurPageChanged(CurPageID: Integer);
 var
   Conteudo: AnsiString;
+  Lista: String;
 begin
+  if (CurPageID = wpFinished) and (ModoDetectado = 'nova') and EhServidor then
+  begin
+    Lista := LerPendencias(ExpandConstant('{app}\pendencias.json'));
+    if Lista <> '' then
+      WizardForm.FinishedLabel.Caption :=
+        'O NFS-e Gateway foi instalado.' + #13#10 + #13#10 +
+        'FALTA ISTO para o sistema emitir:' + #13#10 + #13#10 + Lista + #13#10 +
+        'A lista completa esta em pendencias.json, na pasta do gateway.'
+    else
+      WizardForm.FinishedLabel.Caption :=
+        'O NFS-e Gateway esta instalado e pronto para emitir.' + #13#10 + #13#10 +
+        'Abra o painel e faca uma nota em homologacao antes de virar para ' +
+        'producao — a empresa foi cadastrada em homologacao de proposito.';
+  end;
+
   if (CurPageID = wpFinished) and (ModoDetectado = 'atualizacao') then
   begin
     if LoadStringFromFile(ExpandConstant('{app}\configuracao.log'), Conteudo) then

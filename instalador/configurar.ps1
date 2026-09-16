@@ -26,9 +26,31 @@ param(
     [string]$EscritorioNome,
     [string]$EscritorioCnpj,
     [string]$EscritorioEmail,
+    [string]$EscritorioTelefone,
+    [string]$EscritorioSite,
     [string]$PastaBackup,
     [int]$Porta = 3000,
-    [switch]$LiberarFirewall
+    [switch]$LiberarFirewall,
+    # --- comissionamento: o que faz o sistema sair pronto para emitir ---
+    [switch]$Comissionar,
+    [string]$EmpresaCnpj,
+    [string]$EmpresaRazaoSocial,
+    [string]$EmpresaMunicipio,
+    [string]$EmpresaInscricaoMunicipal,
+    [string]$CertificadoArquivo,
+    [string]$CertificadoSenha,
+    [string]$ServicoApelido,
+    [string]$ServicoCodigoTributacao,
+    [string]$ServicoDescricao,
+    [string]$ServicoValorPadrao,
+    [ValidateSet('meta','local','nenhum')][string]$WhatsappTransporte = 'nenhum',
+    [string]$WhatsappNumero,
+    [int]$WhatsappPorta = 3200,
+    [string]$MetaPhoneNumberId,
+    [string]$MetaToken,
+    [string]$ChatbotSaudacao,
+    [string]$ChatbotAtendente,
+    [string]$ChatbotHorario
 )
 
 $ErrorActionPreference = 'Stop'
@@ -56,15 +78,29 @@ if (-not [string]::IsNullOrWhiteSpace($Respostas) -and (Test-Path $Respostas)) {
     $r = Get-Content $Respostas -Raw -Encoding utf8 | ConvertFrom-Json
     foreach ($campo in @('BancoUrl','NomeUsuario','EmailUsuario','SenhaUsuario',
                          'ArquivoMigracao','SenhaMigracao','EscritorioNome',
-                         'EscritorioCnpj','EscritorioEmail','PastaBackup')) {
+                         'EscritorioCnpj','EscritorioEmail','EscritorioTelefone',
+                         'EscritorioSite','PastaBackup',
+                         'EmpresaCnpj','EmpresaRazaoSocial','EmpresaMunicipio',
+                         'EmpresaInscricaoMunicipal','CertificadoArquivo',
+                         'CertificadoSenha','ServicoApelido','ServicoCodigoTributacao',
+                         'ServicoDescricao','ServicoValorPadrao',
+                         'WhatsappTransporte','WhatsappNumero',
+                         'MetaPhoneNumberId','MetaToken',
+                         'ChatbotSaudacao','ChatbotAtendente','ChatbotHorario')) {
         if ($r.PSObject.Properties.Name -contains $campo -and $r.$campo) {
             Set-Variable -Name $campo -Value $r.$campo
         }
     }
     if ($r.PSObject.Properties.Name -contains 'Porta' -and $r.Porta) { $Porta = [int]$r.Porta }
+    if ($r.PSObject.Properties.Name -contains 'WhatsappPorta' -and $r.WhatsappPorta) {
+        $WhatsappPorta = [int]$r.WhatsappPorta
+    }
     if ($r.PSObject.Properties.Name -contains 'Modo' -and $r.Modo) { $Modo = $r.Modo }
     if ($r.PSObject.Properties.Name -contains 'LiberarFirewall') {
         $LiberarFirewall = [bool]$r.LiberarFirewall
+    }
+    if ($r.PSObject.Properties.Name -contains 'Comissionar') {
+        $Comissionar = [bool]$r.Comissionar
     }
 
     # Apagado AQUI, e nao num `finally` no fim: os valores ja estao em memoria,
@@ -83,6 +119,39 @@ if (-not [string]::IsNullOrWhiteSpace($Respostas) -and (Test-Path $Respostas)) {
 Registrar "=== Configurando o NFS-e Gateway ==="
 Registrar "pasta: $Raiz"
 Registrar "modo: $Modo"
+
+# ------------------------------------------- 0a. as portas estao livres?
+#
+# Quatro processos com vidas separadas: gateway, repassador, modulo do WhatsApp
+# e monitor. Quando duas portas colidem, o segundo programa nao sobe -- e nao
+# sobe em silencio: o icone abre e fecha, e nada liga isso a uma porta ocupada.
+# Descobre-se por eliminacao, dias depois.
+#
+# So no modo 'nova'. Numa atualizacao a porta do gateway esta ocupada PELO
+# PROPRIO gateway, que ainda vai ser parado: acusar isso seria assustar sem
+# motivo.
+#
+# Aviso, nunca falha. Escolher outra porta por conta propria deixaria os atalhos
+# dos terminais apontando para o lugar errado, sem ninguem saber por que.
+if ($Modo -eq 'nova') {
+    $conferir = Join-Path $Raiz 'scripts\conferir-portas.js'
+    if (Test-Path $conferir) {
+        $lista = @($Porta)
+        if ($Comissionar -and $WhatsappTransporte -ne 'nenhum') { $lista += $WhatsappPorta }
+        Push-Location $Raiz
+        try {
+            $saida = & $node scripts/conferir-portas.js @lista 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0) {
+                Registrar "AVISO: ha porta ocupada nesta maquina:"
+                Registrar $saida.Trim()
+            } else {
+                Registrar "Portas livres: $($lista -join ', ')"
+            }
+        } catch {
+            Registrar "AVISO: nao consegui conferir as portas: $_"
+        } finally { Pop-Location }
+    }
+}
 
 # ------------------------------- 0b. copia de seguranca ANTES de qualquer coisa
 #
@@ -232,9 +301,11 @@ if ($Modo -eq 'nova' -and -not [string]::IsNullOrWhiteSpace($EscritorioNome)) {
     try {
         Registrar "Gravando os dados do escritorio..."
         $env:NFSE_ESCRITORIO = @{
-            nome  = $EscritorioNome
-            cnpj  = $EscritorioCnpj
-            email = $EscritorioEmail
+            nome     = $EscritorioNome
+            cnpj     = $EscritorioCnpj
+            email    = $EscritorioEmail
+            telefone = $EscritorioTelefone
+            site     = $EscritorioSite
             pastaBackup = $PastaBackup
         } | ConvertTo-Json -Compress
         $saida = & $node scripts/configurar-escritorio.js 2>&1 | Out-String
@@ -247,6 +318,88 @@ if ($Modo -eq 'nova' -and -not [string]::IsNullOrWhiteSpace($EscritorioNome)) {
             Registrar "Escritorio cadastrado"
         }
     } finally { Pop-Location }
+}
+
+# ------------------------- 5b. comissionamento: sair pronto para emitir
+#
+# Instalado nao e o mesmo que pronto. Sem uma empresa e um servico, o painel
+# abre e nao emite; sem numero autorizado, o WhatsApp nao recebe pedido. Os tres
+# eram tarefa de "depois, no painel", e depois costuma ser nunca.
+#
+# As pendencias sao acumuladas e mostradas no fim, nunca interrompem: um CNPJ
+# digitado errado nao pode custar a instalacao inteira.
+$pendencias = @()
+
+if ($Comissionar -and $Modo -eq 'nova' -and -not [string]::IsNullOrWhiteSpace($EmpresaCnpj)) {
+    Push-Location $Raiz
+    try {
+        Registrar "Cadastrando a primeira empresa e o primeiro servico..."
+        $env:NFSE_PRIMEIRA_EMPRESA = @{
+            cnpj                = $EmpresaCnpj
+            razaoSocial         = $EmpresaRazaoSocial
+            municipio           = $EmpresaMunicipio
+            inscricaoMunicipal  = $EmpresaInscricaoMunicipal
+            certificadoArquivo  = $CertificadoArquivo
+            certificadoSenha    = $CertificadoSenha
+            apelido             = $ServicoApelido
+            codigoTributacao    = $ServicoCodigoTributacao
+            descricao           = $ServicoDescricao
+            valorPadrao         = $ServicoValorPadrao
+            whatsappNumero      = $WhatsappNumero
+        } | ConvertTo-Json -Compress
+
+        $saida = & $node scripts/primeira-empresa.js 2>&1 | Out-String
+        $env:NFSE_PRIMEIRA_EMPRESA = $null
+
+        if ($LASTEXITCODE -ne 0) {
+            Registrar "AVISO: o cadastro inicial nao terminou: $saida"
+            $pendencias += "A primeira empresa nao foi cadastrada. Faca no painel, em Empresas."
+        } else {
+            # O script devolve JSON com o que fez e o que ficou pendente.
+            try {
+                $r = $saida | ConvertFrom-Json
+                foreach ($f in $r.feito) { Registrar "  $f" }
+                foreach ($p in $r.pendencias) {
+                    Registrar "  PENDENTE - $($p.item): $($p.motivo)"
+                    $pendencias += "$($p.item): $($p.motivo)"
+                }
+            } catch {
+                Registrar "Cadastro inicial concluido: $saida"
+            }
+        }
+    } finally {
+        $env:NFSE_PRIMEIRA_EMPRESA = $null
+        Pop-Location
+    }
+}
+
+# --------------------------------------------- 5c. WhatsApp e o chatbot
+
+if ($Comissionar -and $Modo -eq 'nova' -and $WhatsappTransporte -ne 'nenhum') {
+    $wa = Join-Path $Raiz 'whatsapp.ps1'
+    if (Test-Path $wa) {
+        Registrar "Preparando o WhatsApp ($WhatsappTransporte)..."
+        # A senha (token da Meta) vai por variavel de ambiente do processo, nao
+        # por parametro: mesmo motivo do arquivo de respostas.
+        $env:NFSE_META_TOKEN = $MetaToken
+        $saida = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $wa `
+            -Raiz $Raiz -Transporte $WhatsappTransporte -Numero $WhatsappNumero `
+            -Porta $WhatsappPorta -PhoneNumberId $MetaPhoneNumberId `
+            -Saudacao $ChatbotSaudacao -Atendente $ChatbotAtendente `
+            -Horario $ChatbotHorario 2>&1 | Out-String
+        $env:NFSE_META_TOKEN = $null
+        Registrar ("WhatsApp: " + $saida.Trim())
+        if ($LASTEXITCODE -ne 0) {
+            $pendencias += "O WhatsApp nao ficou pronto. Veja configuracao.log e o painel, em WhatsApp."
+        } elseif ($WhatsappTransporte -eq 'local') {
+            $pendencias += "Leia o QR code para conectar o numero: abra o painel e clique no icone do WhatsApp."
+        } elseif ($WhatsappTransporte -eq 'meta') {
+            $pendencias += "Cadastre o endereco do webhook no painel da Meta. O endereco esta no painel, em WhatsApp."
+        }
+    } else {
+        Registrar "AVISO: whatsapp.ps1 nao encontrado; WhatsApp nao configurado."
+        $pendencias += "O WhatsApp nao foi configurado (script ausente)."
+    }
 }
 
 # ------------------------------------------------------- 6. firewall
@@ -274,6 +427,29 @@ if ($Modo -eq 'atualizacao') {
         if ($LASTEXITCODE -eq 0) { Registrar "Relatorio da atualizacao em ultima-atualizacao.json" }
         else { Registrar "AVISO: nao consegui montar o relatorio: $saida" }
     } finally { Pop-Location }
+}
+
+# --------------------------------------------- 8. o que ficou pendente
+#
+# A ultima tela do instalador le este arquivo. Uma instalacao que termina
+# dizendo so "concluido" quando o certificado nao entrou e o QR nao foi lido
+# esta mentindo por omissao — e a pessoa so descobre na primeira nota que nao
+# sai, sem ligacao nenhuma com o que aconteceu aqui.
+if ($Modo -eq 'nova') {
+    $destino = Join-Path $Raiz 'pendencias.json'
+    try {
+        @{
+            geradoEm   = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+            pendencias = @($pendencias)
+        } | ConvertTo-Json -Depth 4 | Set-Content -Path $destino -Encoding utf8
+        if ($pendencias.Count -gt 0) {
+            Registrar "$($pendencias.Count) pendencia(s) registrada(s) em pendencias.json"
+        } else {
+            Registrar "Nenhuma pendencia: o sistema esta pronto para emitir."
+        }
+    } catch {
+        Registrar "AVISO: nao consegui gravar pendencias.json: $_"
+    }
 }
 
 Registrar "=== Concluido ==="
