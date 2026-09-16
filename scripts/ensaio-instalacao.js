@@ -265,9 +265,19 @@ async function conferirConversa() {
      menu se repete — que foi exatamente o que aconteceu na primeira versão
      deste ensaio, e parecia defeito do produto. É o mesmo encadeamento que o
      `servidor.js` faz ao gravar e devolver a conversa. */
+  /* A consulta pública entra por injeção, e aqui ela é falsa de propósito: o
+     ensaio precisa rodar numa máquina sem internet e dar sempre o mesmo
+     resultado. Depender da Receita faria o ensaio falhar por motivo alheio ao
+     que ele mede. */
+  const buscaFalsa = async doc => ({
+    documento: doc, nome: 'CLIENTE DA BASE PUBLICA LTDA', situacao: 'ATIVA',
+    logradouro: 'RUA TESTE', numero: '100', bairro: 'CENTRO',
+    cep: '80010000', uf: 'PR', municipio: 'CURITIBA', codigoMunicipio: '4106902'
+  });
+
   const diga = (texto, anterior) => conversa.responder({
     texto, telefone: tel, vinculos, conversa: anterior, memoria: m,
-    buscarCnpj: async () => null
+    buscarCnpj: buscaFalsa
   });
 
   const seguir = s => (s.estado
@@ -288,14 +298,28 @@ async function conferirConversa() {
   conferir(humano.resposta.includes('3333'),
     'e o telefone de verdade', 'era aqui que saía "procure pelos canais de sempre"');
 
-  /* E o caminho que só existe com serviço cadastrado: "outra nota" é a opção
-     que pergunta qual serviço, e é ela que morre com `servicos: 0`. */
-  const outra = await diga('1', seguir(oi));
-  conferir(outra.resposta.includes(RESPOSTAS.empresa.apelido),
-    'a conversa oferece o serviço cadastrado',
-    'com servicos: 0 aqui sairia "fale com o escritório" e a conversa encerraria');
+  /* O caminho que leva a uma nota. Sem pedido anterior o menu oferece uma
+     opção só — "Emitir uma nota" — porque "Outra nota" herdaria o cliente de
+     um pedido que não existe, e terminaria em "faltam dados" três mensagens
+     depois. */
+  const doc = await diga('1', seguir(oi));
+  conferir(/CNPJ|CPF|documento/i.test(doc.resposta),
+    'a conversa pede o documento do cliente');
 
-  const valor = await diga('1', seguir(outra));
+  const achou = await diga('11444777000161', seguir(doc));
+  conferir(achou.resposta.length > 0, 'e aceita um CNPJ');
+
+  /* Pode haver uma confirmação de razão social antes do serviço. */
+  let passo = achou;
+  if (/Responda *1*|est(a|á) certo/i.test(passo.resposta)) {
+    passo = await diga('1', seguir(passo));
+  }
+  conferir(passo.resposta.includes(RESPOSTAS.empresa.apelido) ||
+           /servi(c|ç)o/i.test(passo.resposta),
+    'e chega ao serviço cadastrado',
+    'com servicos: 0 aqui sairia "fale com o escritório" e encerraria');
+
+  const valor = await diga('1', seguir(passo));
   conferir(/valor/i.test(valor.resposta), 'e avança para o valor da nota');
 }
 

@@ -49,10 +49,19 @@ async function configuracao() {
   const r = await db.query(
     `SELECT relay_local, relay_porta, relay_url_publica, chave_cifrada,
             wa_app_secret_cifrado, wa_verify_token_cifrado,
-            wa_token_cifrado, wa_phone_number_id,
+            wa_token_cifrado, wa_phone_number_id, wa_transporte,
             tunel_ativo, tunel_token_cifrado, tunel_binario
        FROM config_nuvem WHERE id = TRUE`);
-  return r.rows[0] || {};
+  const c = r.rows[0] || {};
+
+  /* A porta do módulo mora em `whatsapp_local`, não aqui: ela é do programa
+     separado, e é o escritório que a escolhe na instalação. O repassador
+     precisa dela para saber onde entregar a resposta. */
+  const m = await db.query('SELECT porta FROM whatsapp_local WHERE id = 1')
+    .catch(() => ({ rows: [] }));
+  c.wa_modulo_porta = m.rows.length ? m.rows[0].porta : null;
+
+  return c;
 }
 
 function abrir(campo) {
@@ -140,9 +149,23 @@ function ambienteDoRelay(c) {
   const appSecret = abrir(c.wa_app_secret_cifrado);
   const verify = abrir(c.wa_verify_token_cifrado);
 
+  /* A chave da ponte é sempre necessária: é ela que autentica o módulo, o
+     gateway e a réplica do cadastro contra o repassador. */
   if (!chave) faltando.push('a chave da ponte');
-  if (!appSecret) faltando.push('o App Secret da Meta');
-  if (!verify) faltando.push('o token de verificação do webhook');
+
+  /* App Secret e verify token servem para UMA coisa: provar que um POST veio
+     mesmo da Meta, e responder ao desafio que ela faz ao cadastrar o webhook.
+     No transporte por sessão própria não existe webhook nenhum — a mensagem
+     chega do módulo desta máquina, pelo /wa/entrada, autenticada pela chave
+     acima.
+     Exigi-los sempre travava o caminho inteiro: quem escolhia sessão própria
+     via o repassador recusar-se a subir pedindo credenciais de um serviço que
+     nunca vai usar, sem nada na tela ligando uma coisa à outra. */
+  if (c.wa_transporte !== 'local') {
+    if (!appSecret) faltando.push('o App Secret da Meta');
+    if (!verify) faltando.push('o token de verificação do webhook');
+  }
+
   if (faltando.length) {
     throw Object.assign(new Error('Falta configurar ' + faltando.join(', ') + '.'),
       { faltando });
@@ -160,6 +183,20 @@ function ambienteDoRelay(c) {
     META_TOKEN: abrir(c.wa_token_cifrado) || '',
     META_PHONE_NUMBER_ID: c.wa_phone_number_id || '',
     CHAVE_GATEWAY: chave,
+
+    /* POR ONDE A RESPOSTA SAI.
+     *
+     * Faltava, e sem isto o transporte por sessão própria nunca funcionou
+     * quando o repassador é subido pelo gateway — que é o desenho de produção.
+     * `transporte.js` lê `WA_TRANSPORTE` e, sem a variável, assume 'meta';
+     * então o escritório escolhia sessão própria na tela, o módulo conectava,
+     * a conversa rodava certa, e a resposta morria em "sem número da Meta
+     * configurado". Tudo aparentemente de pé, e o cliente sem resposta.
+     *
+     * A porta vai junto porque é o escritório quem a escolhe, na instalação. */
+    WA_TRANSPORTE: c.wa_transporte === 'local' ? 'local' : 'meta',
+    WA_MODULO_URL: 'http://127.0.0.1:' + (c.wa_modulo_porta || 3200),
+
     ARQUIVO_DADOS: path.join(RAIZ, 'dados-relay', 'relay.json')
   };
 }

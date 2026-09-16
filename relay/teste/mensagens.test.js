@@ -147,3 +147,53 @@ test('o texto configurável não decide nada da conversa', async () => {
   assert.equal(typeof mensagens.apresentacao(memoriaVazia), 'string');
   assert.equal(typeof mensagens.falarComGente(memoriaVazia, t => t), 'string');
 });
+
+/* ------------------------------------------- a primeira mensagem qualquer */
+
+test('primeira mensagem que não é saudação não quebra a conversa', async () => {
+  /* `inicio` é o estado padrão de quem não tem conversa aberta, e aí nenhuma
+     empresa foi escolhida ainda. Quem escrevia "1", "quero uma nota" ou "bom
+     dia pessoal" como PRIMEIRA mensagem caía em `empresa.ultimoPedido` com
+     empresa nula. O repassador engolia a exceção e o cliente não recebia
+     resposta nenhuma — sem erro para ele, sem pista para quem investigasse.
+     Encontrado com um número real conectado, não em teste. */
+  const m = memoriaCom({ nome: 'Contabilidade Recalcatti', telefone: '4133334444' },
+                       { atendente: 'Juliana' });
+
+  for (const primeira of ['1', 'quero uma nota', 'bom dia pessoal', '...', '2']) {
+    const s = await responder(m, primeira);
+    assert.ok(s && typeof s.resposta === 'string' && s.resposta.length > 0,
+      '"' + primeira + '" como primeira mensagem precisa ter resposta');
+    assert.match(s.resposta, /Contabilidade Recalcatti/,
+      '"' + primeira + '" deveria começar a conversa, não morrer');
+  }
+});
+
+test('sem pedido anterior, o menu não oferece o que não dá para fazer', async () => {
+  /* "Outra nota" significa MESMO cliente de sempre, serviço ou valor
+     diferentes — e herda o cliente do último pedido. Sem pedido anterior não há
+     de onde herdar: a conversa escolhia serviço, perguntava o valor e só então
+     desistia com "faltam dados", depois de gastar três mensagens da pessoa.
+
+     E era o caminho garantido de TODA instalação nova: na primeira nota que um
+     cliente pede, nunca existe pedido anterior. Encontrado com um número real
+     conectado, seguindo o menu como um cliente seguiria. */
+  const m = memoriaCom({ nome: 'Contabilidade Recalcatti' });
+  const s = await responder(m, 'oi');
+
+  assert.ok(!/Outra nota/.test(s.resposta),
+    'sem pedido anterior, "Outra nota" não pode ser oferecida');
+  assert.match(s.resposta, /Emitir uma nota/,
+    'e o caminho que funciona precisa estar na lista');
+
+  /* E seguir por ele chega ao documento do cliente, que é onde a nota começa
+     de verdade. */
+  const seguir = { estado: s.estado, dados: s.dados, em: new Date().toISOString() };
+  const proximo = await conversa.responder({
+    texto: '1', telefone: '5541999998888',
+    vinculos: m.empresasDe('5541999998888'),
+    conversa: seguir, memoria: m, buscarCnpj: async () => null
+  });
+  assert.match(proximo.resposta, /CNPJ|CPF|documento/i,
+    'o caminho ofertado precisa levar a algum lugar');
+});

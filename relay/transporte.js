@@ -23,9 +23,30 @@ const meta = require('./meta');
 
 const QUAL = (process.env.WA_TRANSPORTE || 'meta').toLowerCase();
 const MODULO_URL = process.env.WA_MODULO_URL || 'http://127.0.0.1:3200';
-const MODULO_TOKEN = process.env.WA_MODULO_TOKEN || '';
 
 function ehLocal() { return QUAL === 'local'; }
+
+/* O token do módulo, lido NA HORA e não guardado em memória.
+ *
+ * Ele é sorteado a cada subida do módulo e gravado em `wa/token.txt`. Lido uma
+ * vez na partida, o repassador ficaria com um token velho assim que o módulo
+ * reiniciasse — e reiniciar é rotina, porque é o que a pessoa faz quando o
+ * WhatsApp trava. O resultado seria um 403 para cada resposta, sem nenhuma
+ * relação visível com o reinício.
+ *
+ * O arquivo só existe quando o módulo roda NESTA máquina, que é o único caso em
+ * que o transporte local faz sentido. Na nuvem ele não existe e a variável de
+ * ambiente é a reserva. */
+function tokenDoModulo() {
+  if (process.env.WA_MODULO_TOKEN) return process.env.WA_MODULO_TOKEN;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    return fs.readFileSync(path.join(__dirname, '..', 'wa', 'token.txt'), 'utf8').trim();
+  } catch (_) {
+    return '';
+  }
+}
 
 /* Falar com o módulo local. Timeout curto de propósito: a resposta ao cliente
    é importante, mas não vale segurar o processo se o módulo caiu — a próxima
@@ -36,7 +57,7 @@ async function chamarModulo(caminho, corpo) {
   try {
     const r = await fetch(MODULO_URL + caminho, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-WA-Token': MODULO_TOKEN },
+      headers: { 'Content-Type': 'application/json', 'X-WA-Token': tokenDoModulo() },
       body: JSON.stringify(corpo),
       signal: controle.signal
     });
@@ -122,7 +143,7 @@ async function situacao() {
   }
   try {
     const r = await fetch(MODULO_URL + '/situacao', {
-      headers: { 'X-WA-Token': MODULO_TOKEN }
+      headers: { 'X-WA-Token': tokenDoModulo() }
     });
     if (!r.ok) throw new Error('módulo respondeu ' + r.status);
     const e = await r.json();

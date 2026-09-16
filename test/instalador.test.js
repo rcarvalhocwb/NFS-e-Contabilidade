@@ -364,3 +364,60 @@ test('config_nuvem é consultada pelo tipo certo de chave', () => {
     }
   }
 });
+
+/* ------------------------------------- o repassador e o transporte local */
+
+const REPASSADOR = ler('src', 'services', 'repassadorLocal.js');
+
+test('o repassador sobe sem credenciais da Meta quando o transporte é local', () => {
+  /* App Secret e verify token provam que um POST veio da Meta e respondem ao
+     desafio do webhook. Na sessão própria não existe webhook nenhum: a mensagem
+     chega do módulo desta máquina, pelo /wa/entrada, autenticada pela chave da
+     ponte. Exigi-los sempre travava o caminho inteiro — quem escolhia sessão
+     própria via o repassador recusar-se a subir pedindo credenciais de um
+     serviço que nunca ia usar, sem nada na tela ligando uma coisa à outra. */
+  const i = REPASSADOR.indexOf('function ambienteDoRelay');
+  assert.ok(i > 0);
+  const corpo = REPASSADOR.slice(i, REPASSADOR.indexOf('\n/* ---', i));
+
+  assert.match(corpo, /if \(!chave\) faltando\.push/,
+    'a chave da ponte é sempre necessária: é ela que autentica o módulo');
+  assert.match(corpo, /c\.wa_transporte !== 'local'/,
+    'App Secret e verify token só podem ser exigidos no transporte da Meta');
+
+  /* E o transporte precisa estar na consulta, senão a condição acima é sempre
+     verdadeira e nada muda — que foi como este defeito quase escapou de novo. */
+  const cfg = REPASSADOR.slice(REPASSADOR.indexOf('async function configuracao'),
+                               REPASSADOR.indexOf('function abrir'));
+  assert.match(cfg, /wa_transporte/,
+    'configuracao() precisa trazer wa_transporte, senão a condição não decide nada');
+});
+
+test('o repassador é avisado por onde a resposta sai', () => {
+  /* `relay/transporte.js` lê WA_TRANSPORTE e, sem a variável, assume 'meta'.
+     Faltava passá-la: o escritório escolhia sessão própria na tela, o módulo
+     conectava, a conversa rodava certa — e a resposta morria em "sem número da
+     Meta configurado". Tudo aparentemente de pé, e o cliente sem resposta.
+     Encontrado com um número real conectado. */
+  const i = REPASSADOR.indexOf('function ambienteDoRelay');
+  const corpo = REPASSADOR.slice(i, REPASSADOR.indexOf('\n/* ---', i));
+  assert.match(corpo, /WA_TRANSPORTE:/, 'o repassador precisa saber o transporte');
+  assert.match(corpo, /WA_MODULO_URL:/, 'e onde o módulo atende');
+
+  const t = ler('relay', 'transporte.js');
+  assert.match(t, /process\.env\.WA_TRANSPORTE/,
+    'e é essa variável que o transporte lê');
+});
+
+test('o token do módulo é lido na hora, não guardado', () => {
+  /* Ele é sorteado a cada subida do módulo. Lido uma vez na partida, o
+     repassador ficaria com um token velho assim que o módulo reiniciasse — e
+     reiniciar é o que a pessoa faz quando o WhatsApp trava. Cada resposta viraria
+     403, sem relação visível com o reinício. */
+  const t = ler('relay', 'transporte.js');
+  assert.match(t, /function tokenDoModulo/);
+  assert.ok(!/const MODULO_TOKEN\s*=/.test(t),
+    'token em constante de módulo envelhece junto com o processo');
+  assert.match(t, /'X-WA-Token': tokenDoModulo\(\)/,
+    'as chamadas precisam pedir o token no momento de usar');
+});

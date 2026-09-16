@@ -125,7 +125,17 @@ async function responder({ texto, telefone, vinculos, conversa, memoria, buscarC
 
   switch (estado) {
     case 'escolhendo_empresa': return doEmpresa(t, vinculos, telefone, memoria, dados);
-    case 'inicio':          return doInicio(t, empresa, contato, memoria, dados);
+    /* `inicio` é o estado PADRÃO de quem não tem conversa aberta, e nesse caso
+       nenhuma empresa foi escolhida ainda — `empresa` é null. Quem escrevesse
+       qualquer coisa que não fosse saudação como primeira mensagem ("1",
+       "quero uma nota", "bom dia pessoal") caía aqui e a conversa quebrava em
+       `empresa.ultimoPedido`. O repassador engolia a exceção, então o cliente
+       simplesmente não recebia resposta: sem erro para ele, sem pista para
+       quem fosse investigar. Sem empresa escolhida, a conversa ainda não
+       começou — então começa. */
+    case 'inicio':
+      return empresa ? doInicio(t, empresa, contato, memoria, dados)
+                     : escolherEmpresa(vinculos, telefone, memoria);
     case 'documento_novo': return doDocumento(t, empresa, memoria, dados, buscarCnpj);
     case 'conferindo_cliente': return doConferirCliente(t, empresa, memoria, dados);
     case 'nome_novo':       return doNomeNovo(t, empresa, memoria, dados);
@@ -229,11 +239,21 @@ function opcoesDoInicio(empresa) {
     opcoes.push({ rotulo: 'A nota de sempre — ' + (anterior.tomador.nome || 'mesmo cliente') +
                           ', ' + dinheiro(anterior.valor), chave: 'sempre',
                   sinonimos: ['sempre', 'mesma', 'de sempre', 'igual'] });
+    /* "Outra nota" quer dizer: MESMO cliente de sempre, serviço ou valor
+       diferentes. Ela só faz sentido havendo um pedido anterior de onde herdar
+       o cliente — sem ele, a conversa escolhia serviço, perguntava o valor e
+       então desistia com "faltam dados para montar esta nota", depois de ter
+       tomado o tempo da pessoa por três mensagens.
+       E era o caminho garantido de toda instalação nova: na primeira nota que
+       um cliente pedisse, nunca há pedido anterior. */
+    opcoes.push({ rotulo: 'Outra nota', chave: 'outra',
+                  sinonimos: ['outra', 'nova', 'diferente'] });
   }
-  opcoes.push({ rotulo: 'Outra nota', chave: 'outra',
-                sinonimos: ['outra', 'nova', 'diferente'] });
-  opcoes.push({ rotulo: 'Nota para um cliente novo', chave: 'novo',
-                sinonimos: ['novo', 'cliente novo', 'outro cliente'] });
+  opcoes.push({
+    rotulo: anterior ? 'Nota para um cliente novo' : 'Emitir uma nota',
+    chave: 'novo',
+    sinonimos: ['novo', 'cliente novo', 'outro cliente', 'nota', 'emitir', 'outra', 'nova']
+  });
   return opcoes;
 }
 
