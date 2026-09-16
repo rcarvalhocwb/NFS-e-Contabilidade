@@ -5,6 +5,7 @@ const { montarDps, gerarIdDps } = require('../nfse/dpsBuilder');
 const { conferirEmissao, conferirCancelamento } = require('../nfse/regrasDps');
 const { aplicarPadroes } = require('../nfse/padroesEmpresa');
 const { herdarDaOriginal } = require('../nfse/heranca');
+const { lerDps } = require('../nfse/lerDps');
 const emissorMunicipal = require('../nfse/emissorMunicipal');
 const { montarPedidoCancelamento } = require('../nfse/eventoBuilder');
 const { assinarXml } = require('../nfse/assinador');
@@ -46,6 +47,68 @@ async function reservarNumeracao(empresaId, ambiente) {
     [empresaId, ambiente]
   );
   return { serie: r.rows[0].serie, numero: Number(r.rows[0].numero) };
+}
+
+/* Uma nota muito parecida, emitida há pouco.
+ *
+ * A idempotência por `referencia` pega o reenvio do MESMO pedido — dois POSTs
+ * da mesma requisição, o webhook repetido, o clique duplo. Não pega o caso mais
+ * comum de todos: a pessoa achou que não tinha ido e pediu de novo, com
+ * referência nova. Para o sistema são dois pedidos legítimos; para a empresa
+ * são duas notas fiscais do mesmo serviço, dois números que não se
+ * reaproveitam, e um cancelamento para desfazer — que nem todo município
+ * aceita.
+ *
+ * O recorte é estreito de propósito: mesma empresa, mesmo tomador, mesmo valor,
+ * poucos minutos. Alargar isso (só o valor, ou uma janela de horas) começaria a
+ * barrar emissão legítima — e quem emite dez notas iguais por dia para clientes
+ * diferentes tem toda razão de fazê-lo.
+ *
+ * NÃO impede. Devolve o que achou, para quem chamou decidir com a pessoa na
+ * frente. Barrar em silêncio seria trocar um problema visível por um invisível.
+ */
+const JANELA_DUPLICATA_MIN = 10;
+
+async function procurarSemelhante(empresaId, dados) {
+  const doc = String(
+    (dados.tomador && (dados.tomador.cnpj || dados.tomador.cpf || dados.tomador.documento)) || ''
+  ).replace(/\D/g, '');
+  const valor = Number(dados.valores && dados.valores.valorServico);
+  if (!doc || !isFinite(valor) || valor <= 0) return null;
+
+  /* Canceladas e rejeitadas não contam: reemitir depois de uma recusa é
+     justamente o que se espera que a pessoa faça.
+
+     A janela é curta, então são poucas linhas — ler a DPS de cada uma é exato e
+     barato. Filtrar por texto dentro do XML no banco seria mais rápido e
+     responderia a pergunta errada: "esse número aparece em algum lugar do
+     documento" não é o mesmo que "o tomador é este". */
+  const r = await db.query(
+    `SELECT id, serie, numero, status, chave_acesso, criado_em, dps_xml
+       FROM notas
+      WHERE empresa_id = $1
+        AND status NOT IN ('cancelada', 'rejeitada', 'erro', 'substituida')
+        AND criado_em > now() - ($2 || ' minutes')::interval
+        AND dps_xml IS NOT NULL
+      ORDER BY id DESC LIMIT 20`,
+    [empresaId, String(JANELA_DUPLICATA_MIN)]);
+
+  for (const nota of r.rows) {
+    let lida;
+    try { lida = lerDps(nota.dps_xml); } catch (_) { continue; }
+    const docDela = String((lida.tomador && lida.tomador.documento) || '').replace(/\D/g, '');
+    const valorDela = Number(lida.valores && lida.valores.valorServico);
+    /* Centavos em ponto flutuante: comparar por igualdade erraria em 1/3 dos
+       valores quebrados. Meio centavo de tolerância resolve. */
+    if (docDela === doc && Math.abs(valorDela - valor) < 0.005) {
+      return {
+        notaId: nota.id, serie: nota.serie, numero: Number(nota.numero),
+        status: nota.status, chaveAcesso: nota.chave_acesso || null,
+        emitidaEm: nota.criado_em, valor, minutos: JANELA_DUPLICATA_MIN
+      };
+    }
+  }
+  return null;
 }
 
 /* Idempotência: se a empresa já emitiu com esta referência, devolve a nota
@@ -119,6 +182,21 @@ async function emitir(cnpjEmpresa, dadosRecebidos, contexto = {}) {
       idempotente: true,
       retornoSefin: jaExiste.mensagens
     };
+  }
+
+  /* E antes de reservar número: já não emitimos isto agora há pouco?
+   *
+   * Não barra — informa, e para. Quem chamou mostra o que foi achado e volta
+   * com `confirmaDuplicata` se a pessoa disser que é outra nota mesmo. Barrar
+   * em silêncio trocaria uma nota duplicada (visível, corrigível) por uma nota
+   * que não saiu sem ninguém saber por quê. */
+  if (!contexto.confirmaDuplicata) {
+    const semelhante = await procurarSemelhante(empresa.id, dados);
+    if (semelhante) {
+      throw Object.assign(
+        new Error('Já existe uma nota igual a esta emitida há poucos minutos.'),
+        { status: 409, codigo: 'possivel_duplicata', semelhante });
+    }
   }
 
   /* Para onde esta nota vai, e se pode ir.

@@ -64,12 +64,27 @@ router.post('/', async (req, res, next) => {
     const resultado = await emitir(b.cnpjEmpresa, b, {
       // Quem emitiu: fica registrado só quando foi uma pessoa. Emissão por
       // integração responde pelo token da empresa, não por um usuário.
-      usuarioId: req.auth.tipo === 'usuario' ? req.auth.usuarioId : null
+      usuarioId: req.auth.tipo === 'usuario' ? req.auth.usuarioId : null,
+      /* A pessoa viu a nota parecida e disse que é outra mesmo. Só ela pode
+         dizer isso — o sistema não tem como saber se dois serviços iguais no
+         mesmo dia para o mesmo cliente são um engano ou a rotina da casa. */
+      confirmaDuplicata: b.confirmaDuplicata === true
     });
     // 200 quando a referência já existia (nada foi criado agora);
     // 202 quando a nota entrou na fila e será transmitida pelo worker.
     res.status(resultado.idempotente ? 200 : 202).json(resultado);
-  } catch (e) { next(e); }
+  } catch (e) {
+    /* Possível duplicata não é erro de servidor: é uma pergunta.
+       Devolve O QUE FOI ACHADO, para a tela poder mostrar a nota anterior em
+       vez de dizer "409" e deixar a pessoa adivinhando. */
+    if (e.codigo === 'possivel_duplicata') {
+      return res.status(409).json({
+        erro: e.message, codigo: e.codigo, semelhante: e.semelhante,
+        comoSeguir: 'Reenvie com "confirmaDuplicata": true se for outra nota mesmo.'
+      });
+    }
+    next(e);
+  }
 });
 
 /* Listar notas locais (filtros: cnpjEmpresa, status, limite) */
