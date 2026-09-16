@@ -209,6 +209,19 @@ async function conferirBanco() {
   conferir(bot.saudacao === RESPOSTAS.chatbot.saudacao, 'a saudação escolhida ficou gravada');
   conferir(bot.atendente === RESPOSTAS.chatbot.atendente, 'o nome do atendente ficou gravado');
 
+  /* Por onde a mensagem sai, conferido pelo SERVIÇO e não pela coluna.
+     Ler a coluna direto daqui provaria só que o UPDATE rodou. Quem responde ao
+     painel é `situacao()`, e era ela que mentia: a consulta usava `id = 1` numa
+     coluna boolean, o erro era engolido e o padrão 'meta' saía como se fosse
+     resposta. O painel jurava Meta com a sessão própria escolhida. */
+  const whats = require(path.join(RAIZ, 'src', 'services', 'whatsappLocal'));
+  const s = await whats.situacao();
+  conferir(s.transporte === 'local', 'o serviço confirma o transporte escolhido',
+    'respondeu "' + s.transporte + '"');
+  conferir(s.porta === 3200, 'e a porta do módulo escolhida na instalação');
+  conferir(!s.termo, 'o termo NÃO foi aceito pelo instalador',
+    'aceite é ato de leitura, feito por uma pessoa no módulo');
+
   await db.end();
 }
 
@@ -218,9 +231,6 @@ async function conferirConversa() {
   /* O retrato é montado pelo MESMO código que o gateway usa para alimentar o
      repassador. Montar um à mão aqui provaria que a conversa funciona com dados
      inventados — que não é a pergunta. */
-  process.env.DATABASE_URL = urlEnsaio;
-  process.env.MASTER_KEY = 'e'.repeat(64);
-
   const replica = require(path.join(RAIZ, 'src', 'services', 'replicaCadastro'));
   const retrato = await replica.montar();
 
@@ -309,6 +319,19 @@ async function limpar() {
 
 async function principal() {
   console.log('\nEnsaio de instalação — banco descartável "' + BANCO + '"\n');
+
+  /* ANTES de qualquer `require` de src/: `src/db` monta o pool na primeira vez
+     que é carregado, lendo esta variável naquele instante. Definindo-a só no
+     passo 6, um serviço exigido no passo 5 já teria aberto conexão com o banco
+     de PRODUÇÃO — e foi o que aconteceu enquanto este ensaio era escrito: a
+     conferência de transporte leu a configuração da instalação de verdade e
+     respondeu "meta" com toda a convicção. Leitura apenas, mas a instalação de
+     produção não pode ser tocada nem para ler.
+     Também é o que torna `PERMITIR_PRODUCAO=false` mais que decoração: ele vale
+     para o processo inteiro, e não só para os filhos. */
+  process.env.DATABASE_URL = urlEnsaio;
+  process.env.PERMITIR_PRODUCAO = 'false';
+  process.env.MASTER_KEY = 'e'.repeat(64);
 
   console.log('1. banco limpo');
   await prepararBanco();

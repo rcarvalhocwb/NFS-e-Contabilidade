@@ -369,6 +369,11 @@
 
   function carregarPonte() {
     if (souAdmin()) {
+      /* Declaradas mais abaixo no arquivo; a içada do `function` as torna
+         visíveis aqui, e agrupá-las junto da seção que elas pintam vale mais
+         que a ordem de leitura. */
+      carregarWhatsappLocal();
+      carregarChatbot();
       api('/ponte/config').then(function (c) {
         el('ptUrl').value = c.url || '';
         el('ptIntervalo').value = String(c.intervalo_seg || 60);
@@ -1557,6 +1562,106 @@
       .then(function () { b.disabled = false; });
   };
 
+
+  /* ------------------------------------- por onde sai, e com que palavras */
+
+  /* O transporte e os textos do robô: o instalador escolhe na primeira vez,
+     e esta é a tela onde se muda depois. Sem ela, a escolha feita na
+     instalação ficaria congelada até alguém mexer no banco. */
+  function pintarWhatsappLocal(s) {
+    var local = s && s.transporte === 'local';
+    el('waTrMeta').checked = !local;
+    el('waTrLocal').checked = local;
+
+    var estado = el('waLocalEstado');
+    var link = el('lnkModuloWa');
+    link.hidden = !local;
+
+    if (!local) {
+      estado.textContent = 'Saindo pela plataforma oficial da Meta.';
+      return;
+    }
+
+    link.href = 'http://127.0.0.1:' + (s.porta || 3200) + '/';
+
+    /* O que o módulo diz de si mesmo. Traduzido para o que a pessoa precisa
+       decidir — "conectado" e "precisa ler o QR" levam a ações diferentes. */
+    if (!s.termo) {
+      estado.innerHTML = '<strong>Falta aceitar o termo.</strong> Abra o módulo: ' +
+        'ele explica o que a automação não oficial custa, e só depois liga.';
+    } else if (s.situacaoSessao === 'conectado') {
+      estado.innerHTML = '<span class="s-ok">●</span> Conectado' +
+        (s.numero ? ' — ' + esc(s.numero) : '') + '.';
+    } else if (s.situacaoSessao === 'esperando_qr') {
+      estado.innerHTML = '<strong>Esperando a leitura do QR.</strong> ' +
+        'Abra o módulo com o celular na mão.';
+    } else if (s.situacaoSessao === 'banido') {
+      /* O risco que o termo descreve, acontecido. Não adianta reconectar: a
+         decisão é do WhatsApp e não há a quem recorrer. Dizer isso aqui evita
+         a tarde perdida tentando religar. */
+      estado.innerHTML = '<span class="s-erro">●</span> <strong>O número foi ' +
+        'bloqueado pelo WhatsApp.</strong> Religar não resolve — a decisão é ' +
+        'deles. Use outro número, ou passe para a plataforma oficial.' +
+        (s.ultimoErro ? '<br><span class="mono">' + esc(s.ultimoErro) + '</span>' : '');
+    } else {
+      estado.innerHTML = '<span class="s-alerta">●</span> ' +
+        esc(s.situacaoSessao || 'desligado') +
+        (s.ultimoErro ? ' — ' + esc(s.ultimoErro) : '') + '.';
+    }
+  }
+
+  function carregarWhatsappLocal() {
+    return api('/ponte/whatsapp')
+      .then(pintarWhatsappLocal)
+      .catch(function () { /* sem módulo instalado: a tela não some por isso */ });
+  }
+
+  /* Trocar de transporte pela tela só desliga o local. LIGAR exige o aceite do
+     termo, e o aceite é um ato de leitura — acontece no módulo, com o texto
+     inteiro à vista, e não num rádio que alguém clica de passagem. */
+  function trocarTransporte(destino) {
+    if (destino === 'local') {
+      aviso('Abra o módulo do WhatsApp para ler o termo e conectar o número.', 'aviso');
+      carregarWhatsappLocal();
+      return;
+    }
+    api('/ponte/whatsapp', { method: 'PUT', body: JSON.stringify({ ativo: false }) })
+      .then(function (s) {
+        pintarWhatsappLocal(s);
+        aviso('Agora o WhatsApp sai pela plataforma oficial.', 'ok');
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); carregarWhatsappLocal(); });
+  }
+
+  el('waTrMeta').onchange = function () { if (this.checked) trocarTransporte('meta'); };
+  el('waTrLocal').onchange = function () { if (this.checked) trocarTransporte('local'); };
+
+  function carregarChatbot() {
+    return api('/ponte/chatbot').then(function (c) {
+      el('cbSaudacao').value = c.saudacao || '';
+      el('cbAtendente').value = c.atendente || '';
+      el('cbHorario').value = c.horario || '';
+      el('cbEstado').textContent = c.atualizado_em
+        ? 'salvo em ' + new Date(c.atualizado_em).toLocaleString('pt-BR') : '';
+    }).catch(function () { /* tabela ainda não migrada: a tela não quebra */ });
+  }
+
+  el('btnSalvarChatbot').onclick = function () {
+    var b = el('btnSalvarChatbot');
+    b.disabled = true;
+    api('/ponte/chatbot', { method: 'PUT', body: JSON.stringify({
+      saudacao: el('cbSaudacao').value,
+      atendente: el('cbAtendente').value,
+      horario: el('cbHorario').value
+    }) })
+      .then(function (c) {
+        el('cbEstado').textContent = c.atualizado_em
+          ? 'salvo em ' + new Date(c.atualizado_em).toLocaleString('pt-BR') : 'salvo';
+        aviso('Textos do atendimento salvos e enviados ao repassador.', 'ok');
+      })
+      .catch(function (e) { aviso(e.message, 'erro'); })
+      .then(function () { b.disabled = false; });
+  };
 
   /* ------------------------------------------- o que falta para funcionar */
 

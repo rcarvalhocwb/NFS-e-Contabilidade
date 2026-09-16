@@ -22,10 +22,27 @@ async function ler() {
 
 async function situacao() {
   const linha = await ler();
-  const cfg = await db.query('SELECT wa_transporte FROM config_nuvem WHERE id = 1')
-    .catch(() => ({ rows: [] }));
 
-  const transporte = cfg.rows.length ? cfg.rows[0].wa_transporte : 'meta';
+  /* O `catch` aqui existe para UM caso: instalação antiga, antes da coluna
+     `wa_transporte`, em que a consulta falha por ela não existir. Só que ele
+     engolia qualquer erro — e engoliu um de verdade por tempo demais.
+     `config_nuvem.id` é BOOLEAN, e esta consulta dizia `WHERE id = 1`: o
+     Postgres respondia "operador não existe: boolean = integer", o catch
+     transformava isso em zero linhas, e zero linhas viravam o padrão 'meta'.
+     Resultado: o painel jurava que o transporte era a Meta mesmo com a sessão
+     própria escolhida, e ninguém tinha como desconfiar — não havia erro, só uma
+     resposta errada com cara de certa.
+
+     Agora só a ausência da coluna é perdoada. Qualquer outra falha sobe, porque
+     uma resposta errada sobre POR ONDE a nota sai é pior que uma tela de erro. */
+  let transporte = 'meta';
+  try {
+    const cfg = await db.query('SELECT wa_transporte FROM config_nuvem WHERE id = TRUE');
+    if (cfg.rows.length) transporte = cfg.rows[0].wa_transporte;
+  } catch (e) {
+    /* 42703 = undefined_column: a migração ainda não rodou. */
+    if (e.code !== '42703') throw e;
+  }
 
   return {
     transporte,
@@ -80,7 +97,7 @@ async function definirAtivo(ativo, { porta } = {}) {
   /* Um transporte de cada vez. Dois escrevendo na mesma conversa dariam
      resposta dobrada ao cliente — e ele não faz ideia de que existem dois. */
   await db.query(
-    'UPDATE config_nuvem SET wa_transporte = $1, atualizado_em = now() WHERE id = 1',
+    'UPDATE config_nuvem SET wa_transporte = $1, atualizado_em = now() WHERE id = TRUE',
     [ativo ? 'local' : 'meta']);
 
   return situacao();

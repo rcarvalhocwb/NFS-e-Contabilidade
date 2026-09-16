@@ -118,7 +118,7 @@ async function principal() {
          caminho que a pessoa escolheu, em vez de oferecer a Meta que ela
          recusou no assistente. Não emite nada — só escolhe por onde sairia. */
       await db.query(
-        "UPDATE config_nuvem SET wa_transporte = 'local', atualizado_em = now() WHERE id = 1");
+        "UPDATE config_nuvem SET wa_transporte = 'local', atualizado_em = now() WHERE id = TRUE");
 
       await ponte.salvar({
         waNumero: d.numero || undefined,

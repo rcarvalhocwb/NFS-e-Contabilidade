@@ -165,6 +165,36 @@ router.put('/whatsapp', somenteAdmin, async (req, res, next) => {
   }
 });
 
+/* As palavras do robô.
+ *
+ * Ficam aqui e não em /identidade porque é o atendimento do WhatsApp que as
+ * usa, e é nesta tela que quem cuida do WhatsApp está quando pensa nelas.
+ * Identidade é a marca da casa; isto é o que o robô diz. */
+router.get('/chatbot', somenteAdmin, async (_req, res, next) => {
+  try { res.json(await require('../services/chatbot').ler()); }
+  catch (e) { next(e); }
+});
+
+router.put('/chatbot', somenteAdmin, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const salvo = await require('../services/chatbot').salvar({
+      saudacao: b.saudacao,
+      atendente: b.atendente,
+      horario: b.horario
+    });
+    /* O repassador tem uma cópia do cadastro e responde por ela. Sem empurrar
+       agora, o texto novo só chegaria na próxima sincronização — e quem acabou
+       de salvar mandaria uma mensagem de teste para conferir, veria o texto
+       antigo e concluiria que não salvou. */
+    require('../services/replicaCadastro').enviar().catch(() => {});
+    res.json(salvo);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    next(e);
+  }
+});
+
 router.get('/solicitacoes', async (req, res, next) => {
   try {
     const ids = empresasVisiveis(req);

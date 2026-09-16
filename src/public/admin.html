@@ -1195,6 +1195,67 @@
               </div>
             </div>
 
+            <!-- Por onde o WhatsApp sai, e com que palavras. O instalador
+                 escolhe isto na primeira vez; aqui é onde se muda depois. -->
+            <div class="caixa-amb" style="margin-top:16px">
+              <h3>Por onde o WhatsApp sai</h3>
+              <div class="ajuda" style="margin-bottom:12px">
+                Os dois caminhos usam a <strong>mesma conversa</strong>: muda só
+                o meio. <strong>Um de cada vez</strong> — dois transportes
+                respondendo dariam resposta dobrada ao cliente, e ele não faz
+                ideia de que existem dois.
+              </div>
+              <div class="grade c2">
+                <label style="display:flex;align-items:flex-start;gap:9px;font-weight:400">
+                  <input type="radio" name="waTransporte" value="meta" id="waTrMeta" style="width:auto;margin-top:4px">
+                  <span><strong>Plataforma oficial (Meta)</strong><br>
+                  <span class="ajuda">Estável e com suporte. Exige conta aprovada
+                  e um endereço público — os campos acima.</span></span>
+                </label>
+                <label style="display:flex;align-items:flex-start;gap:9px;font-weight:400">
+                  <input type="radio" name="waTransporte" value="local" id="waTrLocal" style="width:auto;margin-top:4px">
+                  <span><strong>Sessão própria (QR)</strong><br>
+                  <span class="ajuda">Começa hoje, sem aprovação. Automação não
+                  oficial: o número pode ser banido, e não há a quem recorrer.</span></span>
+                </label>
+              </div>
+              <div class="ajuda" style="margin-top:12px" id="waLocalEstado"></div>
+              <div class="linha-botoes" style="margin-top:12px">
+                <a class="botao" id="lnkModuloWa" href="#" target="_blank" rel="noopener"
+                   hidden>Abrir o módulo do WhatsApp</a>
+              </div>
+              <div class="ajuda" style="margin-top:10px">
+                A emissão de notas <strong>não depende disto</strong>: se o
+                WhatsApp parar, o painel continua emitindo normalmente.
+              </div>
+            </div>
+
+            <div class="caixa-amb" style="margin-top:16px">
+              <h3>Como o robô se apresenta</h3>
+              <div class="ajuda" style="margin-bottom:12px">
+                As palavras que o cliente lê antes de falar com gente. Em branco,
+                o sistema usa o nome do escritório e um texto padrão. Isto muda
+                a <strong>forma de dizer</strong>, nunca o que o sistema faz.
+              </div>
+              <div class="grade c3">
+                <div><label for="cbSaudacao">Saudação</label>
+                  <input id="cbSaudacao" type="text" maxlength="300"
+                         placeholder="Atendimento automático para emissão de notas.">
+                  <div class="ajuda">Uma linha, logo abaixo do nome da casa.</div></div>
+                <div><label for="cbAtendente">Quem assina o atendimento</label>
+                  <input id="cbAtendente" type="text" maxlength="60" placeholder="ex: Juliana">
+                  <div class="ajuda">Um nome para a pessoa pedir no telefone.</div></div>
+                <div><label for="cbHorario">Horário de atendimento</label>
+                  <input id="cbHorario" type="text" maxlength="120"
+                         placeholder="ex: seg a sex, 8h às 18h">
+                  <div class="ajuda">Informativo: o robô continua atendendo fora dele.</div></div>
+              </div>
+              <div class="linha-botoes" style="margin-top:14px">
+                <button class="pequeno primario" id="btnSalvarChatbot">Salvar textos</button>
+                <span class="ajuda" id="cbEstado"></span>
+              </div>
+            </div>
+
             <div class="caixa-amb" style="margin-top:16px">
               <h3>Cadastro enviado ao portal</h3>
               <div class="ajuda" style="margin-bottom:10px">

@@ -341,3 +341,26 @@ test('as pendências chegam à última tela', () => {
   assert.match(ISS, /LerPendencias/);
   assert.match(ISS, /FALTA ISTO para o sistema emitir/);
 });
+
+test('config_nuvem é consultada pelo tipo certo de chave', () => {
+  /* `config_nuvem.id` é BOOLEAN — a linha única mora em `id = TRUE`. Escrito
+     `id = 1`, o Postgres responde "operador não existe: boolean = integer".
+     Isso passou despercebido porque `whatsappLocal.situacao()` engolia o erro
+     e caía no padrão 'meta': o painel afirmava que o WhatsApp saía pela Meta
+     mesmo com a sessão própria escolhida. Não havia erro em log nenhum — só
+     uma resposta errada com cara de certa, sobre POR ONDE a nota sai. */
+  const fs2 = require('fs');
+  const alvos = ['src/services/whatsappLocal.js', 'src/services/ponteNuvem.js',
+                 'src/services/replicaCadastro.js', 'scripts/configurar-whatsapp.js'];
+  for (const rel of alvos) {
+    /* Sem comentários: o comentário que explica este defeito CITA `id = 1`, e a
+       primeira versão deste teste acusou a explicação em vez do código. Duas
+       vezes no mesmo dia procurando palavra em arquivo cheio de frases. */
+    const s = fs2.readFileSync(path.join(RAIZ, rel), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const trecho of s.match(/config_nuvem[\s\S]{0,200}?(?:id = \w+)/g) || []) {
+      assert.ok(!/id = 1\b/.test(trecho),
+        rel + ' consulta config_nuvem com `id = 1`; a coluna é boolean');
+    }
+  }
+});
