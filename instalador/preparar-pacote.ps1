@@ -61,10 +61,15 @@ foreach ($item in $incluir) {
 # mas nao ha motivo para o cliente receber o emissor de licencas do fornecedor
 # dentro da propria instalacao.
 #
+# scripts\ensaio-instalacao.js sai pelo mesmo raciocinio, com um motivo a mais:
+# ele CRIA E APAGA banco de dados. E a ferramenta que prova, aqui, que uma
+# instalacao nova sai funcionando -- util para quem desenvolve, superficie sem
+# beneficio na maquina de uma contabilidade que guarda nota fiscal.
+#
 # A pasta dev/ nunca entra porque o pacote e montado por LISTA DE INCLUSAO e ela
 # nao esta na lista. test/pacote-limpo.test.js confere as duas coisas.
 foreach ($fora in @('relay\teste', 'relay\dados', 'monitor\sessao.txt',
-                    'scripts\licenca-emitir.js',
+                    'scripts\licenca-emitir.js', 'scripts\ensaio-instalacao.js',
                     'wa\node_modules', 'wa\sessao', 'wa\token.txt')) {
     $p = Join-Path $pacote $fora
     if (Test-Path $p) { Remove-Item $p -Recurse -Force }
@@ -159,6 +164,24 @@ Ok "versao $versao gravada em versao.iss"
 $tamanho = [math]::Round((Get-ChildItem $pacote -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 1)
 Write-Host ""
 Write-Host "  Pacote pronto: $pacote ($tamanho MB)" -ForegroundColor Green
+
+# O Inno Setup instala em dois lugares conforme a opcao escolhida na instalacao
+# dele: Arquivos de Programas (para todos) ou AppData\Local\Programs (so para o
+# usuario). Imprimir so o primeiro manda quem tem o segundo procurar sozinho, e
+# "comando nao encontrado" na ultima etapa e onde se desiste de um roteiro.
+$candidatosIscc = @(
+    (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+    (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
+    (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
+)
+$iscc = $candidatosIscc | Where-Object { Test-Path $_ } | Select-Object -First 1
+
 Write-Host "  Agora compile o instalador:" -ForegroundColor DarkGray
-Write-Host "     & '${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe' '$raizInstalador\nfse-gateway.iss'" -ForegroundColor DarkGray
+if ($iscc) {
+    Write-Host "     & '$iscc' '$raizInstalador\nfse-gateway.iss'" -ForegroundColor DarkGray
+} else {
+    Write-Host "     Inno Setup 6 nao encontrado nesta maquina." -ForegroundColor Yellow
+    Write-Host "     Baixe em https://jrsoftware.org/isdl.php e rode ISCC.exe sobre:" -ForegroundColor DarkGray
+    Write-Host "     $raizInstalador\nfse-gateway.iss" -ForegroundColor DarkGray
+}
 Write-Host ""

@@ -112,3 +112,47 @@ test('o produto importa a verificação, nunca a assinatura', () => {
   assert.deepEqual(usos, [],
     'arquivo do produto importando assinatura:\n  ' + usos.join('\n  '));
 });
+
+test('o ensaio de instalação não vai para a máquina do cliente', () => {
+  /* Ele CRIA E APAGA banco de dados. É a ferramenta que prova, aqui, que uma
+     instalação nova sai funcionando — útil para quem desenvolve, superfície sem
+     benefício nenhum na máquina de uma contabilidade que guarda nota fiscal. */
+  assert.match(PREPARAR, /ensaio-instalacao\.js/,
+    'a exclusão precisa nomear o ensaio');
+  const fora = PREPARAR.split('foreach ($fora in');
+  assert.ok(fora.length > 1, 'a lista de exclusão sumiu do preparar-pacote');
+  assert.match(fora[1], /ensaio-instalacao\.js/,
+    'e ele precisa estar DENTRO da lista de exclusão, não só citado');
+
+  /* E ele realmente derruba banco — é por isso que fica de fora. Se um dia
+     deixar de derrubar, esta trava vira exagero e alguém deve revê-la. */
+  const ensaio = fs.readFileSync(path.join(RAIZ, 'scripts', 'ensaio-instalacao.js'), 'utf8');
+  assert.match(ensaio, /DROP DATABASE/,
+    'se o ensaio parou de apagar banco, reveja se ainda precisa ficar de fora');
+});
+
+test('a chave pública do produto é uma chave de verdade', () => {
+  /* Nula, o gateway se comporta como instalação sem licença: avisa e emite
+     normalmente. Isso era certo enquanto o par não existia — e vira defeito
+     silencioso no dia em que um instalador sai para vender com ela nula, porque
+     nenhuma licença poderia ser verificada e nada acusaria. */
+  const chave = fs.readFileSync(path.join(RAIZ, 'src', 'licenca', 'chave-publica.js'), 'utf8');
+  assert.match(chave, /BEGIN PUBLIC KEY/,
+    'o produto precisa sair com a chave pública embutida');
+  assert.ok(!/\|\|\s*null\s*;/.test(chave),
+    'a chave não pode mais cair em null: isso desliga a verificação sem avisar');
+
+  /* E ela precisa verificar de verdade, não ser um texto com a forma certa. */
+  const { CHAVE_PUBLICA } = require('../src/licenca/chave-publica');
+  const { assinar, verificar, gerarParDeChaves } = require('../src/licenca/formato');
+  const outro = gerarParDeChaves();
+  const forasteira = assinar({
+    v: 1, id: 'LIC-FALSA', plano: 'anual', terminais: 1,
+    escritorio: { cnpj: '11222333000181', nome: 'Forjada' },
+    emitido_em: '2026-09-16', valido_ate: '2027-09-16', carencia_dias: 30,
+    recursos: ['whatsapp']
+  }, outro.privada);
+  const r = verificar(forasteira, CHAVE_PUBLICA);
+  assert.equal(r.valida, false,
+    'licença assinada por OUTRA chave não pode passar');
+});

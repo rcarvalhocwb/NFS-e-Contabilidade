@@ -10,9 +10,17 @@
  * pública. TROCAR INVALIDA TODAS AS LICENÇAS JÁ EMITIDAS — é operação de
  * comprometimento de chave, não de manutenção.
  *
- * Enquanto o par definitivo não for gerado, isto fica nulo e o gateway se
- * comporta como instalação sem licença: avisa na tela e emite normalmente.
+ * Gerado em 16/09/2026, antes do primeiro instalador — de propósito: trocar a
+ * chave invalida toda licença já emitida, e o custo disso só cresce. Com zero
+ * licenças no mundo, era o momento mais barato que vai existir.
+ *
+ * A variável de ambiente continua vencendo para o caso de emergência (chave
+ * comprometida, cliente com par próprio), mas o padrão agora é a chave de
+ * verdade — não mais nulo.
  */
-const CHAVE_PUBLICA = process.env.NFSE_LICENCA_CHAVE_PUBLICA || null;
+const CHAVE_PUBLICA = process.env.NFSE_LICENCA_CHAVE_PUBLICA ||
+  '-----BEGIN PUBLIC KEY-----\n' +
+  'MCowBQYDK2VwAyEAuf/wtqBz+84eRRPiZ1EJrzhq+09tJ6WknJCvpSKIPkw=\n' +
+  '-----END PUBLIC KEY-----\n';
 
 module.exports = { CHAVE_PUBLICA };
