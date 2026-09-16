@@ -55,6 +55,18 @@ async function garantirEmpresa(d) {
     return existe.rows[0].id;
   }
 
+  /* O regime é DESTA empresa, não do escritório.
+   *
+   * A contabilidade atende dezenas de clientes com enquadramentos diferentes —
+   * um MEI, um ME do Simples, uma sociedade no lucro presumido — e o regime
+   * decide PARA ONDE a nota vai: ME/EPP do Simples emitem exclusivamente pelo
+   * Emissor Nacional. Por isso ele é campo do cadastro da empresa, aqui e no
+   * painel, e não uma configuração da instalação.
+   *
+   * 1 = não optante · 2 = MEI · 3 = ME/EPP do Simples. Valor fora disso vira 1,
+   * que é o que a rota de cadastro também assume — e fica corrigível no painel. */
+  const regime = [1, 2, 3].includes(Number(d.regime)) ? Number(d.regime) : 1;
+
   const r = await db.query(
     `INSERT INTO empresas (cnpj, razao_social, inscricao_municipal, codigo_municipio,
                            op_simp_nac, reg_esp_trib, ambiente)
@@ -63,10 +75,7 @@ async function garantirEmpresa(d) {
     [cnpj, String(d.razaoSocial || '').trim(),
      String(d.inscricaoMunicipal || '').trim() || null,
      String(d.municipio || '').replace(/\D/g, ''),
-     /* Mesmo padrão da rota de cadastro. O regime tributário decide para onde a
-        nota vai (Emissor Nacional x município) e não se adivinha por CNPJ —
-        fica como pendência para quem sabe conferir. */
-     1, 0]
+     regime, 0]
   );
   const id = r.rows[0].id;
 
@@ -91,11 +100,9 @@ async function garantirEmpresa(d) {
          .digest('hex')]);
   }
 
-  feito.push('empresa ' + cnpj + ' cadastrada em homologação');
-  pendente('regime tributário',
-    'a empresa nasceu como não optante pelo Simples Nacional. Confira no ' +
-    'painel: ME/EPP do Simples emitem exclusivamente pelo Emissor Nacional, e ' +
-    'o regime errado manda a nota para o lugar errado.');
+  const NOME_REGIME = { 1: 'não optante', 2: 'MEI', 3: 'ME/EPP do Simples' };
+  feito.push('empresa ' + cnpj + ' cadastrada em homologação, ' +
+    NOME_REGIME[regime] + ' pelo Simples Nacional');
   return id;
 }
 

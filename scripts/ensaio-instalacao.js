@@ -69,6 +69,7 @@ const RESPOSTAS = {
     razaoSocial: 'CLIENTE DO ENSAIO LTDA',
     municipio: '4106902',
     inscricaoMunicipal: '123456',
+    regime: 3,
     apelido: 'Consultoria mensal',
     codigoTributacao: '010201',
     descricao: 'Consultoria tecnica mensal',
@@ -179,11 +180,17 @@ async function conferirBanco() {
   conferir(ident.email === RESPOSTAS.escritorio.email, 'o e-mail do escritório ficou gravado');
 
   const emp = (await db.query(
-    'SELECT id, razao_social, ambiente FROM empresas WHERE cnpj = $1',
+    'SELECT id, razao_social, ambiente, op_simp_nac FROM empresas WHERE cnpj = $1',
     [RESPOSTAS.empresa.cnpj])).rows[0];
   conferir(!!emp, 'a primeira empresa foi cadastrada');
   conferir(emp && emp.ambiente === 'homologacao',
     'a empresa nasce em homologação', 'produção é decisão de gente, depois de uma nota de teste');
+  /* O regime é de CADA empresa: a contabilidade atende enquadramentos
+     diferentes, e ele decide PARA ONDE a nota vai. Se o campo parar de chegar
+     do assistente ao banco, a nota de um ME do Simples iria para o município
+     em vez do Emissor Nacional -- e isso não aparece em erro nenhum. */
+  conferir(emp && emp.op_simp_nac === 3, 'o regime escolhido chegou ao cadastro',
+    'respondeu ' + (emp && emp.op_simp_nac));
 
   const numeracao = (await db.query(
     'SELECT count(*)::int AS n FROM numeracao_dps WHERE empresa_id = $1',

@@ -137,7 +137,9 @@ router.post('/whatsapp/situacao', async (req, res) => {
 });
 
 router.get('/whatsapp', somenteAdmin, async (_req, res, next) => {
-  try { res.json(await require('../services/whatsappLocal').situacao()); }
+  /* Ao vivo: quem esta na tela do QR precisa do estado do modulo, nao do
+     retrato que ele gravou da ultima vez que conseguiu avisar. */
+  try { res.json(await require('../services/whatsappLocal').situacaoAoVivo()); }
   catch (e) { next(e); }
 });
 
@@ -159,6 +161,57 @@ router.put('/whatsapp', somenteAdmin, async (req, res, next) => {
   try {
     const b = req.body || {};
     res.json(await require('../services/whatsappLocal').definirAtivo(!!b.ativo, { porta: b.porta }));
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    next(e);
+  }
+});
+
+/* Conectar o WhatsApp SEM sair do painel.
+ *
+ * Antes, o QR só existia numa janela do módulo, que atende em 127.0.0.1 com um
+ * token de arquivo: para conectar era preciso ir até o servidor e sentar nele.
+ * Num escritório onde o painel é usado de qualquer máquina, isso transformava
+ * "ligar o WhatsApp" numa visita técnica.
+ *
+ * O módulo continua fechado em 127.0.0.1 — quem atravessa é o gateway, que já
+ * está na mesma máquina e já tem sessão autenticada de quem pediu. */
+router.get('/whatsapp/qr', somenteAdmin, async (_req, res, next) => {
+  try { res.json(await require('../services/whatsappLocal').qrAtual()); }
+  catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    next(e);
+  }
+});
+
+router.get('/whatsapp/termo/texto', somenteAdmin, async (_req, res, next) => {
+  try { res.json(await require('../services/whatsappLocal').textoDoTermo()); }
+  catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    next(e);
+  }
+});
+
+router.post('/whatsapp/ligar', somenteAdmin, async (req, res, next) => {
+  try {
+    await require('../services/auditoria').registrar(req, null, 'whatsapp.ligado');
+    res.json(await require('../services/whatsappLocal').ligarPeloPainel());
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ erro: e.message });
+    next(e);
+  }
+});
+
+router.post('/whatsapp/desligar', somenteAdmin, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    /* Apagar a sessão é irreversível: o número precisa ser lido de novo. Fica
+       registrado com quem fez, porque a pergunta no dia seguinte vai ser
+       "por que o WhatsApp desconectou sozinho?" — e ele não desconectou. */
+    await require('../services/auditoria').registrar(req, null,
+      b.apagarSessao ? 'whatsapp.sessao_apagada' : 'whatsapp.desligado');
+    res.json(await require('../services/whatsappLocal')
+      .desligarPeloPainel({ apagarSessao: !!b.apagarSessao }));
   } catch (e) {
     if (e.status) return res.status(e.status).json({ erro: e.message });
     next(e);

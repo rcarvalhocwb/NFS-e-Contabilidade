@@ -247,8 +247,8 @@ end;
 function TransporteWa: String;
 begin
   if PaginaWhatsapp = nil then Result := 'nenhum'
-  else if PaginaWhatsapp.SelectedValueIndex = 0 then Result := 'meta'
-  else if PaginaWhatsapp.SelectedValueIndex = 1 then Result := 'local'
+  else if PaginaWhatsapp.SelectedValueIndex = 0 then Result := 'local'
+  else if PaginaWhatsapp.SelectedValueIndex = 1 then Result := 'meta'
   else Result := 'nenhum';
 end;
 
@@ -385,6 +385,13 @@ begin
   PaginaEmpresa.Add('Razao social:', False);
   PaginaEmpresa.Add('Codigo IBGE do municipio (7 digitos):', False);
   PaginaEmpresa.Add('Inscricao municipal (opcional):', False);
+  { O regime e de CADA empresa, nao do escritorio: a contabilidade atende
+    clientes com enquadramentos diferentes, e o regime decide PARA ONDE a nota
+    vai — ME/EPP do Simples emitem exclusivamente pelo Emissor Nacional. Como
+    esta tela cadastra uma empresa, o campo pertence a ela; as proximas ganham o
+    seu no painel, em Empresas. }
+  PaginaEmpresa.Add('Regime: 1 = nao optante, 2 = MEI, 3 = ME/EPP do Simples:', False);
+  PaginaEmpresa.Values[4] := '1';
 
   { O certificado e do cliente e tem senha. Nao da para inventar um, e por isso
     esta pagina aceita ficar vazia: sem ele o cadastro fica pronto e a pendencia
@@ -413,30 +420,38 @@ begin
   PaginaServico.Add('Descricao que vai na nota:', False);
   PaginaServico.Add('Valor padrao (opcional, ex: 1500,00):', False);
 
+  { A ordem aqui e uma recomendacao, e mudou de lado.
+
+    A plataforma oficial e mais estavel, mas so comeca a funcionar depois de
+    conta aprovada, empresa verificada e endereco publico em https — semanas de
+    burocracia antes da primeira mensagem, e nada disso cabe num assistente de
+    instalacao. A sessao propria comeca no mesmo dia, lendo um QR na tela do
+    painel. Por isso ela vem primeiro e as credenciais da Meta saem daqui: quem
+    escolher a oficial configura no sistema, com calma, quando a Meta liberar. }
   PaginaWhatsapp := CreateInputOptionPage(PaginaServico.ID,
     'WhatsApp',
     'Como o escritorio vai receber pedidos de nota?',
     'Os dois caminhos usam a mesma conversa. Muda so o meio — e da para trocar ' +
     'depois, no painel, sem perder nada.',
     True, False);
-  PaginaWhatsapp.Add('Plataforma oficial (Meta) — recomendado' + #13#10 +
-    '     Estavel e com suporte. Exige conta aprovada na Meta.');
-  PaginaWhatsapp.Add('Sessao propria (numero lido por QR)' + #13#10 +
-    '     Comeca hoje, sem aprovacao. Automacao nao oficial: o numero pode ser banido.');
+  PaginaWhatsapp.Add('Sessao propria — comeca hoje (recomendado)' + #13#10 +
+    '     Voce le um QR no painel com o celular que vai atender.' + #13#10 +
+    '     Automacao nao oficial: o numero pode ser banido.');
+  PaginaWhatsapp.Add('Plataforma oficial (Meta)' + #13#10 +
+    '     Estavel e com suporte, mas exige conta aprovada e endereco publico.' + #13#10 +
+    '     As credenciais voce informa depois, no painel.');
   PaginaWhatsapp.Add('Nenhum por enquanto' + #13#10 +
     '     So o painel. Da para ligar depois.');
-  PaginaWhatsapp.SelectedValueIndex := 1;
+  PaginaWhatsapp.SelectedValueIndex := 0;
 
   PaginaWhatsappDados := CreateInputQueryPage(PaginaWhatsapp.ID,
     'WhatsApp: quem pode pedir',
-    'O numero que vai pedir notas, e as credenciais se forem da Meta',
+    'O primeiro numero autorizado a pedir notas',
     'So numeros cadastrados conseguem pedir nota. Qualquer outro recebe uma ' +
     'recusa educada — e e isso que impede um estranho de emitir em nome da empresa.');
   PaginaWhatsappDados.Add('Numero autorizado (com DDD, ex: 41999998888):', False);
-  PaginaWhatsappDados.Add('Meta — Phone Number ID:', False);
-  PaginaWhatsappDados.Add('Meta — Token de envio:', True);
   PaginaWhatsappDados.Add('Porta do modulo WhatsApp:', False);
-  PaginaWhatsappDados.Values[3] := '3200';
+  PaginaWhatsappDados.Values[1] := '3200';
 
   PaginaChatbot := CreateInputQueryPage(PaginaWhatsappDados.ID,
     'Como o robo se apresenta',
@@ -756,19 +771,7 @@ begin
              'Exemplo: 41999998888', mbError, MB_OK);
       Result := False; Exit;
     end;
-    if TransporteWa = 'meta' then
-    begin
-      if (Trim(PaginaWhatsappDados.Values[1]) = '') or
-         (Trim(PaginaWhatsappDados.Values[2]) = '') then
-      begin
-        MsgBox('A plataforma oficial precisa do Phone Number ID e do token.' + #13#10#13#10 +
-               'Os dois estao no painel da Meta, em WhatsApp > Configuracao da API.' + #13#10#13#10 +
-               'Se ainda nao os tem, volte e escolha "sessao propria" ou ' +
-               '"nenhum por enquanto".', mbError, MB_OK);
-        Result := False; Exit;
-      end;
-    end;
-    Porta := Trim(PaginaWhatsappDados.Values[3]);
+    Porta := Trim(PaginaWhatsappDados.Values[1]);
     P := StrToIntDef(Porta, 0);
     if (P < 1024) or (P > 65535) then
     begin
@@ -834,6 +837,7 @@ begin
     J := J + '  "EmpresaRazaoSocial": "' + Escapar(Trim(PaginaEmpresa.Values[1])) + '",' + #13#10;
     J := J + '  "EmpresaMunicipio": "' + SoDigitos(PaginaEmpresa.Values[2]) + '",' + #13#10;
     J := J + '  "EmpresaInscricaoMunicipal": "' + Escapar(Trim(PaginaEmpresa.Values[3])) + '",' + #13#10;
+    J := J + '  "EmpresaRegime": ' + Trim(PaginaEmpresa.Values[4]) + ',' + #13#10;
     J := J + '  "CertificadoArquivo": "' + Escapar(Trim(PaginaCertificado.Values[0])) + '",' + #13#10;
     J := J + '  "CertificadoSenha": "' + Escapar(PaginaCertSenha.Values[0]) + '",' + #13#10;
     J := J + '  "ServicoApelido": "' + Escapar(Trim(PaginaServico.Values[0])) + '",' + #13#10;
@@ -844,15 +848,10 @@ begin
     if TransporteWa <> 'nenhum' then
     begin
       J := J + '  "WhatsappNumero": "' + SoDigitos(PaginaWhatsappDados.Values[0]) + '",' + #13#10;
-      J := J + '  "WhatsappPorta": ' + Trim(PaginaWhatsappDados.Values[3]) + ',' + #13#10;
+      J := J + '  "WhatsappPorta": ' + Trim(PaginaWhatsappDados.Values[1]) + ',' + #13#10;
       J := J + '  "ChatbotSaudacao": "' + Escapar(Trim(PaginaChatbot.Values[0])) + '",' + #13#10;
       J := J + '  "ChatbotAtendente": "' + Escapar(Trim(PaginaChatbot.Values[1])) + '",' + #13#10;
       J := J + '  "ChatbotHorario": "' + Escapar(Trim(PaginaChatbot.Values[2])) + '",' + #13#10;
-    end;
-    if TransporteWa = 'meta' then
-    begin
-      J := J + '  "MetaPhoneNumberId": "' + Escapar(Trim(PaginaWhatsappDados.Values[1])) + '",' + #13#10;
-      J := J + '  "MetaToken": "' + Escapar(Trim(PaginaWhatsappDados.Values[2])) + '",' + #13#10;
     end;
   end;
 

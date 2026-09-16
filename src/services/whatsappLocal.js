@@ -169,7 +169,132 @@ async function tokenDoModulo() {
   }
 }
 
+/* Fala com o módulo em nome do painel.
+ *
+ * POR QUE O GATEWAY NO MEIO: o módulo atende só em 127.0.0.1, com um token que
+ * ele sorteia a cada subida e grava num arquivo. Quem está no painel pela rede
+ * — de outro computador do escritório — não alcança nenhum dos dois. Sem esta
+ * ponte, conectar o WhatsApp exigiria ir até o servidor, sentar nele e abrir
+ * uma segunda janela; e "vá até o servidor" é o oposto do que um painel serve.
+ *
+ * O timeout é maior que o de `enviar`: aqui alguém está olhando a tela
+ * esperando um QR aparecer, e não há fila nenhuma sendo segurada. */
+async function conversarComModulo(caminho, { metodo = 'GET', corpo } = {}) {
+  const linha = await ler();
+  const porta = (linha && linha.porta) || PORTA_PADRAO;
+
+  const controle = new AbortController();
+  const relogio = setTimeout(() => controle.abort(), 10000);
+  try {
+    const r = await fetch('http://127.0.0.1:' + porta + caminho, {
+      method: metodo,
+      headers: Object.assign(
+        { 'X-WA-Token': await tokenDoModulo() },
+        corpo ? { 'Content-Type': 'application/json' } : {}),
+      body: corpo ? JSON.stringify(corpo) : undefined,
+      signal: controle.signal
+    });
+    const dados = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      throw Object.assign(new Error(dados.erro || ('o módulo respondeu ' + r.status)),
+        { status: r.status === 404 ? 404 : 502 });
+    }
+    return dados;
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      throw Object.assign(new Error('O módulo do WhatsApp não respondeu.'), { status: 504 });
+    }
+    throw e;
+  } finally {
+    clearTimeout(relogio);
+  }
+}
+
+/* A situação, preferindo o módulo quando ele responde.
+ *
+ * `situacao()` lê o BANCO, e isso é de propósito: a linha lá é gravada pelo
+ * próprio módulo quando ele avisa, e continua respondendo depois que ele cai —
+ * que é justamente quando alguém quer saber o que houve.
+ *
+ * Só que para a tela do QR isso não serve. Quem acabou de clicar em "ligar"
+ * está olhando o navegador, e o módulo leva alguns segundos entre conectar e
+ * conseguir avisar; enquanto isso o banco ainda diz "desligado", a tela não
+ * mostra o QR, e a pessoa conclui que não funcionou. Pior: se o módulo não
+ * tiver como avisar — instalação sem a chave do gateway configurada — o banco
+ * nunca muda, e o QR nunca apareceria.
+ *
+ * Então: o módulo é a autoridade sobre a PRÓPRIA conexão, e o banco é a
+ * autoridade sobre o que é do escritório (o termo aceito, a porta, o
+ * transporte escolhido). Cada um responde pelo que sabe. */
+async function situacaoAoVivo() {
+  const guardada = await situacao();
+  try {
+    const viva = await conversarComModulo('/situacao');
+    return Object.assign({}, guardada, {
+      situacaoSessao: viva.situacao || guardada.situacaoSessao,
+      numero: viva.numero || guardada.numero,
+      nomePerfil: viva.nomePerfil || guardada.nomePerfil,
+      ultimoErro: viva.ultimoErro || null,
+      moduloNoAr: true
+    });
+  } catch (_) {
+    /* Módulo fora do ar: o que o banco guardou é a melhor resposta que existe,
+       e dizer que ele está fora é informação, não falha. */
+    return Object.assign({}, guardada, { moduloNoAr: false });
+  }
+}
+
+/* O QR, já como imagem pronta. Some assim que a leitura acontece — por isso o
+   404 do módulo não é erro: é "conectou, ou ainda não gerou". */
+async function qrAtual() {
+  try {
+    return await conversarComModulo('/qr');
+  } catch (e) {
+    if (e.status === 404) return { qr: null };
+    throw e;
+  }
+}
+
+/* Ligar pelo painel.
+ *
+ * O aceite é conferido NOS DOIS lados e não é duplicação por descuido: o
+ * gateway guarda quem aceitou e quando (é a prova), e o módulo confere a versão
+ * do texto que está no disco dele (é a trava). Uma instalação com o módulo
+ * atualizado e o aceite antigo precisa de um aceite novo — e é o módulo quem
+ * sabe disso, porque o texto mora com ele. */
+async function ligarPeloPainel() {
+  const s = await situacao();
+  if (!s.termo) {
+    throw Object.assign(
+      new Error('É preciso aceitar o termo de uso do WhatsApp por sessão própria antes de ligar.'),
+      { status: 412 });
+  }
+  const estado = await conversarComModulo('/ligar',
+    { metodo: 'POST', corpo: { termoVersao: s.termo.versao } });
+  await definirAtivo(true, {});
+  return estado;
+}
+
+async function desligarPeloPainel({ apagarSessao = false } = {}) {
+  /* A ordem importa: desliga o módulo primeiro. Marcando inativo antes, uma
+     falha na chamada deixaria o banco dizendo "desligado" com a sessão viva —
+     e o cliente recebendo resposta de um transporte que o painel jura morto. */
+  const estado = await conversarComModulo('/desligar',
+    { metodo: 'POST', corpo: { apagarSessao } });
+  await definirAtivo(false, {});
+  return estado;
+}
+
+/* O texto do termo vem do próprio módulo, e não de uma cópia aqui: é o texto
+   que ele vai exigir na hora de ligar. Ler de outro lugar abriria a chance de
+   alguém aceitar uma versão e o módulo recusar por outra. */
+async function textoDoTermo() {
+  return conversarComModulo('/termo');
+}
+
 module.exports = {
   ler, situacao, aceitarTermo, definirAtivo, registrarSituacao, enviar,
-  tokenDoModulo, PORTA_PADRAO
+  tokenDoModulo, situacaoAoVivo, qrAtual, ligarPeloPainel, desligarPeloPainel,
+  textoDoTermo,
+  PORTA_PADRAO
 };

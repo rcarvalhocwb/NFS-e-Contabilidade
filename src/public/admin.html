@@ -137,6 +137,7 @@
       <a href="#lotes" data-tela="lotes"><span class="ico">▤</span> Emissão em lote</a>
       <a href="#portal" data-tela="portal"><span class="ico">☁</span> Portal do cliente
         <span class="selo-status s-alerta sem-ponto" id="seloFila" hidden></span></a>
+      <a href="#whatsapp" data-tela="whatsapp" data-admin hidden><span class="ico">✆</span> WhatsApp</a>
       <a href="#entradas" data-tela="entradas"><span class="ico">⬋</span> Notas de entrada</a>
       <a href="#relatorios" data-tela="relatorios"><span class="ico">◲</span> Relatórios</a>
 
@@ -1195,67 +1196,6 @@
               </div>
             </div>
 
-            <!-- Por onde o WhatsApp sai, e com que palavras. O instalador
-                 escolhe isto na primeira vez; aqui é onde se muda depois. -->
-            <div class="caixa-amb" style="margin-top:16px">
-              <h3>Por onde o WhatsApp sai</h3>
-              <div class="ajuda" style="margin-bottom:12px">
-                Os dois caminhos usam a <strong>mesma conversa</strong>: muda só
-                o meio. <strong>Um de cada vez</strong> — dois transportes
-                respondendo dariam resposta dobrada ao cliente, e ele não faz
-                ideia de que existem dois.
-              </div>
-              <div class="grade c2">
-                <label style="display:flex;align-items:flex-start;gap:9px;font-weight:400">
-                  <input type="radio" name="waTransporte" value="meta" id="waTrMeta" style="width:auto;margin-top:4px">
-                  <span><strong>Plataforma oficial (Meta)</strong><br>
-                  <span class="ajuda">Estável e com suporte. Exige conta aprovada
-                  e um endereço público — os campos acima.</span></span>
-                </label>
-                <label style="display:flex;align-items:flex-start;gap:9px;font-weight:400">
-                  <input type="radio" name="waTransporte" value="local" id="waTrLocal" style="width:auto;margin-top:4px">
-                  <span><strong>Sessão própria (QR)</strong><br>
-                  <span class="ajuda">Começa hoje, sem aprovação. Automação não
-                  oficial: o número pode ser banido, e não há a quem recorrer.</span></span>
-                </label>
-              </div>
-              <div class="ajuda" style="margin-top:12px" id="waLocalEstado"></div>
-              <div class="linha-botoes" style="margin-top:12px">
-                <a class="botao" id="lnkModuloWa" href="#" target="_blank" rel="noopener"
-                   hidden>Abrir o módulo do WhatsApp</a>
-              </div>
-              <div class="ajuda" style="margin-top:10px">
-                A emissão de notas <strong>não depende disto</strong>: se o
-                WhatsApp parar, o painel continua emitindo normalmente.
-              </div>
-            </div>
-
-            <div class="caixa-amb" style="margin-top:16px">
-              <h3>Como o robô se apresenta</h3>
-              <div class="ajuda" style="margin-bottom:12px">
-                As palavras que o cliente lê antes de falar com gente. Em branco,
-                o sistema usa o nome do escritório e um texto padrão. Isto muda
-                a <strong>forma de dizer</strong>, nunca o que o sistema faz.
-              </div>
-              <div class="grade c3">
-                <div><label for="cbSaudacao">Saudação</label>
-                  <input id="cbSaudacao" type="text" maxlength="300"
-                         placeholder="Atendimento automático para emissão de notas.">
-                  <div class="ajuda">Uma linha, logo abaixo do nome da casa.</div></div>
-                <div><label for="cbAtendente">Quem assina o atendimento</label>
-                  <input id="cbAtendente" type="text" maxlength="60" placeholder="ex: Juliana">
-                  <div class="ajuda">Um nome para a pessoa pedir no telefone.</div></div>
-                <div><label for="cbHorario">Horário de atendimento</label>
-                  <input id="cbHorario" type="text" maxlength="120"
-                         placeholder="ex: seg a sex, 8h às 18h">
-                  <div class="ajuda">Informativo: o robô continua atendendo fora dele.</div></div>
-              </div>
-              <div class="linha-botoes" style="margin-top:14px">
-                <button class="pequeno primario" id="btnSalvarChatbot">Salvar textos</button>
-                <span class="ajuda" id="cbEstado"></span>
-              </div>
-            </div>
-
             <div class="caixa-amb" style="margin-top:16px">
               <h3>Cadastro enviado ao portal</h3>
               <div class="ajuda" style="margin-bottom:10px">
@@ -1736,6 +1676,153 @@
             </div>
 
             <div id="neImportacao" style="margin-top:14px"></div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ================================================== WhatsApp ====
+           UM lugar para tudo de WhatsApp: por onde sai, conectar o numero, e as
+           palavras do atendimento.
+
+           Antes isto estava repartido entre o "Portal do cliente" (credenciais
+           da Meta) e uma janela separada do modulo, que atende so em 127.0.0.1
+           -- ou seja, conectar o numero exigia ir ate o servidor e sentar nele.
+           Num escritorio onde o painel e usado de qualquer maquina, "va ate o
+           servidor" e o oposto do que um painel serve. O QR aparece aqui. -->
+      <section data-tela-conteudo="whatsapp" hidden>
+
+        <div class="cartao" style="margin:0 0 18px" data-admin hidden>
+          <div class="cartao-cab">
+            <h2>Por onde o WhatsApp sai</h2>
+            <span id="waSeloTransporte" class="selo-status s-neutro"></span>
+          </div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:14px">
+              Os dois caminhos usam a <strong>mesma conversa</strong>: muda so o
+              meio. <strong>Um de cada vez</strong> &mdash; dois transportes
+              respondendo dariam resposta dobrada ao cliente, e ele nao faz ideia
+              de que existem dois.
+            </div>
+
+            <div class="grade c2">
+              <label style="display:flex;align-items:flex-start;gap:9px;font-weight:400">
+                <input type="radio" name="waTransporte" value="local" id="waTrLocal" style="width:auto;margin-top:4px">
+                <span><strong>Sessao propria (QR)</strong><br>
+                <span class="ajuda">Comeca agora: leia o codigo abaixo com o
+                celular que vai atender. Automacao nao oficial &mdash; o numero
+                pode ser banido, e nao ha a quem recorrer.</span></span>
+              </label>
+              <label style="display:flex;align-items:flex-start;gap:9px;font-weight:400">
+                <input type="radio" name="waTransporte" value="meta" id="waTrMeta" style="width:auto;margin-top:4px">
+                <span><strong>Plataforma oficial (Meta)</strong><br>
+                <span class="ajuda">Estavel e com suporte, mas exige conta
+                aprovada pela Meta e um endereco publico. As credenciais ficam em
+                <a href="#portal">Portal do cliente</a>.</span></span>
+              </label>
+            </div>
+
+            <div class="ajuda" style="margin-top:14px">
+              A emissao de notas <strong>nao depende disto</strong>: se o WhatsApp
+              parar, o painel continua emitindo normalmente.
+            </div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0 0 18px" data-admin hidden id="waCaixaLocal">
+          <div class="cartao-cab">
+            <h2>O numero do escritorio</h2>
+            <span id="waSeloSessao" class="selo-status s-neutro"></span>
+          </div>
+          <div class="cartao-corpo">
+
+            <div id="waSemModulo" hidden>
+              <div class="ajuda" style="border-left:3px solid var(--alerta);padding-left:14px">
+                <strong>O modulo do WhatsApp nao esta no ar.</strong>
+                Ele e um programa separado, com icone proprio &mdash; assim uma
+                queda da sessao do WhatsApp nao e uma queda do sistema fiscal.
+                <div style="margin-top:8px">
+                  Abra o atalho <strong>WhatsApp</strong> na area de trabalho do
+                  servidor, ou <span class="mono">WhatsApp.bat</span> na pasta do
+                  gateway. Depois clique em Conferir.
+                </div>
+              </div>
+            </div>
+
+            <div id="waTermoCaixa" hidden>
+              <div class="ajuda" style="margin-bottom:10px">
+                Antes de ligar, leia. O texto e o mesmo que o modulo exige, e o
+                aceite fica registrado com nome e data.
+              </div>
+              <div id="waTermoTexto"
+                   style="white-space:pre-wrap;font-size:12.5px;line-height:1.6;
+                          max-height:260px;overflow-y:auto;border:1px solid var(--linha);
+                          border-radius:7px;padding:14px;background:var(--superficie-2);
+                          color:var(--texto-2)"></div>
+              <label style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-weight:400">
+                <input type="checkbox" id="waAceite" style="width:auto;margin-top:4px">
+                <span>Li e entendi. Escolho usar assim mesmo, ciente de que o
+                numero pode ser banido e de que quem fornece o sistema nao se
+                responsabiliza por quedas ou indisponibilidade deste recurso.</span>
+              </label>
+              <div class="linha-botoes" style="margin-top:12px">
+                <button class="pequeno primario" id="btnAceitarTermo" disabled>Aceitar o termo</button>
+              </div>
+            </div>
+
+            <div id="waQrCaixa" hidden style="display:flex;flex-direction:column;align-items:center;gap:12px">
+              <img id="waQrImg" alt="Codigo QR para conectar o WhatsApp"
+                   style="width:300px;height:300px;border:1px solid var(--linha);
+                          border-radius:9px;background:#fff">
+              <ol class="ajuda" style="margin:0;padding-left:20px;align-self:flex-start">
+                <li>Abra o WhatsApp no celular que vai atender.</li>
+                <li>Toque em <strong>Mais opcoes</strong> &rarr; <strong>Dispositivos conectados</strong>.</li>
+                <li>Toque em <strong>Conectar um dispositivo</strong> e aponte para o codigo.</li>
+              </ol>
+            </div>
+
+            <div class="ajuda" id="waSessaoEstado" style="margin-top:4px"></div>
+
+            <div class="linha-botoes" style="margin-top:14px">
+              <button class="pequeno primario" id="btnLigarWa" hidden>Ligar e mostrar o codigo</button>
+              <button class="pequeno" id="btnConferirWaLocal">Conferir</button>
+              <button class="pequeno" id="btnDesligarWa" hidden>Desligar</button>
+              <button class="pequeno perigo" id="btnEsquecerWa" hidden>Desconectar e esquecer</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="cartao" style="margin:0 0 18px" data-admin hidden>
+          <div class="cartao-cab"><h2>Como o robo atende</h2></div>
+          <div class="cartao-corpo">
+            <div class="ajuda" style="margin-bottom:12px">
+              As palavras que o cliente le antes de falar com gente. Em branco, o
+              sistema usa o nome do escritorio e um texto padrao. Isto muda a
+              <strong>forma de dizer</strong>, nunca o que o sistema faz.
+            </div>
+            <div class="grade c3">
+              <div><label for="cbSaudacao">Saudacao</label>
+                <input id="cbSaudacao" type="text" maxlength="300"
+                       placeholder="Atendimento automatico para emissao de notas.">
+                <div class="ajuda">Uma linha, logo abaixo do nome da casa.</div></div>
+              <div><label for="cbAtendente">Quem assina o atendimento</label>
+                <input id="cbAtendente" type="text" maxlength="60" placeholder="ex: Juliana">
+                <div class="ajuda">Um nome para a pessoa pedir no telefone.</div></div>
+              <div><label for="cbHorario">Horario de atendimento</label>
+                <input id="cbHorario" type="text" maxlength="120"
+                       placeholder="ex: seg a sex, 8h as 18h">
+                <div class="ajuda">Informativo: o robo continua atendendo fora dele.</div></div>
+            </div>
+            <div class="linha-botoes" style="margin-top:14px">
+              <button class="pequeno primario" id="btnSalvarChatbot">Salvar textos</button>
+              <span class="ajuda" id="cbEstado"></span>
+            </div>
+            <div class="ajuda" style="margin-top:12px">
+              Quem pode <strong>pedir nota</strong> por WhatsApp e cadastrado em
+              cada empresa, em <a href="#empresas">Empresas</a> &rarr; a empresa
+              &rarr; WhatsApp autorizado. E por empresa de proposito: o numero da
+              financeira de um cliente nao deve emitir pelo CNPJ de outro.
+            </div>
           </div>
         </div>
 

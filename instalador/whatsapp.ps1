@@ -26,7 +26,6 @@ param(
     [string]$Numero,
     [int]$Porta = 3200,
     [int]$RelayPorta = 8080,
-    [string]$PhoneNumberId,
     [string]$Saudacao,
     [string]$Atendente,
     [string]$Horario
@@ -146,10 +145,14 @@ $dados = @{
     numero        = $Numero
     porta         = $Porta
     relayPorta    = $RelayPorta
-    phoneNumberId = $PhoneNumberId
-    # O token vem do ambiente, nao de parametro: quem chamou o colocou la pelo
-    # mesmo motivo que as respostas do assistente vao em arquivo.
-    token         = $env:NFSE_META_TOKEN
+    # As credenciais da Meta NAO passam por aqui, e e decisao.
+    #
+    # Phone Number ID, token, App Secret e verify token nascem no painel da Meta
+    # depois de conta aprovada e empresa verificada -- semanas, as vezes. Pedi-los
+    # num assistente de instalacao garante que a maioria chegue nessa tela sem
+    # ter os valores em maos, e entao ou inventa algo para seguir, ou desiste da
+    # instalacao inteira. Aqui se prepara o terreno (tunel, repassador, porta);
+    # as credenciais entram no sistema, com calma, quando a Meta liberar.
     tunelBinario  = $tunel
     saudacao      = $Saudacao
     atendente     = $Atendente

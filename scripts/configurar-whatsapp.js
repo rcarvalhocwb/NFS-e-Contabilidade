@@ -65,13 +65,18 @@ async function principal() {
 
   /* --------------------------------------------- plataforma oficial */
 
+  /* As CREDENCIAIS não são pedidas aqui, e é decisão, não esquecimento.
+   *
+   * Phone Number ID, token de envio, App Secret e verify token nascem no painel
+   * da Meta depois de conta aprovada e empresa verificada — semanas, às vezes.
+   * Pedir isso num assistente de instalação garante que a maioria das pessoas
+   * chegue nessa tela sem ter os valores, e então ou inventa algo para seguir,
+   * ou desiste da instalação inteira. O instalador prepara o terreno (túnel,
+   * repassador, porta) e o resto se faz no sistema, com calma. */
   if (d.transporte === 'meta') {
     try {
       await ponte.salvar({
         waNumero: d.numero || undefined,
-        waPhoneNumberId: d.phoneNumberId || undefined,
-        waToken: d.token || undefined,
-        waAtivo: true,
         /* O repassador roda NESTA máquina. A alternativa seria hospedá-lo, e
            hospedar um repassador por escritório é infraestrutura que o
            escritório não comprou. */
@@ -80,26 +85,27 @@ async function principal() {
         tunelBinario: d.tunelBinario || undefined,
         tunelAtivo: d.tunelBinario ? true : undefined
       });
-      feito.push('credenciais da Meta guardadas (token cifrado)');
+      await db.query(
+        "UPDATE config_nuvem SET wa_transporte = 'meta', atualizado_em = now() WHERE id = TRUE");
+      feito.push('repassador e túnel preparados para a plataforma oficial');
 
       if (!d.tunelBinario) {
         pendencias.push({
           item: 'endereço público',
           motivo: 'o cloudflared não foi instalado, então o webhook da Meta ' +
-                  'ainda não tem por onde chegar. O painel, em WhatsApp, ' +
-                  'explica como resolver.'
+                  'ainda não tem por onde chegar. O painel, em Portal do ' +
+                  'cliente, explica como resolver.'
         });
       }
 
-      /* Isto não tem como ser automatizado: o endereço só existe depois de o
-         túnel subir, e cadastrá-lo é um passo dentro do painel da Meta. */
       pendencias.push({
-        item: 'webhook na Meta',
-        motivo: 'copie o endereço que o painel mostra em WhatsApp e cadastre-o ' +
-                'em Configuração da API > Webhook, no painel da Meta.'
+        item: 'credenciais da Meta',
+        motivo: 'informe o Phone Number ID, o token, o App Secret e o token de ' +
+                'verificação no painel, em Portal do cliente. Eles nascem no ' +
+                'painel da Meta depois de a conta ser aprovada.'
       });
     } catch (e) {
-      pendencias.push({ item: 'credenciais da Meta', motivo: e.message });
+      pendencias.push({ item: 'plataforma oficial', motivo: e.message });
     }
   }
 

@@ -118,6 +118,10 @@ const ACESSO = {
   "PUT /ponte/whatsapp": "admin",
   /* Os textos que o robô fala saem com a voz do escritório para os clientes
      dele. Quem opera emite nota; quem fala em nome da casa é o administrador. */
+  "GET /ponte/whatsapp/qr": "admin",
+  "GET /ponte/whatsapp/termo/texto": "admin",
+  "POST /ponte/whatsapp/ligar": "admin",
+  "POST /ponte/whatsapp/desligar": "admin",
   "GET /ponte/chatbot": "admin",
   "PUT /ponte/chatbot": "admin",
   "GET /ponte/solicitacoes": "logado",

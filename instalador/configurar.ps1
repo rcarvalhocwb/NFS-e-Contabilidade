@@ -37,6 +37,9 @@ param(
     [string]$EmpresaRazaoSocial,
     [string]$EmpresaMunicipio,
     [string]$EmpresaInscricaoMunicipal,
+    # O regime e de CADA empresa cliente: a contabilidade atende enquadramentos
+    # diferentes, e o regime decide PARA ONDE a nota vai.
+    [int]$EmpresaRegime = 1,
     [string]$CertificadoArquivo,
     [string]$CertificadoSenha,
     [string]$ServicoApelido,
@@ -46,8 +49,6 @@ param(
     [ValidateSet('meta','local','nenhum')][string]$WhatsappTransporte = 'nenhum',
     [string]$WhatsappNumero,
     [int]$WhatsappPorta = 3200,
-    [string]$MetaPhoneNumberId,
-    [string]$MetaToken,
     [string]$ChatbotSaudacao,
     [string]$ChatbotAtendente,
     [string]$ChatbotHorario
@@ -85,13 +86,15 @@ if (-not [string]::IsNullOrWhiteSpace($Respostas) -and (Test-Path $Respostas)) {
                          'CertificadoSenha','ServicoApelido','ServicoCodigoTributacao',
                          'ServicoDescricao','ServicoValorPadrao',
                          'WhatsappTransporte','WhatsappNumero',
-                         'MetaPhoneNumberId','MetaToken',
                          'ChatbotSaudacao','ChatbotAtendente','ChatbotHorario')) {
         if ($r.PSObject.Properties.Name -contains $campo -and $r.$campo) {
             Set-Variable -Name $campo -Value $r.$campo
         }
     }
     if ($r.PSObject.Properties.Name -contains 'Porta' -and $r.Porta) { $Porta = [int]$r.Porta }
+    if ($r.PSObject.Properties.Name -contains 'EmpresaRegime' -and $r.EmpresaRegime) {
+        $EmpresaRegime = [int]$r.EmpresaRegime
+    }
     if ($r.PSObject.Properties.Name -contains 'WhatsappPorta' -and $r.WhatsappPorta) {
         $WhatsappPorta = [int]$r.WhatsappPorta
     }
@@ -339,6 +342,7 @@ if ($Comissionar -and $Modo -eq 'nova' -and -not [string]::IsNullOrWhiteSpace($E
             razaoSocial         = $EmpresaRazaoSocial
             municipio           = $EmpresaMunicipio
             inscricaoMunicipal  = $EmpresaInscricaoMunicipal
+            regime              = $EmpresaRegime
             certificadoArquivo  = $CertificadoArquivo
             certificadoSenha    = $CertificadoSenha
             apelido             = $ServicoApelido
@@ -379,22 +383,18 @@ if ($Comissionar -and $Modo -eq 'nova' -and $WhatsappTransporte -ne 'nenhum') {
     $wa = Join-Path $Raiz 'whatsapp.ps1'
     if (Test-Path $wa) {
         Registrar "Preparando o WhatsApp ($WhatsappTransporte)..."
-        # A senha (token da Meta) vai por variavel de ambiente do processo, nao
-        # por parametro: mesmo motivo do arquivo de respostas.
-        $env:NFSE_META_TOKEN = $MetaToken
         $saida = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $wa `
             -Raiz $Raiz -Transporte $WhatsappTransporte -Numero $WhatsappNumero `
-            -Porta $WhatsappPorta -PhoneNumberId $MetaPhoneNumberId `
+            -Porta $WhatsappPorta `
             -Saudacao $ChatbotSaudacao -Atendente $ChatbotAtendente `
             -Horario $ChatbotHorario 2>&1 | Out-String
-        $env:NFSE_META_TOKEN = $null
         Registrar ("WhatsApp: " + $saida.Trim())
         if ($LASTEXITCODE -ne 0) {
             $pendencias += "O WhatsApp nao ficou pronto. Veja configuracao.log e o painel, em WhatsApp."
         } elseif ($WhatsappTransporte -eq 'local') {
             $pendencias += "Leia o QR code para conectar o numero: abra o painel e clique no icone do WhatsApp."
         } elseif ($WhatsappTransporte -eq 'meta') {
-            $pendencias += "Cadastre o endereco do webhook no painel da Meta. O endereco esta no painel, em WhatsApp."
+            $pendencias += "Informe as credenciais da Meta no painel, em Portal do cliente."
         }
     } else {
         Registrar "AVISO: whatsapp.ps1 nao encontrado; WhatsApp nao configurado."

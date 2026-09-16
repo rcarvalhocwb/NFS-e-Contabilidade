@@ -320,7 +320,8 @@
     sistema:     { titulo:'O gateway no ar', sub:'Início automático, banco de dados e manutenção', carregar: carregarSistema },
     municipios:  { titulo:'Municípios',    sub:'Nacional ou emissor próprio',           carregar: carregarMunicipios },
     webhooks:    { titulo:'Webhooks',      sub:'Retorno automático ao sistema cliente', carregar: carregarWebhooks },
-    portal:      { titulo:'Portal do cliente', sub:'Pedidos de nota que chegam pelo site', carregar: carregarPonte }
+    portal:      { titulo:'Portal do cliente', sub:'Pedidos de nota que chegam pelo site', carregar: carregarPonte },
+    whatsapp:    { titulo:'WhatsApp',      sub:'Por onde sai, o numero do escritorio e o atendimento', carregar: carregarWhatsapp }
   };
 
   function navegar(tela) {
@@ -369,11 +370,6 @@
 
   function carregarPonte() {
     if (souAdmin()) {
-      /* Declaradas mais abaixo no arquivo; a içada do `function` as torna
-         visíveis aqui, e agrupá-las junto da seção que elas pintam vale mais
-         que a ordem de leitura. */
-      carregarWhatsappLocal();
-      carregarChatbot();
       api('/ponte/config').then(function (c) {
         el('ptUrl').value = c.url || '';
         el('ptIntervalo').value = String(c.intervalo_seg || 60);
@@ -1563,78 +1559,258 @@
   };
 
 
-  /* ------------------------------------- por onde sai, e com que palavras */
+  /* ------------------------------------------------------- WhatsApp */
 
-  /* O transporte e os textos do robô: o instalador escolhe na primeira vez,
-     e esta é a tela onde se muda depois. Sem ela, a escolha feita na
-     instalação ficaria congelada até alguém mexer no banco. */
-  function pintarWhatsappLocal(s) {
-    var local = s && s.transporte === 'local';
-    el('waTrMeta').checked = !local;
+  /* Tudo de WhatsApp num lugar: por onde sai, conectar o número, e as palavras
+     do atendimento.
+   *
+   * O QR vem do módulo, que atende só em 127.0.0.1 com um token de arquivo —
+   * quem está no painel pela rede não alcança nenhum dos dois. Quem atravessa é
+   * o gateway, e é por isso que estas chamadas vão para /ponte/whatsapp/... e
+   * não direto para a porta do módulo. */
+
+  var relogioQr = null;
+
+  function pararRelogioQr() {
+    if (relogioQr) { clearInterval(relogioQr); relogioQr = null; }
+  }
+
+  /* Enquanto a sessão estiver num estado de passagem — conectando, ou esperando
+     a leitura — a tela se atualiza sozinha. Fora deles o relógio para: um
+     intervalo vivo numa tela parada em "conectado" é só tráfego. */
+  function acompanhar() {
+    if (relogioQr) return;
+    relogioQr = setInterval(function () {
+      /* Sair da aba de WhatsApp para o relógio: ninguém está olhando, e uma
+         chamada a cada quatro segundos para sempre é o tipo de coisa que só se
+         descobre meses depois, no log. */
+      var tela = document.querySelector('[data-tela-conteudo="whatsapp"]');
+      if (!tela || tela.hidden) { pararRelogioQr(); return; }
+      carregarWhatsapp();
+    }, 4000);
+  }
+
+  function pintarWhatsapp(s) {
+    var local = s.transporte === 'local';
     el('waTrLocal').checked = local;
+    el('waTrMeta').checked = !local;
+    el('waCaixaLocal').hidden = !local;
 
-    var estado = el('waLocalEstado');
-    var link = el('lnkModuloWa');
-    link.hidden = !local;
+    var selo = el('waSeloTransporte');
+    selo.className = 'selo-status ' + (local ? 's-ok' : 's-neutro');
+    selo.textContent = local ? 'sessão própria' : 'plataforma oficial';
 
-    if (!local) {
-      estado.textContent = 'Saindo pela plataforma oficial da Meta.';
+    if (!local) { pararRelogioQr(); return; }
+
+    var seloS = el('waSeloSessao');
+    var estado = el('waSessaoEstado');
+    var temTermo = !!s.termo;
+
+    el('waTermoCaixa').hidden = temTermo;
+    el('btnLigarWa').hidden = !temTermo || s.ativo;
+    el('btnDesligarWa').hidden = !s.ativo;
+    el('btnEsquecerWa').hidden = !s.ativo;
+
+    if (!temTermo) {
+      seloS.className = 'selo-status s-alerta';
+      seloS.textContent = 'falta aceitar o termo';
+      el('waQrCaixa').hidden = true;
+      estado.textContent = '';
+      pararRelogioQr();
       return;
     }
 
-    link.href = 'http://127.0.0.1:' + (s.porta || 3200) + '/';
-
-    /* O que o módulo diz de si mesmo. Traduzido para o que a pessoa precisa
-       decidir — "conectado" e "precisa ler o QR" levam a ações diferentes. */
-    if (!s.termo) {
-      estado.innerHTML = '<strong>Falta aceitar o termo.</strong> Abra o módulo: ' +
-        'ele explica o que a automação não oficial custa, e só depois liga.';
-    } else if (s.situacaoSessao === 'conectado') {
-      estado.innerHTML = '<span class="s-ok">●</span> Conectado' +
-        (s.numero ? ' — ' + esc(s.numero) : '') + '.';
-    } else if (s.situacaoSessao === 'esperando_qr') {
-      estado.innerHTML = '<strong>Esperando a leitura do QR.</strong> ' +
-        'Abra o módulo com o celular na mão.';
-    } else if (s.situacaoSessao === 'banido') {
-      /* O risco que o termo descreve, acontecido. Não adianta reconectar: a
-         decisão é do WhatsApp e não há a quem recorrer. Dizer isso aqui evita
-         a tarde perdida tentando religar. */
-      estado.innerHTML = '<span class="s-erro">●</span> <strong>O número foi ' +
-        'bloqueado pelo WhatsApp.</strong> Religar não resolve — a decisão é ' +
-        'deles. Use outro número, ou passe para a plataforma oficial.' +
-        (s.ultimoErro ? '<br><span class="mono">' + esc(s.ultimoErro) + '</span>' : '');
-    } else {
-      estado.innerHTML = '<span class="s-alerta">●</span> ' +
-        esc(s.situacaoSessao || 'desligado') +
-        (s.ultimoErro ? ' — ' + esc(s.ultimoErro) : '') + '.';
+    if (s.situacaoSessao === 'conectado') {
+      seloS.className = 'selo-status s-ok';
+      seloS.textContent = 'conectado';
+      el('waQrCaixa').hidden = true;
+      pararRelogioQr();
+      estado.innerHTML = 'Conectado' + (s.numero ? ' &mdash; <strong>' + esc(s.numero) + '</strong>' : '') +
+        (s.nomePerfil ? ' (' + esc(s.nomePerfil) + ')' : '') + '.';
+      return;
     }
+
+    if (s.situacaoSessao === 'banido') {
+      /* O risco que o termo descreve, acontecido. Religar não resolve: a decisão
+         é do WhatsApp e não há a quem recorrer. Dizer isso aqui evita a tarde
+         perdida tentando reconectar. */
+      seloS.className = 'selo-status s-erro';
+      seloS.textContent = 'número bloqueado';
+      el('waQrCaixa').hidden = true;
+      pararRelogioQr();
+      estado.innerHTML = '<strong>O WhatsApp bloqueou este número.</strong> ' +
+        'Religar não resolve &mdash; a decisão é deles. Use outro número, ou ' +
+        'passe para a plataforma oficial.' +
+        (s.ultimoErro ? '<br><span class="mono">' + esc(s.ultimoErro) + '</span>' : '');
+      return;
+    }
+
+    if (s.situacaoSessao === 'esperando_qr') {
+      seloS.className = 'selo-status s-alerta';
+      seloS.textContent = 'esperando leitura';
+      estado.textContent = 'Aponte a câmera do celular para o código.';
+      buscarQr();
+      /* O QR do WhatsApp expira em cerca de vinte segundos e o módulo gera
+         outro. Sem renovar, a pessoa aponta a câmera para um código morto e
+         conclui que o sistema não funciona. */
+      acompanhar();
+      return;
+    }
+
+    if (s.situacaoSessao === 'conectando') {
+      /* Estado de passagem, e o mais importante de acompanhar: é entre clicar
+         em "ligar" e o QR existir. Sem seguir daqui, a tela parava em
+         "conectando" e só mudava se alguém clicasse em Conferir — ou seja, o
+         código aparecia para quem já tinha desistido de esperar. */
+      seloS.className = 'selo-status s-neutro';
+      seloS.textContent = 'conectando';
+      estado.textContent = 'Falando com o WhatsApp. O código aparece em instantes.';
+      el('waQrCaixa').hidden = true;
+      acompanhar();
+      return;
+    }
+
+    seloS.className = 'selo-status s-neutro';
+    seloS.textContent = s.situacaoSessao || 'desligado';
+    el('waQrCaixa').hidden = true;
+    pararRelogioQr();
+    estado.textContent = s.ultimoErro || 'Clique em "Ligar e mostrar o código".';
   }
 
-  function carregarWhatsappLocal() {
-    return api('/ponte/whatsapp')
-      .then(pintarWhatsappLocal)
-      .catch(function () { /* sem módulo instalado: a tela não some por isso */ });
+  function buscarQr() {
+    api('/ponte/whatsapp/qr').then(function (r) {
+      if (!r.qr) { el('waQrCaixa').hidden = true; return; }
+      el('waQrImg').src = r.qr;
+      el('waQrCaixa').hidden = false;
+    }).catch(function () {
+      /* Módulo caiu no meio da espera: para o relógio em vez de acumular erro a
+         cada oito segundos numa tela que ninguém está mais olhando. */
+      pararRelogioQr();
+    });
   }
 
-  /* Trocar de transporte pela tela só desliga o local. LIGAR exige o aceite do
-     termo, e o aceite é um ato de leitura — acontece no módulo, com o texto
-     inteiro à vista, e não num rádio que alguém clica de passagem. */
+  function carregarWhatsapp() {
+    if (!souAdmin()) return;
+    carregarChatbot();
+    return api('/ponte/whatsapp').then(function (s) {
+      el('waSemModulo').hidden = true;
+      pintarWhatsapp(s);
+      /* A situação vem do banco e responde mesmo com o módulo fora do ar — é de
+         propósito, porque é justamente quando ele cai que alguém quer saber. Só
+         que para LIGAR o módulo precisa estar de pé, e é melhor dizer isso antes
+         de o botão falhar. */
+      if (s.transporte === 'local' && !s.termo) carregarTermoWa();
+    }).catch(function (e) { aviso(e.message, 'erro'); });
+  }
+
+  function carregarTermoWa() {
+    api('/ponte/whatsapp/termo/texto').then(function (t) {
+      el('waTermoTexto').textContent = t.texto || '';
+      el('waSemModulo').hidden = true;
+    }).catch(function () {
+      /* Sem módulo no ar não há texto de termo para ler — e é isso, e não um
+         erro genérico, que a pessoa precisa saber. */
+      el('waSemModulo').hidden = false;
+      el('waTermoCaixa').hidden = true;
+    });
+  }
+
+  el('waAceite').onchange = function () { el('btnAceitarTermo').disabled = !this.checked; };
+
+  el('btnAceitarTermo').onclick = function () {
+    var b = el('btnAceitarTermo');
+    b.disabled = true;
+    /* A versão vem do texto que acabou de ser mostrado: aceitar uma versão e o
+       módulo exigir outra é o erro que o campo `versao` existe para evitar. */
+    api('/ponte/whatsapp/termo/texto').then(function (t) {
+      return api('/ponte/whatsapp/termo', { method: 'POST',
+        body: JSON.stringify({ versao: t.versao }) });
+    }).then(function () {
+      aviso('Termo aceito e registrado.', 'ok');
+      el('waAceite').checked = false;
+      return carregarWhatsapp();
+    }).catch(function (e) { aviso(e.message, 'erro'); b.disabled = false; });
+  };
+
+  el('btnLigarWa').onclick = function () {
+    var b = el('btnLigarWa');
+    b.disabled = true;
+    el('waSessaoEstado').textContent = 'Ligando o módulo...';
+    api('/ponte/whatsapp/ligar', { method: 'POST', body: '{}' })
+      .then(function () { return carregarWhatsapp(); })
+      .catch(function (e) {
+        aviso(e.message, 'erro');
+        if (/não está no ar|não respondeu/.test(e.message)) el('waSemModulo').hidden = false;
+      })
+      .then(function () { b.disabled = false; });
+  };
+
+  el('btnDesligarWa').onclick = function () {
+    /* O relógio para ANTES do pedido.
+       Deixá-lo correndo fazia o QR reaparecer sozinho depois de desligar: a
+       cada oito segundos ele buscava de novo, e o módulo ainda devolve a última
+       imagem por um instante. A tela contava uma história e o módulo, outra. */
+    pararRelogioQr();
+    api('/ponte/whatsapp/desligar', { method: 'POST', body: '{}' })
+      .then(function () {
+        aviso('WhatsApp desligado.', 'ok');
+        /* Relê depois de uma pausa curta: o módulo fecha a conexão e só então
+           se declara desligado. Perguntar no mesmo instante pega o estado de
+           antes — e a tela fica dizendo "esperando leitura" para uma sessão
+           que já morreu. */
+        return new Promise(function (r) { setTimeout(r, 1200); });
+      })
+      .then(function () { return carregarWhatsapp(); })
+      .catch(function (e) { aviso(e.message, 'erro'); carregarWhatsapp(); });
+  };
+
+  el('btnEsquecerWa').onclick = function () {
+    /* Irreversível: a sessão vai embora e o número precisa ser lido de novo.
+       Perguntar aqui é barato; refazer a leitura exige o celular de volta. */
+    if (!confirm('Isto apaga a sessão. O número terá de ser conectado de novo, ' +
+                 'lendo o QR com o celular. Continuar?')) return;
+    pararRelogioQr();
+    api('/ponte/whatsapp/desligar', { method: 'POST',
+      body: JSON.stringify({ apagarSessao: true }) })
+      .then(function () {
+        aviso('Sessão apagada.', 'ok');
+        return new Promise(function (r) { setTimeout(r, 1200); });
+      })
+      .then(function () { return carregarWhatsapp(); })
+      .catch(function (e) { aviso(e.message, 'erro'); carregarWhatsapp(); });
+  };
+
+  el('btnConferirWaLocal').onclick = function () {
+    var b = el('btnConferirWaLocal');
+    b.disabled = true;
+    carregarWhatsapp().then(function () { b.disabled = false; });
+  };
+
+  /* Trocar de transporte pela tela só DESLIGA o local. Ligar exige o aceite e a
+     leitura do QR, que acontecem logo abaixo — um rádio clicado de passagem não
+     pode conectar um número. */
   function trocarTransporte(destino) {
     if (destino === 'local') {
-      aviso('Abra o módulo do WhatsApp para ler o termo e conectar o número.', 'aviso');
-      carregarWhatsappLocal();
+      api('/ponte/whatsapp').then(function (s) {
+        el('waCaixaLocal').hidden = false;
+        pintarWhatsapp(Object.assign({}, s, { transporte: 'local' }));
+        if (!s.termo) carregarTermoWa();
+        aviso('Aceite o termo e leia o código para conectar o número.', 'aviso');
+      }).catch(function (e) { aviso(e.message, 'erro'); });
       return;
     }
     api('/ponte/whatsapp', { method: 'PUT', body: JSON.stringify({ ativo: false }) })
       .then(function (s) {
-        pintarWhatsappLocal(s);
+        pintarWhatsapp(s);
         aviso('Agora o WhatsApp sai pela plataforma oficial.', 'ok');
       })
-      .catch(function (e) { aviso(e.message, 'erro'); carregarWhatsappLocal(); });
+      .catch(function (e) { aviso(e.message, 'erro'); carregarWhatsapp(); });
   }
 
-  el('waTrMeta').onchange = function () { if (this.checked) trocarTransporte('meta'); };
   el('waTrLocal').onchange = function () { if (this.checked) trocarTransporte('local'); };
+  el('waTrMeta').onchange = function () { if (this.checked) trocarTransporte('meta'); };
+
+  /* ------------------------------------------ as palavras do atendimento */
 
   function carregarChatbot() {
     return api('/ponte/chatbot').then(function (c) {
