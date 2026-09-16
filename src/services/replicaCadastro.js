@@ -31,9 +31,15 @@ const { decrypt } = require('../secretbox');
 
 async function montar() {
   const empresas = await db.query(
-    `SELECT cnpj, razao_social, nome_fantasia, codigo_municipio, uf,
-            modo_emissao, portal_liberado, portal_motivo, ativo
-       FROM empresas ORDER BY cnpj`);
+    `SELECT e.cnpj, e.razao_social, e.nome_fantasia, e.codigo_municipio, e.uf,
+            e.modo_emissao, e.portal_liberado, e.portal_motivo, e.ativo,
+            -- O NOME da cidade, não só o código. A conversa oferece ao cliente
+            -- escolher onde o serviço foi prestado, e "4106902" não é uma opção
+            -- que alguém reconheça: "Curitiba" é.
+            m.nome AS municipio_nome
+       FROM empresas e
+       LEFT JOIN municipios m ON m.codigo_municipio = e.codigo_municipio
+      ORDER BY e.cnpj`);
 
   /* Os serviços que o contador cadastrou. É deles que o cliente escolhe — e é
      por isso que ele não precisa (nem pode) escolher tributação: o código, a
@@ -152,6 +158,7 @@ async function montar() {
       razaoSocial: e.razao_social,
       nomeFantasia: e.nome_fantasia,
       codigoMunicipio: e.codigo_municipio,
+      municipio: e.municipio_nome || null,
       uf: e.uf,
       modoEmissao: e.modo_emissao,
       ativo: e.ativo,

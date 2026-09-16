@@ -147,6 +147,8 @@ async function responder({ texto, telefone, vinculos, conversa, memoria, buscarC
     case 'nome_novo':       return doNomeNovo(t, empresa, memoria, dados);
     case 'escolhendo_valor':return doValor(t, empresa, contato, dados);
     case 'confirmando':     return doConfirmacao(t, empresa, contato, dados, memoria);
+    case 'ajustando':       return doAjuste(t, empresa, contato, dados, memoria);
+    case 'escolhendo_local': return doLocal(t, empresa, contato, dados);
     case 'escolhendo_servico': return doServico(t, empresa, dados, memoria);
     default:                return escolherEmpresa(vinculos, telefone, memoria);
   }
@@ -698,33 +700,80 @@ function doValor(t, empresa, contato, dados) {
         formatarCnpj(base.tomador.documento) +
         (base.tomador.novo ? ' _(novo — a contabilidade confere)_' : '')) + '\n' +
       '*Serviço:* ' + base.servico.descricao + '\n' +
+      '*Onde foi prestado:* ' + nomeDoLocal(dados, empresa, base) + '\n' +
       '*Valor:* ' + dinheiro(valor) + '\n\n' +
       (acimaDoTeto
         ? '_Acima do combinado para este número — a contabilidade vai conferir._\n\n'
         : '') +
-      '1 — Confirmar\n2 — Corrigir o valor\n3 — Cancelar',
+      /* A ordem é a frequência do erro, não a da estrutura. Errar o valor é de
+         longe o mais comum, então continua a um toque; o resto fica atrás de
+         mais um. Empurrar o valor para dentro de um submenu economizaria uma
+         linha na tela e custaria um toque a cada correção. */
+      '1 — Confirmar\n2 — Corrigir o valor\n3 — Ajustar outra coisa\n4 — Cancelar',
     estado: 'confirmando',
     dados: Object.assign({}, dados, { valorEscolhido: valor })
   };
 }
 
+/* ONDE O SERVIÇO FOI PRESTADO.
+ *
+ * Não é detalhe: o local da prestação decide para qual prefeitura o ISS vai. O
+ * padrão do sistema é o município da empresa, e estava certo — mas ficava
+ * invisível, e o que não aparece na conferência não é conferido.
+ *
+ * Duas opções, e só duas, porque são as duas que o sistema JÁ CONHECE sem
+ * perguntar nada: onde a empresa fica e onde o cliente fica. Aceitar cidade
+ * digitada exigiria procurar o código do IBGE por nome — e um município errado
+ * manda a nota para a prefeitura errada, que é dos erros mais caros de
+ * desfazer. Qualquer outro lugar vai para o contador, que tem a tela boa.
+ */
+function localDoTomador(base) {
+  const e = base && base.tomador && base.tomador.endereco;
+  return e && e.codigoMunicipio ? e : null;
+}
+
+function nomeDoLocal(dados, empresa, base) {
+  const escolhido = dados.localPrestacao;
+  const t = localDoTomador(base);
+
+  /* Sem escolha, é o município da empresa — o mesmo padrão que o gateway aplica
+     ao montar a DPS. Dizer outra coisa aqui seria a tela mentindo. */
+  if (!escolhido || escolhido === empresa.codigoMunicipio) {
+    return cidade(empresa.municipio, empresa.uf, 'onde a empresa fica');
+  }
+  if (t && escolhido === t.codigoMunicipio) {
+    return cidade(t.municipio, t.uf, 'onde o cliente fica');
+  }
+  return 'município ' + escolhido;
+}
+
+/* O nome do município nem sempre existe: o cadastro de municípios é preenchido
+   conforme se emite, então uma instalação nova pode não ter o da própria
+   empresa. Sem o nome, diz-se o que se sabe em vez de mostrar um código. */
+function cidade(nome, uf, explicacao) {
+  if (nome) return nome + (uf ? '/' + uf : '') + ' _(' + explicacao + ')_';
+  return explicacao.charAt(0).toUpperCase() + explicacao.slice(1);
+}
+
 function doConfirmacao(t, empresa, contato, dados, memoria) {
   const escolha = escolher(t, [
     { chave: 'sim', sinonimos: ['sim', 'confirmar', 'confirmo', 'ok', 'pode'] },
-    { chave: 'valor', sinonimos: ['corrigir', 'valor errado', 'outro valor', 'mudar'] },
-    { chave: 'nao', sinonimos: ['nao', 'não', 'cancelar', 'errado'] }
+    { chave: 'valor', sinonimos: ['corrigir', 'valor errado', 'outro valor', 'valor'] },
+    { chave: 'ajustar', sinonimos: ['ajustar', 'mudar', 'alterar', 'errado',
+                                    'outra coisa', 'servico', 'serviço', 'local'] },
+    { chave: 'nao', sinonimos: ['nao', 'não', 'cancelar'] }
   ]);
   if (!escolha) {
     return naoEntendi(dados, () => ({
-      resposta: 'Responda *1* para confirmar, *2* para corrigir o valor ou ' +
-                '*3* para cancelar.',
+      resposta: 'Responda *1* para confirmar, *2* para corrigir o valor, ' +
+                '*3* para ajustar outra coisa ou *4* para cancelar.',
       estado: 'confirmando', dados
     }));
   }
   if (escolha.chave === 'nao') {
     return { resposta: 'Cancelado, nada foi enviado. É só chamar de novo.', estado: null };
   }
-  /* Valor errado não deveria custar recomeçar tudo. Era o caminho antes: só
+  /* Errar um dado não deveria custar recomeçar tudo. Era o caminho antes: só
      cancelar e refazer as quatro respostas. */
   if (escolha.chave === 'valor') {
     return {
@@ -733,6 +782,7 @@ function doConfirmacao(t, empresa, contato, dados, memoria) {
       dados: Object.assign({}, dados, { servicoEscolhido: true, valorEscolhido: null })
     };
   }
+  if (escolha.chave === 'ajustar') return menuDeAjuste(dados);
 
   const base = dados.base;
   const pedido = {
@@ -762,10 +812,16 @@ function doConfirmacao(t, empresa, contato, dados, memoria) {
           bairro: base.tomador.endereco.bairro
         }
       } : {}),
-    servico: {
+    servico: Object.assign({
       codigoTributacaoNacional: base.servico.codigoTributacao,
       descricao: base.servico.descricao
     },
+      /* Só viaja quando a pessoa ESCOLHEU outro lugar. Sem escolha, o campo não
+         vai e o gateway aplica o padrão dele (o município da empresa) -- que é
+         o mesmo que a conferência mostrou. Mandar o padrão daqui seria manter a
+         mesma regra em dois lugares, e dois lugares divergem. */
+      dados.localPrestacao && dados.localPrestacao !== empresa.codigoMunicipio
+        ? { codigoMunicipioPrestacao: dados.localPrestacao } : {}),
     valores: { valorServico: dados.valorEscolhido }
   };
 
@@ -778,6 +834,101 @@ function doConfirmacao(t, empresa, contato, dados, memoria) {
     estado: null,
     pedido
   };
+}
+
+/* ------------------------------------------------------ ajustar um dado */
+
+function menuDeAjuste(dados) {
+  return {
+    /* O valor NÃO está aqui: ele ficou na conferência, a um toque, porque é de
+       longe o erro mais comum. Repeti-lo aqui daria dois caminhos para a mesma
+       coisa, e dois caminhos é onde a pessoa para para escolher. */
+    resposta: 'O que você quer mudar?\n\n' +
+      '1 — O serviço\n' +
+      '2 — Onde o serviço foi prestado\n' +
+      '3 — Nada, está tudo certo',
+    estado: 'ajustando',
+    dados
+  };
+}
+
+function doAjuste(t, empresa, contato, dados, memoria) {
+  const escolha = escolher(t, [
+    { chave: 'servico', sinonimos: ['servico', 'serviço', 'item', 'descricao', 'descrição'] },
+    { chave: 'local', sinonimos: ['local', 'onde', 'cidade', 'municipio', 'município',
+                                  'prestado', 'prestacao', 'prestação'] },
+    { chave: 'nada', sinonimos: ['nada', 'voltar', 'certo', 'tudo certo', 'ok'] }
+  ]);
+  if (!escolha) return naoEntendi(dados, () => menuDeAjuste(dados));
+
+  if (escolha.chave === 'nada') {
+    /* Volta para a conferência, com tudo que já foi escolhido. */
+    return doValor(String(dados.valorEscolhido), empresa, contato,
+      Object.assign({}, dados, { valorEscolhido: null }));
+  }
+
+  if (escolha.chave === 'servico') {
+    const servicos = memoria.servicosDa(empresa.cnpj);
+    if (!servicos.length) {
+      return {
+        resposta: 'Não há outro serviço cadastrado para esta empresa.\n\n' +
+                  'Fale com o escritório — assim que cadastrarem, aparece aqui.',
+        estado: 'confirmando', dados
+      };
+    }
+    return {
+      resposta: 'Qual serviço?\n\n' +
+        servicos.slice(0, 8).map((s, i) => (i + 1) + ' — ' + (s.apelido || s.descricao)).join('\n'),
+      estado: 'escolhendo_servico',
+      dados: Object.assign({}, dados, { valorEscolhido: null })
+    };
+  }
+
+  return perguntarLocal(dados, empresa);
+}
+
+function perguntarLocal(dados, empresa) {
+  const base = dados.base || {};
+  const t = localDoTomador(base);
+  const opcoes = [{ codigo: empresa.codigoMunicipio,
+                    rotulo: cidade(empresa.municipio, empresa.uf, 'onde a empresa fica') }];
+
+  /* A cidade do cliente só entra quando ela existe E é outra. Oferecer duas
+     opções que levam ao mesmo lugar é fazer a pessoa escolher entre iguais. */
+  if (t && t.codigoMunicipio && t.codigoMunicipio !== empresa.codigoMunicipio) {
+    opcoes.push({ codigo: t.codigoMunicipio,
+                  rotulo: cidade(t.municipio, t.uf, 'onde o cliente fica') });
+  }
+
+  if (opcoes.length === 1) {
+    return {
+      resposta: 'Só conheço um lugar para esta nota: ' + opcoes[0].rotulo + '.\n\n' +
+                'Se o serviço foi prestado em outra cidade, escreva *atendente* — ' +
+                'a contabilidade resolve, porque o município errado manda o ' +
+                'imposto para a prefeitura errada.',
+      estado: 'confirmando', dados
+    };
+  }
+
+  return {
+    resposta: 'Onde o serviço foi prestado?\n\n' +
+      opcoes.map((o, i) => (i + 1) + ' — ' + o.rotulo).join('\n') +
+      '\n\n_Em outra cidade? Escreva *atendente* — a contabilidade resolve._',
+    estado: 'escolhendo_local',
+    dados: Object.assign({}, dados, { locais: opcoes.map(o => o.codigo) })
+  };
+}
+
+function doLocal(t, empresa, contato, dados) {
+  const locais = dados.locais || [];
+  const i = Number(String(t).trim()) - 1;
+  if (!Number.isInteger(i) || i < 0 || i >= locais.length) {
+    return naoEntendi(dados, () => perguntarLocal(dados, empresa));
+  }
+  /* Escolhido o local, volta direto para a conferência — com o valor que já
+     estava escolhido, para a pessoa não redigitar o que não mudou. */
+  return doValor(String(dados.valorEscolhido), empresa, contato,
+    Object.assign({}, dados, { localPrestacao: locais[i], valorEscolhido: null }));
 }
 
 /* Três recusas na mesma pergunta é o sistema prendendo a pessoa. */

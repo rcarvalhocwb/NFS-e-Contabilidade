@@ -278,3 +278,112 @@ test('a chave de outra pessoa não vira documento', async () => {
   assert.match(r.resposta, /Não encontrei essa nota entre as suas/);
   assert.ok(!r.documento, 'e nada de documento junto');
 });
+
+/* --------------------------------- ajustar o pedido antes de confirmar */
+
+function memoriaComLocal() {
+  const m = memoriaCom({ nome: 'Contabilidade Recalcatti' });
+  m.dados.cadastro.empresas[0].codigoMunicipio = '4106902';
+  m.dados.cadastro.empresas[0].municipio = 'Curitiba';
+  m.dados.cadastro.empresas[0].uf = 'PR';
+  return m;
+}
+
+const buscaComEndereco = async doc => ({
+  documento: doc, nome: 'CLIENTE DA BASE LTDA', situacao: 'ATIVA',
+  logradouro: 'RUA TESTE', numero: '100', bairro: 'CENTRO',
+  cep: '01310100', uf: 'SP', municipio: 'SAO PAULO', codigoMunicipio: '3550308'
+});
+
+async function ateAConfirmacao(m) {
+  const seguir = s => (s.estado ? { estado: s.estado, dados: s.dados } : null);
+  const diga = (texto, ant) => conversa.responder({
+    texto, telefone: '5541999998888',
+    vinculos: m.empresasDe('5541999998888'),
+    conversa: ant, memoria: m, buscarCnpj: buscaComEndereco
+  });
+  let s = await diga('oi', null);
+  s = await diga('1', seguir(s));                    // emitir uma nota
+  s = await diga('11444777000161', seguir(s));       // documento
+  if (/Responda \*1\*|est(a|á) certo/i.test(s.resposta)) s = await diga('1', seguir(s));
+  if (/servi(c|ç)o/i.test(s.resposta)) s = await diga('1', seguir(s));
+  if (/valor/i.test(s.resposta)) s = await diga('1500,00', seguir(s));
+  return { s, diga, seguir };
+}
+
+test('a conferência mostra onde o serviço foi prestado', async () => {
+  /* O local da prestação decide para qual prefeitura o ISS vai. O padrão
+     (município da empresa) sempre esteve certo — mas ficava invisível, e o que
+     não aparece na conferência não é conferido. */
+  const { s } = await ateAConfirmacao(memoriaComLocal());
+  assert.equal(s.estado, 'confirmando');
+  assert.match(s.resposta, /Onde foi prestado/);
+  assert.match(s.resposta, /Curitiba/, 'com o nome da cidade, não o código');
+  assert.match(s.resposta, /Ajustar outra coisa/);
+  assert.match(s.resposta, /2 — Corrigir o valor/,
+    'corrigir o valor continua a UM toque: e de longe o erro mais comum');
+});
+
+test('o cliente troca o local da prestação, e isso chega no pedido', async () => {
+  const m = memoriaComLocal();
+  const { s, diga, seguir } = await ateAConfirmacao(m);
+
+  const ajuste = await diga('3', seguir(s));               // ajustar outra coisa
+  assert.equal(ajuste.estado, 'ajustando');
+  assert.match(ajuste.resposta, /Onde o serviço foi prestado/);
+
+  const locais = await diga('2', seguir(ajuste));          // o local
+  assert.equal(locais.estado, 'escolhendo_local');
+  assert.match(locais.resposta, /Curitiba/);
+  assert.match(locais.resposta, /SAO PAULO/, 'a cidade do cliente também é opção');
+
+  const volta = await diga('2', seguir(locais));           // onde o cliente fica
+  assert.equal(volta.estado, 'confirmando', 'volta para a conferência');
+  assert.match(volta.resposta, /SAO PAULO/, 'e mostra o local novo');
+  assert.match(volta.resposta, /1\.500,00/, 'sem pedir o valor de novo');
+
+  const fim = await diga('1', seguir(volta));              // confirmar
+  assert.ok(fim.pedido, 'o pedido foi montado');
+  assert.equal(fim.pedido.servico.codigoMunicipioPrestacao, '3550308',
+    'o local escolhido precisa CHEGAR no pedido — senão o ajuste não muda nada');
+});
+
+test('sem trocar o local, o campo não viaja', async () => {
+  /* O gateway aplica o padrão dele (município da empresa) quando o campo não
+     vem. Mandar o padrão daqui seria manter a mesma regra em dois lugares, e
+     dois lugares divergem. */
+  const m = memoriaComLocal();
+  const { s, diga, seguir } = await ateAConfirmacao(m);
+  const fim = await diga('1', seguir(s));
+  assert.ok(fim.pedido);
+  assert.equal(fim.pedido.servico.codigoMunicipioPrestacao, undefined,
+    'sem escolha explícita, o campo não pode ir');
+});
+
+test('cliente na mesma cidade da empresa não recebe escolha falsa', async () => {
+  /* Oferecer duas opções que levam ao mesmo lugar é fazer a pessoa escolher
+     entre iguais. */
+  const m = memoriaComLocal();
+  const mesmaCidade = async doc => Object.assign(await buscaComEndereco(doc),
+    { municipio: 'CURITIBA', uf: 'PR', codigoMunicipio: '4106902' });
+
+  const seguir = x => (x.estado ? { estado: x.estado, dados: x.dados } : null);
+  const diga = (texto, ant) => conversa.responder({
+    texto, telefone: '5541999998888',
+    vinculos: m.empresasDe('5541999998888'),
+    conversa: ant, memoria: m, buscarCnpj: mesmaCidade
+  });
+  let s = await diga('oi', null);
+  s = await diga('1', seguir(s));
+  s = await diga('11444777000161', seguir(s));
+  if (/Responda \*1\*|est(a|á) certo/i.test(s.resposta)) s = await diga('1', seguir(s));
+  if (/servi(c|ç)o/i.test(s.resposta)) s = await diga('1', seguir(s));
+  if (/valor/i.test(s.resposta)) s = await diga('1500,00', seguir(s));
+
+  const ajuste = await diga('3', seguir(s));
+  const local = await diga('2', seguir(ajuste));
+  assert.match(local.resposta, /Só conheço um lugar/);
+  assert.match(local.resposta, /atendente/,
+    'e precisa dizer o que fazer quando foi em outra cidade');
+  assert.equal(local.estado, 'confirmando');
+});

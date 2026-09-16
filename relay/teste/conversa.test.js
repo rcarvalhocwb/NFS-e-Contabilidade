@@ -301,11 +301,21 @@ test('na conferência, "2" corrige o valor sem recomeçar tudo', async () => {
   assert.equal(saidas[5].pedido.valores.valorServico, 3000);
 });
 
-test('e "3" cancela sem mandar nada', async () => {
+test('cancelar na conferência não manda nada', async () => {
+  /* Era o "3"; virou "4" quando "Ajustar outra coisa" entrou entre corrigir o
+     valor e cancelar. O número mudou, a garantia não: sair da conferência não
+     pode enviar pedido nenhum.
+     A palavra também cancela — e é por isso que a mudança de número é
+     suportável: quem digitava "3" de cor erra uma vez, lê o menu que vem junto
+     de toda resposta, e quem escreve "cancelar" nunca foi afetado. */
   const m = memoriaFalsa();
-  const saidas = await dialogo(m, '5541999998888', ['oi', '1', '1', '3']);
-  assert.match(saidas[3].resposta, /Cancelado, nada foi enviado/);
-  assert.ok(!saidas[3].pedido);
+  const porNumero = await dialogo(m, '5541999998888', ['oi', '1', '1', '4']);
+  assert.match(porNumero[3].resposta, /Cancelado, nada foi enviado/);
+  assert.ok(!porNumero[3].pedido);
+
+  const porPalavra = await dialogo(memoriaFalsa(), '5541999998888',
+    ['oi', '1', '1', 'cancelar']);
+  assert.ok(!porPalavra[3].pedido, 'a palavra cancela em qualquer numeração');
 });
 
 test('acima do teto avisa, mas deixa seguir', async () => {

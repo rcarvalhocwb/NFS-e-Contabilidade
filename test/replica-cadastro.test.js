@@ -70,8 +70,17 @@ test('o retrato é inteiro, não um fluxo de diferenças', () => {
   const servico = fonte('services', 'replicaCadastro.js');
   const i = servico.indexOf('async function montar');
   const corpo = servico.slice(i, servico.indexOf('\nasync function enviar', i));
-  assert.match(corpo, /FROM empresas ORDER BY cnpj/);
-  assert.ok(!/WHERE .*atualizado_em >/.test(corpo),
+
+  /* Casava com `FROM empresas ORDER BY cnpj` — a GRAFIA da consulta, não o que
+     ela garante. Bastou um LEFT JOIN entrar (para trazer o nome do município)
+     e o teste acusou uma consulta que continuava mandando todas as empresas.
+     O que precisa valer é: a consulta das empresas não filtra linha nenhuma. */
+  const empresas = corpo.slice(corpo.indexOf('FROM empresas'),
+                               corpo.indexOf('ORDER BY', corpo.indexOf('FROM empresas')));
+  assert.ok(empresas.length > 0, 'a consulta das empresas sumiu');
+  assert.ok(!/\bWHERE\b/i.test(empresas),
+    'a consulta das empresas não pode ter WHERE: retrato é tudo, não uma seleção');
+  assert.ok(!/atualizado_em\s*>/.test(corpo),
     'não filtra por "mudou desde"; manda tudo');
 });
 
