@@ -289,8 +289,32 @@ async function subir() {
   }
 }
 
+/* MULTI_ESCRITORIO é explícito de propósito — autorização que muda sozinha
+   quando alguém cadastra uma linha é autorização que ninguém prevê. O preço
+   de ser explícito é poder ficar esquecido, e esquecido aqui significa que o
+   administrador de qualquer escritório continua podendo trocar o certificado
+   TLS do servidor, mexer nos destinos de backup em disco e reiniciar o painel
+   de todas as casas. Então o servidor confere e avisa alto, uma vez. */
+async function conferirModoDeOperacao() {
+  if (config.multiEscritorio) return;
+  try {
+    const r = await db.comServidor(() => db.query(
+      'SELECT count(*)::int AS n FROM escritorios_ativos()'));
+    if (r.rows[0].n > 1) {
+      console.warn(`[aviso] ${r.rows[0].n} escritórios ativos e ` +
+        'MULTI_ESCRITORIO não está ligado. O administrador de qualquer um ' +
+        'deles pode trocar o certificado TLS do servidor, mexer nos destinos ' +
+        'de backup e reiniciar o painel de todos. Ponha MULTI_ESCRITORIO=true ' +
+        'no .env para que essas telas passem a exigir a credencial de máquina.');
+    }
+  } catch (e) {
+    // Banco fora do ar na subida já é avisado em outro lugar; não repetir.
+  }
+}
+
 function aoSubir() {
   console.log(`nfse-gateway ouvindo na porta ${config.port}`);
+  conferirModoDeOperacao();
   // O worker roda no mesmo processo. Como o estado da fila vive no banco e a
   // reivindicação usa FOR UPDATE SKIP LOCKED, subir várias instâncias do
   // gateway é seguro: cada worker pega notas diferentes.

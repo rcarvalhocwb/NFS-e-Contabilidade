@@ -94,11 +94,15 @@ para emitir uma nota — e que podia sumir sem aviso.
 O gateway grava uma cópia por dia em `backups/`, sem ninguém precisar lembrar:
 
 ```bash
-node scripts/backup.js                 # cópia sob demanda
-node scripts/backup.js --sem-notas     # só cadastro, arquivo pequeno
-node scripts/restaurar-backup.js backups/nfse-backup-....json --conferir
-node scripts/restaurar-backup.js backups/nfse-backup-....json
+node scripts/backup.js --todos              # cópia sob demanda, todas as casas
+node scripts/backup.js --escritorio 3       # só uma
+node scripts/backup.js --todos --sem-notas  # só cadastro, arquivo pequeno
+node scripts/restaurar-backup.js backups/nfse-backup-e3-....json --conferir
+node scripts/restaurar-backup.js backups/nfse-backup-e3-....json
 ```
+
+O backup é por escritório e **recusa rodar sem saber de qual** — ver
+[Backup: um arquivo por escritório](#backup-um-arquivo-por-escritório).
 
 Desligue com `BACKUP_ATIVO=false`; mude a pasta com `BACKUP_PASTA`.
 
@@ -183,6 +187,49 @@ que o e-mail existe:
 
 A pergunta vem **depois** da senha de propósito: perguntar antes revelaria, a
 quem só chutou um e-mail, em que casas aquela pessoa trabalha.
+
+### O operador do servidor não é o administrador do escritório
+
+Na instalação de mesa os dois são a mesma pessoa: a contabilidade roda o
+gateway na própria máquina, e quem troca o certificado TLS é quem emite as
+notas. Num servidor com várias casas eles se separam — e algumas telas afetam
+todo mundo:
+
+| tela | o que mexe |
+|---|---|
+| Rede / certificado | endereço e certificado TLS do **servidor** |
+| Destinos de backup | caminhos de disco da **máquina** |
+| Reiniciar | derruba o painel de **todas** as casas |
+| Pacote de migração | leva dados e chaves para fora |
+
+Com `MULTI_ESCRITORIO=true` no `.env`, essas passam a exigir a credencial de
+máquina (`X-API-Key: $GATEWAY_API_KEY`). Sem a variável, o administrador do
+escritório continua com acesso — é o comportamento da instalação de mesa, e
+mudá-lo quebraria o produto sem proteger ninguém.
+
+O modo é explícito e não deduzido da quantidade de escritórios: autorização
+que muda sozinha quando alguém cadastra uma linha é autorização que ninguém
+prevê. Para não ficar esquecido, o servidor avisa na inicialização se houver
+mais de um escritório com o modo desligado.
+
+### Backup: um arquivo por escritório
+
+`scripts/backup.js` **recusa rodar sem saber de quem é o backup**:
+
+```bash
+node scripts/backup.js --escritorio 3    # um escritório
+node scripts/backup.js --todos           # um arquivo por escritório
+```
+
+Não é preciosismo. Sob RLS, uma conexão sem inquilino não enxerga linha
+nenhuma: o backup global rodava, imprimia "5 registros", gravava o arquivo,
+copiava para o pendrive e mostrava verde na tela — com zero empresas, zero
+certificados e zero notas dentro. Um backup que mente é pior que nenhum.
+
+O escritório entra no **nome** do arquivo (`nfse-backup-e3-....json`), e é o
+que permite ao painel recusar o download do arquivo alheio. Esse caminho não
+passa por consulta nenhuma, então a RLS não o alcança — a conferência é da
+rota.
 
 ### O que é compartilhado
 

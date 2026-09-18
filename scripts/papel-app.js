@@ -196,8 +196,23 @@ async function main() {
 
     /* As sequências vão junto: sem USAGE, todo INSERT em tabela com `serial`
        falha — e falha só em produção, porque em desenvolvimento se conecta
-       como dono. */
-    await cliente.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${PAPEL}`);
+       como dono.
+
+       UPDATE também, por causa de `setval`: a restauração de backup reinsere
+       linhas com id explícito e depois precisa empurrar a sequência para
+       depois do maior id. Sem isso ela avisa "permission denied for sequence"
+       e segue — deixando a sequência atrás dos dados, e a PRÓXIMA empresa
+       cadastrada colide com uma que já existe. Não é privilégio novo de
+       verdade: quem pode inserir linha já escolhe o id que quiser. */
+    await cliente.query(
+      `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO ${PAPEL}`);
+
+    /* `ALL SEQUENCES` é uma fotografia: pega as que existem agora. Sequência
+       criada por migração futura ficaria de fora, e o sintoma seria um INSERT
+       falhando em produção meses depois. */
+    await cliente.query(
+      `ALTER DEFAULT PRIVILEGES IN SCHEMA public ` +
+      `GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO ${PAPEL}`);
 
     /* `inquilino_atual()` é STABLE e lê só um GUC, mas EXECUTE explícito
        documenta que a aplicação depende dela. */

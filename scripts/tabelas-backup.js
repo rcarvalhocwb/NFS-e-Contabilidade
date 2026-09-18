@@ -9,6 +9,12 @@
  * começo, porque é barato.
  */
 const TABELAS = [
+  /* Primeiro de todos: é a linha para onde tudo o mais aponta.
+     Sem ela no arquivo, recuperar de uma perda total exigia recriar o
+     escritório à mão ANTES de restaurar — sabendo de cabeça o id e o nome
+     dele. Descobrir isso no dia do desastre é descobrir tarde. */
+  'escritorios',
+
   // configuração e tabelas de apoio — não dependem de nada
   'municipios',
   'identidade',
@@ -57,9 +63,22 @@ const PESADAS = ['notas', 'solicitacoes', 'auditoria'];
  * o id mudou. Onde não há chave natural, a restauração pergunta ao próprio
  * Postgres qual é a primária — chutar `(id)` quebrava justamente nas que têm
  * chave composta, como numeracao_dps e regra_im_dps. */
+/* Por onde a restauração reconhece "esta linha eu já tenho".
+ *
+ * Precisa bater EXATAMENTE com um índice único do banco, senão o Postgres
+ * responde "there is no unique or exclusion constraint matching the ON
+ * CONFLICT specification" e a restauração morre no meio — que é como se
+ * descobriu que estas duas primeiras tinham envelhecido.
+ *
+ * CNPJ e e-mail eram únicos no banco inteiro enquanto o banco era de um
+ * escritório só. A migração 045 passou os dois a ser únicos DENTRO do
+ * escritório: empresa atendida por duas casas é caso real, e o mesmo contador
+ * pode ter conta nas duas. */
 const CHAVE_NATURAL = {
-  empresas: '(cnpj)',
-  usuarios: '(email)',
+  empresas: '(escritorio_id, cnpj)',
+  // O índice é sobre lower(email); o ON CONFLICT tem de repetir a expressão.
+  usuarios: '(escritorio_id, lower(email))',
+  // Estas duas já eram por empresa, e empresa já é de um escritório só.
   tomadores: '(empresa_id, documento)',
   servicos: '(empresa_id, apelido)'
 };
