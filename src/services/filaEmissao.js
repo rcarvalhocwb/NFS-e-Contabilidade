@@ -356,13 +356,27 @@ async function processarRodada(limite = 10) {
   return n;
 }
 
+/* Uma rodada por escritório.
+ *
+ * Antes havia um banco por escritório e a varredura era uma só. Agora a fila
+ * de todos mora junta, e sob RLS uma conexão sem inquilino não enxerga
+ * NENHUMA linha — a fila pararia em silêncio, que é o pior modo de falhar
+ * que uma fila tem: nada quebra, nada sai, e ninguém repara até o cliente
+ * perguntar da nota.
+ *
+ * A alternativa seria dar BYPASSRLS ao papel da aplicação para varrer tudo de
+ * uma vez: desligar o isolamento do sistema inteiro pela conveniência de um
+ * laço. O laço é mais barato. O erro de um escritório não interrompe os
+ * outros — fila parada por causa do vizinho é a falha que multiplica. */
 async function tick() {
   if (rodando) return;          // evita sobreposição se uma rodada demorar
   rodando = true;
   try {
-    await processarRodada();
+    await db.porInquilino(
+      () => processarRodada(),
+      (e, id) => console.error(`[fila] erro na rodada do escritório ${id}:`, e.message));
   } catch (e) {
-    console.error('[fila] erro na rodada:', e.message);
+    console.error('[fila] erro ao listar escritórios:', e.message);
   } finally {
     rodando = false;
   }

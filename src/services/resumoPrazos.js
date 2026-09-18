@@ -139,8 +139,21 @@ async function enviar({ forcar = false } = {}) {
 
 function iniciar() {
   if (timer) return;
-  const rodar = () => enviar().catch(e =>
-    console.warn('[resumo] falhou:', e.message));
+
+  /* Um resumo por escritório, e cada um com o seu SMTP e a sua lista de
+     prazos — `config_email` deixou de ser linha única do servidor.
+
+     Escritório sem e-mail configurado, ou sem destinatário, não é falha: é a
+     configuração padrão de quem ainda não mexeu nisso. `enviar` sinaliza esses
+     casos com status 400, e aqui eles passam calados. Um aviso diário por
+     escritório não configurado ensinaria a ignorar o log inteiro. */
+  const rodar = () => db.porInquilino(
+    () => enviar().catch(e => {
+      if (e.status === 400) return;
+      throw e;
+    }),
+    (e, id) => console.warn(`[resumo] escritório ${id} falhou:`, e.message)
+  ).catch(e => console.warn('[resumo] não consegui listar escritórios:', e.message));
   timer = setInterval(rodar, INTERVALO_MS);
   timer.unref();
   setTimeout(rodar, 90000).unref();   // uma vez, pouco depois de subir

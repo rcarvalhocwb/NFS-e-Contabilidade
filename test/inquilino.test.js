@@ -377,3 +377,59 @@ test('criar escritório é ato de operador, não de inquilino', () => {
   assert.match(s, /senhaSorteada/,
     'a senha do primeiro admin é sorteada, não escolhida por quem cria');
 });
+
+// ------------------------------------------------------- os que não têm dono
+
+/* Worker é o ponto cego da RLS.
+ *
+ * Numa requisição, esquecer de amarrar o inquilino dá erro visível: a tela
+ * abre vazia e alguém reclama no mesmo dia. Num worker, o efeito é que a fila
+ * simplesmente não anda — nada quebra, nada sai, e ninguém repara até o
+ * cliente perguntar da nota que ele emitiu ontem.
+ *
+ * Por isso o teste é sobre a lista, e não sobre cada worker: todo processo
+ * periódico que toca dado de cliente passa por `db.porInquilino`, ou está
+ * nomeado abaixo com a razão de não precisar. */
+const WORKERS_SEM_INQUILINO = {
+  'registro.js':         'apaga arquivo de log velho do disco; não toca no banco',
+  'backupAutomatico.js': 'copia o banco inteiro e lê backup_destinos, que é do servidor',
+  'atualizacao.js':      'verifica a versão do gateway em atualizacao, que é do servidor'
+};
+
+test('todo worker periódico roda por escritório, ou explica por que não', () => {
+  const dir = path.join(RAIZ, 'src', 'services');
+  /* `setInterval` e não `setTimeout`: o segundo aparece em tudo que tem
+     tempo limite de rede ou espera entre tentativas, e varrer por ele
+     acusaria meia dúzia de arquivos que não têm laço nenhum. Quem agenda
+     rodada periódica aqui usa setInterval. */
+  const comTimer = fs.readdirSync(dir).filter(f => f.endsWith('.js') &&
+    /setInterval\(/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
+
+  const faltando = comTimer.filter(f =>
+    !(f in WORKERS_SEM_INQUILINO) &&
+    !/db\.porInquilino/.test(fs.readFileSync(path.join(dir, f), 'utf8'))).sort();
+
+  assert.deepStrictEqual(faltando, [],
+    'worker que varre o banco sem db.porInquilino não enxerga linha nenhuma\n' +
+    '  sob RLS — e para em silêncio. Ou usa porInquilino, ou entra em\n' +
+    '  WORKERS_SEM_INQUILINO aqui com a razão de não tocar em dado de cliente.');
+});
+
+test('a justificativa não sobrevive ao worker', () => {
+  const dir = path.join(RAIZ, 'src', 'services');
+  const sumidos = Object.keys(WORKERS_SEM_INQUILINO)
+    .filter(f => !fs.existsSync(path.join(dir, f)));
+  assert.deepStrictEqual(sumidos, []);
+});
+
+test('o laço do worker não para no erro de um escritório', () => {
+  /* Fila parada por causa do vizinho é a falha que multiplica: um escritório
+     com problema deixaria todos os outros sem emitir. */
+  const db = fs.readFileSync(path.join(RAIZ, 'src', 'db.js'), 'utf8');
+  const fn = db.slice(db.indexOf('async function porInquilino'));
+  const corpo = fn.slice(0, fn.indexOf('\n}\n'));
+  assert.match(corpo, /for \(const id of ids\)[\s\S]*try \{[\s\S]*catch/,
+    'cada escritório precisa do próprio try: um erro não pode abortar o laço');
+  assert.ok(!/Promise\.all/.test(corpo),
+    'em sequência, não em paralelo: a fila existe para não sobrecarregar destino externo');
+});
