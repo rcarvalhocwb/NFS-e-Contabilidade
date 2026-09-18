@@ -433,3 +433,132 @@ test('o laço do worker não para no erro de um escritório', () => {
   assert.ok(!/Promise\.all/.test(corpo),
     'em sequência, não em paralelo: a fila existe para não sobrecarregar destino externo');
 });
+
+// ------------------------------------ o que só apareceu rodando o sistema
+
+/* Estes dois não vieram de leitura de código: vieram de abrir o painel.
+   Um mostrava a marca de um escritório a quem não tinha feito login; o outro
+   trocava a tela de acesso pelo formulário de primeiro acesso, e ninguém
+   entrava. Os dois tinham a mesma causa. */
+
+test('nenhuma consulta usa o pool sem amarrar o inquilino', () => {
+  /* Havia um atalho: sem contexto, ia direto no `pool.query`. Parecia
+     inofensivo — consulta sem inquilino não deveria ver nada. Mas a conexão
+     que o pool entrega já foi de alguém e ainda carrega o `app.escritorio`
+     dele, então a consulta "sem inquilino" lia com o inquilino do vizinho.
+
+     Apareceu em `/marca`, que é pública: a tela de acesso mostrava o nome e a
+     cor do último escritório que tinha usado aquela conexão. */
+  const db = fs.readFileSync(path.join(RAIZ, 'src', 'db.js'), 'utf8');
+  const fn = db.slice(db.indexOf('async function query(text, params)'));
+  const corpo = fn.slice(0, fn.indexOf('\n}\n'));
+  assert.ok(!/return pool\.query/.test(corpo),
+    'pool.query entrega conexão com o app.escritorio de quem a usou antes');
+  assert.match(corpo, /amarrar\(cliente, ctx \? ctx\.escritorio : null\)/,
+    'sem contexto o inquilino é vazio — e vazio também se amarra');
+});
+
+test('a marca pública não chuta de quem é a tela', () => {
+  /* Antes do login, num servidor de vários escritórios, não há como saber.
+     Qualquer escolha mostra o nome e a cor de um cliente a quem nem fez
+     login. Melhor tela sem marca que tela com a marca do vizinho. */
+  const s = fs.readFileSync(path.join(RAIZ, 'src', 'server.js'), 'utf8');
+  const fn = s.slice(s.indexOf('async function marcaPublica'));
+  const corpo = fn.slice(0, fn.indexOf('\n}\n'));
+  assert.match(corpo, /if \(config\.multiEscritorio\) return null/);
+  assert.match(corpo, /rows\.length !== 1\) return null/,
+    'zero ou mais de um escritório: também não chuta');
+  assert.match(corpo, /req\.escritorioId/, 'com sessão, usa o inquilino já amarrado');
+});
+
+test('o painel rebusca a marca depois de entrar', () => {
+  /* Sem isto o painel fica com a identidade genérica a sessão inteira: a
+     única busca acontecia na abertura da página, antes de haver sessão. */
+  const s = fs.readFileSync(path.join(RAIZ, 'src', 'public', 'painel.js'), 'utf8');
+  const fn = s.slice(s.indexOf('function abrirPainel'));
+  assert.match(fn.slice(0, 1400), /carregarMarca\(\)/);
+});
+
+test('"a instalação é nova?" não é perguntada sem inquilino', () => {
+  /* `usuarios` está sob policy. Perguntado sem inquilino, o sistema se
+     declarava recém-instalado: a tela de acesso sumia e dava lugar ao
+     formulário de primeiro acesso, num servidor cheio de escritórios.
+     Ninguém entrava pelo painel. */
+  const s = fs.readFileSync(path.join(RAIZ, 'src', 'routes', 'auth.js'), 'utf8');
+  const fn = s.slice(s.indexOf('async function instalacaoTemDono'));
+  const corpo = fn.slice(0, fn.indexOf('\n}\n'));
+  assert.match(corpo, /escritorios_ativos/);
+  assert.match(corpo, /ids\.length > 1\) return true/,
+    'com vários escritórios a instalação tem dono, por definição');
+  assert.match(corpo, /db\.comInquilino\(ids\[0\]/,
+    'com um só, a pergunta vale — mas de dentro dele');
+
+  /* A mesma pergunta é a trava da rota de primeiro acesso. Com a versão
+     antiga, num servidor de vários ela ficava aberta para sempre. */
+  assert.match(s, /if \(await instalacaoTemDono\(\)\) \{/);
+});
+
+test('o painel não oferece o que o servidor vai recusar', () => {
+  /* Endereço e certificado TLS, destinos de backup, migração, reiniciar:
+     com MULTI_ESCRITORIO o servidor responde 403 a quem entra pelo navegador.
+     Deixar o botão na tela é a mesma falha que o `data-admin` já resolvia
+     para o operador — esbarrar num 403 sem entender o motivo. */
+  const html = fs.readFileSync(path.join(RAIZ, 'src', 'public', 'admin.html'), 'utf8');
+  assert.ok((html.match(/data-operador/g) || []).length >= 4,
+    'as telas do servidor precisam estar marcadas');
+
+  const js = fs.readFileSync(path.join(RAIZ, 'src', 'public', 'painel.js'), 'utf8');
+  const fn = js.slice(js.indexOf('function abrirPainel'));
+  const corpo = fn.slice(0, fn.indexOf('\n  }\n'));
+  const admin = corpo.indexOf("$$('[data-admin]')");
+  const operador = corpo.indexOf("$$('[data-operador]')");
+  assert.ok(admin > 0 && operador > admin,
+    '"Rede e conexão" carrega os dois atributos: o laço do operador tem de ' +
+    'correr depois, senão o de admin reexibe o que ele escondeu');
+});
+
+test('conexão devolvida ao pool não entrega o inquilino anterior', { skip: !URL_TESTE &&
+  'defina TEST_DATABASE_URL para rodar a prova contra o banco'
+}, async () => {
+  /* A prova de comportamento do primeiro teste desta seção. Roda o caminho
+     inteiro: amarra a conexão a um escritório, devolve ao pool, e consulta de
+     novo sem inquilino nenhum. */
+  const admin = new (require('pg').Pool)({ connectionString: ADMIN });
+  const marca = 'pool-' + Date.now();
+  let id;
+  try {
+    id = (await admin.query(
+      'INSERT INTO escritorios (nome) VALUES ($1) RETURNING id', [marca])).rows[0].id;
+    await admin.query(
+      `INSERT INTO empresas (escritorio_id, cnpj, razao_social, codigo_municipio)
+       VALUES ($1, $2, $3, '4106902')`, [id, '55555555000155', marca]);
+
+    /* Módulo carregado com a URL do papel restrito, e recarregado do zero para
+       não herdar o pool de outro teste. */
+    const antes = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = URL_TESTE;
+    delete require.cache[require.resolve('../src/config')];
+    delete require.cache[require.resolve('../src/db')];
+    const db = require('../src/db');
+    try {
+      const dentro = await db.comInquilino(id, () =>
+        db.query('SELECT razao_social FROM empresas'));
+      assert.strictEqual(dentro.rows.length, 1, 'dentro do bloco, vê a própria empresa');
+
+      const fora = await db.query('SELECT razao_social FROM empresas');
+      assert.strictEqual(fora.rowCount, 0,
+        'depois de devolver a conexão, consulta sem inquilino não pode herdar nada');
+    } finally {
+      await db.pool.end();
+      process.env.DATABASE_URL = antes;
+      delete require.cache[require.resolve('../src/config')];
+      delete require.cache[require.resolve('../src/db')];
+    }
+  } finally {
+    if (id) {
+      await admin.query('DELETE FROM empresas WHERE escritorio_id = $1', [id]);
+      await admin.query('DELETE FROM escritorios WHERE id = $1', [id]);
+    }
+    await admin.end();
+  }
+});

@@ -19,9 +19,40 @@ const cookieSeguro = req => req.secure || req.get('x-forwarded-proto') === 'http
    Banco fora do ar não vira 500 aqui: a tela de acesso é a primeira coisa que
    a contabilidade vê, e "não foi possível falar com o banco" é uma explicação
    acionável — um login que não responde não é. */
+/* A instalação já tem dono?
+ *
+ * A tela de acesso pergunta isso para decidir entre pedir login e oferecer a
+ * criação do primeiro administrador. A pergunta é feita ANTES de haver sessão,
+ * e `usuarios` está sob policy — sem inquilino, a consulta volta vazia e o
+ * sistema se declara recém-instalado. O efeito é grave e imediato: a tela de
+ * acesso some e dá lugar ao formulário de primeiro acesso, num servidor cheio
+ * de escritórios. Ninguém entra pelo painel.
+ *
+ * Com vários escritórios a pergunta nem faz sentido do jeito antigo. Abrir uma
+ * casa nova é ato de operador (scripts/criar-escritorio.js), que já cria o
+ * administrador dela. Então: existindo escritório, existe dono, e a tela pede
+ * login.
+ *
+ * Numa instalação de mesa a pergunta original continua valendo, e a resposta
+ * vem de dentro do único escritório — é lá que o primeiro usuário nasce.
+ */
+async function instalacaoTemDono() {
+  const ids = (await db.comServidor(() => db.query(
+    'SELECT * FROM escritorios_ativos() AS id'))).rows.map(r => r.id);
+
+  if (!ids.length) return false;                 // banco recém-migrado
+  if (ids.length > 1) return true;               // servidor de vários: tem dono
+  return db.comInquilino(ids[0], () => usuarios.existeAlgum());
+}
+
 router.get('/estado', async (_req, res) => {
   try {
-    res.json({ temUsuarios: await usuarios.existeAlgum() });
+    /* `multiEscritorio` não é segredo — é a forma da instalação, e o painel
+       precisa dela para não oferecer botão que o servidor vai recusar. */
+    res.json({
+      temUsuarios: await instalacaoTemDono(),
+      multiEscritorio: !!config.multiEscritorio
+    });
   } catch (e) {
     console.error('[auth] banco indisponível ao abrir o painel:', e.message);
     res.json({
@@ -37,7 +68,10 @@ router.get('/estado', async (_req, res) => {
    houver nenhum usuário — depois disso, contas novas saem do painel. */
 router.post('/primeiro-acesso', limitarLogin, async (req, res, next) => {
   try {
-    if (await usuarios.existeAlgum()) {
+    /* Mesma pergunta da tela, pela mesma razão — e aqui ela é a trava. Com a
+       versão antiga, num servidor de vários escritórios a consulta sem
+       inquilino voltava vazia e esta porta ficava aberta para sempre. */
+    if (await instalacaoTemDono()) {
       return res.status(409).json({
         erro: 'O sistema já tem usuários. Peça a um administrador para criar o seu acesso.'
       });
@@ -52,13 +86,28 @@ router.post('/primeiro-acesso', limitarLogin, async (req, res, next) => {
 
     // O primeiro é sempre admin e vê todas as empresas: não haveria quem lhe
     // desse permissão depois.
-    const usuario = await usuarios.criar({
-      nome: b.nome, email: b.email, senha: b.senha, perfil: 'admin', empresasIds: []
-    });
+    /* Em qual casa nasce este administrador.
+       Só há uma — `instalacaoTemDono` já barrou o caso de várias — mas ela
+       precisa ser dita: o padrão da coluna `escritorio_id` é
+       `inquilino_atual()`, e sem inquilino a gravação falha em vez de cair em
+       algum lugar. Falhar é o comportamento certo; acontecer aqui, não. */
+    const casas = (await db.comServidor(() => db.query(
+      'SELECT * FROM escritorios_ativos() AS id'))).rows.map(r => r.id);
+    if (!casas.length) {
+      return res.status(503).json({
+        erro: 'O banco ainda não tem escritório. Rode as migrações antes do primeiro acesso.'
+      });
+    }
 
-    const token = await sessoes.criar(usuario.id, req);
-    sessoes.definirCookie(res, token, cookieSeguro(req));
-    res.status(201).json({ usuario });
+    await db.comInquilino(casas[0], async () => {
+      const usuario = await usuarios.criar({
+        nome: b.nome, email: b.email, senha: b.senha, perfil: 'admin', empresasIds: []
+      });
+
+      const token = await sessoes.criar(usuario.id, req);
+      sessoes.definirCookie(res, token, cookieSeguro(req));
+      res.status(201).json({ usuario });
+    });
   } catch (e) { next(e); }
 });
 

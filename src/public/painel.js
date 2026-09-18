@@ -152,6 +152,8 @@
     el('app').hidden = true;
     el('telaAcesso').hidden = false;
     fetch('/auth/estado').then(function (r) { return r.json(); }).then(function (d) {
+      // Guardado antes de qualquer tela abrir: decide o que o painel oferece.
+      estado.multiEscritorio = !!d.multiEscritorio;
       if (d.bancoIndisponivel) {
         el('formAcesso').hidden = true;
         el('formPrimeiro').hidden = true;
@@ -173,12 +175,33 @@
     estado.usuario = usuario;
     var ehAdmin = souAdmin();
 
+    /* A marca é rebuscada agora, não só na abertura da página.
+       Antes do login não há sessão, e num servidor de vários escritórios o
+       servidor não tem como saber de quem é a tela — responde sem marca, de
+       propósito. Depois do login ele sabe, e o painel precisa perguntar de
+       novo, senão fica com a identidade genérica a sessão inteira. */
+    carregarMarca();
+
     el('btnMinhaConta').textContent = usuario.nome;
     el('btnMinhaConta').title = usuario.email + ' · trocar minha senha';
 
     // Telas de configuração só existem para administrador. Escondê-las evita
     // que o operador esbarre em um 403 sem entender o motivo.
     $$('[data-admin]').forEach(function (n) { n.hidden = !ehAdmin; });
+
+    /* Telas do operador do servidor, não do escritório: endereço e
+       certificado TLS da máquina, destinos de backup em disco, pacote de
+       migração, reiniciar. Num servidor de vários escritórios elas exigem a
+       credencial de máquina, que ninguém tem pelo navegador — então some com
+       elas, em vez de deixar a pessoa esbarrar num 403 sem entender.
+       Na instalação de mesa o administrador É o operador, e tudo aparece.
+
+       Depois do laço de `data-admin`: "Rede e conexão" carrega os dois
+       atributos, e quem corre por último é quem decide. */
+    $$('[data-operador]').forEach(function (n) {
+      n.hidden = ehAdmin ? !!estado.multiEscritorio : true;
+    });
+
 
     el('telaAcesso').hidden = true;
     el('app').hidden = false;

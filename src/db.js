@@ -133,21 +133,37 @@ async function porInquilino(fn, aoFalhar) {
 
 /* Consulta amarrada ao inquilino do bloco atual.
  *
- * Três caminhos, e a ordem importa:
+ * Dois caminhos:
  *   1. dentro de transação (`transacao`): a conexão já está amarrada e aberta;
- *   2. dentro de bloco de inquilino: retira, amarra, pergunta, devolve;
- *   3. fora de tudo: pool nu, sem inquilino. Sobrou para inicialização e
- *      script. Numa requisição é bug — e o sintoma é consulta vazia, não
- *      dado alheio, porque a policy não encontra inquilino nenhum.
+ *   2. todo o resto: retira do pool, amarra, pergunta, devolve.
+ *
+ * Fora de qualquer bloco o inquilino é vazio, e vazio também se amarra — não
+ * existe caminho que use a conexão sem dizer de quem ela é. Fora de bloco,
+ * numa requisição, continua sendo bug; o sintoma é consulta vazia, que é o
+ * modo seguro de errar.
  */
 async function query(text, params) {
   const ctx = atual();
   if (ctx && ctx.cliente) return ctx.cliente.query(text, params);
-  if (!ctx) return pool.query(text, params);
 
   const cliente = await pool.connect();
   try {
-    await amarrar(cliente, ctx.escritorio);
+    /* SEMPRE amarrar, inclusive quando não há inquilino nenhum.
+ 
+       Havia aqui um atalho: sem contexto, ia direto no `pool.query`. Parecia
+       inofensivo — consulta sem inquilino não deveria ver nada. Mas a conexão
+       que o pool entrega já foi de alguém, e ainda carrega o `app.escritorio`
+       dele. A consulta "sem inquilino" lia com o inquilino do vizinho.
+ 
+       Apareceu na tela de acesso: `/marca` é pública, roda sem sessão, e
+       mostrava o nome e a cor do último escritório que tinha usado aquela
+       conexão. Um servidor de vários inquilinos entregando a marca de um
+       cliente a quem nem fez login.
+ 
+       Amarrar a vazio custa uma ida a mais ao banco no caminho que quase não
+       é usado, e faz valer a regra do cabeçalho deste arquivo: nada é lido
+       antes de ser amarrado. */
+    await amarrar(cliente, ctx ? ctx.escritorio : null);
     return await cliente.query(text, params);
   } finally {
     /* Sem RESET: a próxima retirada amarra de novo antes de perguntar. Confiar

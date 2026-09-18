@@ -155,7 +155,7 @@
       <a href="#email" data-tela="email" data-admin hidden><span class="ico">✉</span> E-mail e avisos</a>
       <a href="#sistema" data-tela="sistema" data-admin hidden><span class="ico">⏻</span> O gateway no ar
         <span id="seloSistema" class="selo-status s-erro sem-ponto" hidden>!</span></a>
-      <a href="#rede" data-tela="rede" data-admin hidden><span class="ico">⇅</span> Rede e conexão</a>
+      <a href="#rede" data-tela="rede" data-admin data-operador hidden><span class="ico">⇅</span> Rede e conexão</a>
       <a href="#manutencao" data-tela="manutencao" data-admin hidden><span class="ico">▤</span> Backup e migração</a>
     </nav>
 
@@ -1908,7 +1908,7 @@
 
             <div class="linha-botoes" style="margin-top:18px">
               <button id="btnSisAtualizar">Conferir de novo</button>
-              <button class="primario" id="btnSisReiniciar">Reiniciar o gateway</button>
+              <button class="primario" data-operador id="btnSisReiniciar">Reiniciar o gateway</button>
             </div>
             <div id="sisResultado" class="ajuda" style="margin-top:12px"></div>
 
@@ -2101,7 +2101,7 @@
       </section>
 
       <section data-tela-conteudo="manutencao" hidden>
-        <div class="cartao" style="margin:0 0 18px">
+        <div class="cartao" data-operador style="margin:0 0 18px">
           <div class="cartao-cab">
             <h2>Cópia fora da máquina</h2>
             <span id="cpSelo" class="selo-status s-neutro">—</span>
@@ -2190,7 +2190,7 @@
             </div>
           </div>
 
-          <div class="cartao" style="margin:0">
+          <div class="cartao" data-operador style="margin:0">
             <div class="cartao-cab"><h2>Mudar de computador</h2></div>
             <div class="cartao-corpo">
               <div class="ajuda" style="margin-bottom:14px">

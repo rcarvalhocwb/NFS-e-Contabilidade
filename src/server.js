@@ -110,9 +110,36 @@ app.use('/auth', authRouter);
 
 /* A marca do escritório é pública: a tela de acesso a mostra antes de existir
    sessão. São nome, cor e logo — nada que já não esteja no papel timbrado. */
-app.get('/marca', async (_req, res) => {
+/* De quem é a marca, antes de existir sessão.
+ *
+ * Com sessão, o middleware de inquilino já amarrou e não há o que decidir.
+ * Sem sessão, há duas situações e elas não se parecem:
+ *
+ *   uma casa só  — é a instalação de mesa. A marca na tela de acesso é dela,
+ *                  e tirá-la deixaria o painel com cara de meio instalado.
+ *
+ *   várias casas — não dá para saber de quem é a tela. Qualquer escolha é um
+ *                  chute, e o chute mostra o nome e a cor de um cliente a
+ *                  quem nem fez login. Melhor tela sem marca que tela com a
+ *                  marca do vizinho.
+ *
+ * Antes isto nem era uma decisão: a consulta sem inquilino pegava a conexão
+ * que o pool tivesse à mão e lia com o `app.escritorio` de quem a usou antes.
+ * A tela de acesso mostrava a marca de um escritório sorteado pelo pool.
+ */
+async function marcaPublica(req, fn) {
+  if (req.escritorioId) return fn();               // tem sessão: já amarrado
+  if (config.multiEscritorio) return null;         // várias casas: não chuta
+
+  const r = await db.comServidor(() => db.query(
+    'SELECT * FROM escritorios_ativos() AS id'));
+  if (r.rows.length !== 1) return null;            // zero ou várias: idem
+  return db.comInquilino(r.rows[0].id, fn);
+}
+
+app.get('/marca', async (req, res) => {
   try {
-    const i = await identidadeServico.ler();
+    const i = (await marcaPublica(req, () => identidadeServico.ler())) || {};
     res.json({ nome: i.nome || null, descricao: i.descricao || null,
                corAcento: i.cor_acento || null, temLogo: !!i.tem_logo });
   } catch (e) {
@@ -121,9 +148,9 @@ app.get('/marca', async (_req, res) => {
   }
 });
 
-app.get('/marca/logo', async (_req, res) => {
+app.get('/marca/logo', async (req, res) => {
   try {
-    const logo = await identidadeServico.lerLogo();
+    const logo = await marcaPublica(req, () => identidadeServico.lerLogo());
     if (!logo) return res.status(404).end();
     res.setHeader('Content-Type', logo.tipo);
     // Curto de propósito: trocar a logo e ver a antiga por uma hora seria pior
