@@ -8,6 +8,7 @@ config.validarOuSair();
 require('./services/registro').iniciar();
 const db = require('./db');
 const auth = require('./middleware/auth');
+const inquilino = require('./middleware/inquilino');
 const { somenteAdmin, fixarEscopoEmpresa } = require('./middleware/escopo');
 const { conferirOrigem, cabecalhosSeguranca } = require('./middleware/protecao');
 const empresasRouter = require('./routes/empresas');
@@ -62,6 +63,14 @@ app.use((_req, res, next) => {
 
 app.use(express.json({ limit: '2mb' }));
 app.use(conferirOrigem);
+
+/* De quem é esta requisição — antes de tudo que lê dado.
+   Precisa vir antes de `auth`, não depois: `auth` consulta `sessoes` e
+   `empresa_tokens`, que estão sob policy de RLS e não respondem a conexão sem
+   inquilino. Credencial não reconhecida passa adiante sem escritório, e sem
+   escritório as tabelas de cliente devolvem zero linha — quem decide o 401 é
+   o `auth`, que sabe dar a mensagem certa. */
+app.use(inquilino);
 
 // Arquivos da interface (CSS). Ficam antes da autenticacao: sao estaticos,
 // sem dados nem segredos — as rotas de dados seguem protegidas.

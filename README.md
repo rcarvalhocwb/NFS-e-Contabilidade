@@ -13,6 +13,7 @@ substitui e entrega XML e DANFSe.
 ## Sumário
 
 - [Como rodar](#como-rodar)
+- [Vários escritórios no mesmo servidor](#vários-escritórios-no-mesmo-servidor)
 - [Autenticação](#autenticação)
 - [Painel](#painel)
 - [API para o sistema cliente](#api-para-o-sistema-cliente)
@@ -108,6 +109,91 @@ uma nem outra no repositório (`backups/` está no `.gitignore`).
 > Em 17/08/2026 o projeto Supabase que hospedava o banco desapareceu e não havia
 > cópia nenhuma: empresa, numeração fiscal, tokens e histórico se foram juntos.
 > Backup automático do provedor não protege contra o provedor sumir.
+
+## Vários escritórios no mesmo servidor
+
+Um servidor atende N escritórios de contabilidade, e cada escritório atende os
+CNPJs dos clientes dele. São duas fronteiras, e elas são garantidas por
+mecanismos diferentes de propósito.
+
+Entre as **empresas de um escritório**, quem garante é o código: a rota confere
+o escopo antes de tocar em dado ou certificado.
+
+Entre **escritórios**, quem garante é o banco. Toda tabela de inquilino tem
+`escritorio_id` e uma policy de Row Level Security ligada à variável
+`app.escritorio` da conexão. Um `WHERE` esquecido numa rota de relatório é um
+erro de digitação; entre escritórios, esse mesmo erro entrega o certificado A1
+de um cliente para outra empresa. Isso não pode depender de ninguém lembrar.
+
+Sem a variável definida, a policy não encontra inquilino e **nenhuma linha
+volta**. O modo de falhar é perder dado de vista, nunca mostrar dado alheio.
+
+### A aplicação NÃO conecta como dona do banco
+
+Policy de RLS não se aplica ao dono da tabela, e não se aplica de jeito nenhum
+a superusuário. Se a aplicação conectar com o papel que criou o banco — o que
+era certo quando havia um escritório só — todas as policies ficam no banco sem
+nunca serem consultadas.
+
+```bash
+# 1. migrar, com a URL de administrador
+ADMIN_DATABASE_URL=postgres://dono:...@host/nfse node scripts/migrate.js
+
+# 2. criar o papel restrito da aplicação (imprime a DATABASE_URL nova)
+ADMIN_DATABASE_URL=postgres://dono:...@host/nfse node scripts/papel-app.js
+
+# 3. pôr essa DATABASE_URL no .env da aplicação e guardar a de administrador
+#    fora dele — ela só é necessária para migrar e para abrir escritórios
+```
+
+Conferir a qualquer momento:
+
+```bash
+node scripts/papel-app.js --conferir
+```
+
+`super` e `bypassrls` precisam ser `false`. Se algum for `true`, o isolamento
+entre escritórios não existe, por mais policy que haja.
+
+### Abrir um escritório
+
+```bash
+ADMIN_DATABASE_URL=... node scripts/criar-escritorio.js \
+  --nome "Contabilidade Silva" --cnpj 12345678000190 --admin maria@silva.com.br
+```
+
+Cria a linha de inquilino, a identidade visual com o nome do escritório e o
+primeiro administrador, com senha sorteada e troca obrigatória no primeiro
+acesso. Mais usuários depois, pelo painel ou por:
+
+```bash
+node scripts/criar-usuario.js --escritorio 3 --email joao@silva.com.br --nome "João"
+```
+
+### Login quando a pessoa atende duas casas
+
+O e-mail passou a ser único **dentro** do escritório, não no servidor — o mesmo
+contador pode ter conta em dois. O login confere a senha em cada escritório em
+que o e-mail existe:
+
+- confere em um → entra, sem perguntar nada;
+- confere em mais de um → HTTP 409 com a lista de escritórios, e o cliente
+  repete o login com `"escritorio": <id>`;
+- não confere em nenhum → 401, a mesma resposta de e-mail inexistente.
+
+A pergunta vem **depois** da senha de propósito: perguntar antes revelaria, a
+quem só chutou um e-mail, em que casas aquela pessoa trabalha.
+
+### O que é compartilhado
+
+`municipios`, `regra_im_dps` e `atualizacao` não têm dono: o código IBGE de
+Curitiba e o layout que a Sefin exige lá são os mesmos para todo escritório.
+`config_rede` e `backup_destinos` são do operador do servidor — o banco deixa a
+aplicação escrever neles porque é o próprio processo dela que mantém o listener
+HTTPS e a cópia diária; quem limita o acesso a essas telas é a autorização de
+rota, não o `GRANT`.
+
+---
 
 ## Autenticação
 
