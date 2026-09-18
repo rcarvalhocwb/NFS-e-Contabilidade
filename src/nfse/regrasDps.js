@@ -156,6 +156,22 @@ function conferirEmissao(dados = {}) {
   }
 }
 
+/* Texto de xMotivo quando o pedido não traz um.
+ *
+ * Os dois primeiros cabem num padrão porque o código já diz tudo: cancelar
+ * por erro de emissão é cancelar por erro de emissão. O 9 não tem padrão de
+ * propósito — "Outros" é a ausência de motivo conhecido, e inventar uma frase
+ * genérica para caber no mínimo do leiaute seria pôr no documento fiscal uma
+ * justificativa que ninguém deu. Quem escolhe 9 diz por quê.
+ *
+ * TSMotivo exige de 15 a 255 caracteres, então os textos abaixo não são
+ * enfeite: um mais curto derruba o evento no schema da Sefin — depois de
+ * assinado, o que é tarde. */
+const TEXTO_PADRAO_CANCELAMENTO = {
+  1: 'Erro na emissao da NFS-e',
+  2: 'Servico nao prestado'
+};
+
 /* Confere o pedido de cancelamento antes de assinar e transmitir o evento. */
 function conferirCancelamento({ codigoMotivo, motivo: texto_ } = {}) {
   const cod = String(codigoMotivo == null ? '1' : codigoMotivo);
@@ -163,13 +179,21 @@ function conferirCancelamento({ codigoMotivo, motivo: texto_ } = {}) {
     throw erro(`codigoMotivo deve ser 1 (erro na emissão), 2 (serviço não prestado) ` +
                `ou 9 (outros) — recebido "${cod}"`);
   }
-  // O xMotivo é enviado sempre, com texto padrão quando não vem informado;
-  // conferir aqui pega o texto próprio curto demais.
-  if (texto_) motivo(texto_, 'motivo');
+  if (texto_) {
+    // Texto próprio: conferir aqui pega o curto demais antes de assinar.
+    motivo(texto_, 'motivo');
+    return;
+  }
+  if (!TEXTO_PADRAO_CANCELAMENTO[cod]) {
+    throw erro('motivo é obrigatório quando codigoMotivo é 9 (outros): ' +
+               'descreva por que a nota está sendo cancelada, em pelo menos ' +
+               '15 caracteres');
+  }
 }
 
 module.exports = {
   conferirEmissao, conferirCancelamento,
   MOTIVOS_SUBSTITUICAO, MOTIVOS_CANCELAMENTO,
+  TEXTO_PADRAO_CANCELAMENTO,
   LIMITE_MOTIVO: { min: 15, max: 255 }
 };
