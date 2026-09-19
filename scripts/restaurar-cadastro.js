@@ -79,7 +79,7 @@ async function principal() {
                              codigo_municipio, uf,
                              op_simp_nac, reg_esp_trib, ambiente, email, telefone)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       ON CONFLICT (cnpj) DO UPDATE SET razao_social = EXCLUDED.razao_social
+       ON CONFLICT (escritorio_id, cnpj) DO UPDATE SET razao_social = EXCLUDED.razao_social
        RETURNING id, (xmax = 0) AS criada`,
       [EMPRESA.cnpj, EMPRESA.razaoSocial, EMPRESA.nomeFantasia, EMPRESA.inscricaoMunicipal,
        EMPRESA.codigoMunicipio,
@@ -144,7 +144,28 @@ async function principal() {
   }
 }
 
-principal()
+/* Em qual escritório o cadastro é restaurado.
+ *
+ * Sem amarrar, `escritorio_id` nasce NULL (o padrão da coluna é
+ * `inquilino_atual()`) e a restauração morre na primeira empresa. Numa
+ * instalação de mesa há um escritório só; num servidor com vários, despejar
+ * o cadastro na casa errada não tem desfazer — por isso exige --escritorio. */
+async function escritorioAlvo() {
+  const i = process.argv.indexOf('--escritorio');
+  if (i >= 0 && process.argv[i + 1]) return Number(process.argv[i + 1]);
+
+  const ids = (await db.comServidor(() => db.query(
+    'SELECT * FROM escritorios_ativos() AS id'))).rows.map(r => r.id);
+  if (!ids.length) throw new Error('Nenhum escritório no banco. Rode as migrações antes.');
+  if (ids.length > 1) {
+    throw new Error('Há ' + ids.length + ' escritórios (' + ids.join(', ') +
+                    '). Informe em qual restaurar: --escritorio N');
+  }
+  return ids[0];
+}
+
+escritorioAlvo()
+  .then(id => db.comInquilino(id, principal))
   .then(() => db.pool.end())
   .catch(async e => {
     console.error('Falhou:', e.message);
