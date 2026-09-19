@@ -196,7 +196,13 @@ async function semear() {
   process.env.DATABASE_URL = urlMatriz;
   const db = require(path.join(RAIZ, 'src', 'db'));
   const usuarios = require(path.join(RAIZ, 'src', 'services', 'usuarios'));
+  /* O banco descartável nasce das migrações, que já semeiam o escritório 1.
+     Sem amarrar, `escritorio_id` viria NULL e a primeira empresa não entra —
+     toda a matriz de acesso depende deste cadastro existir. */
+  return db.comInquilino(1, () => semearDentro(db, usuarios));
+}
 
+async function semearDentro(db, usuarios) {
   const empresas = [];
   for (const [cnpj, nome] of [['11222333000181', 'Empresa A'], ['44555666000199', 'Empresa B']]) {
     const r = await db.query(
@@ -429,11 +435,17 @@ function relatorio(linhas, listagens, alheios) {
     /* Do mais fraco para o mais forte: é nessa ordem que uma rota irreversível
        é sondada, e o disparo para na primeira credencial que passar. */
     const sessoes = require(path.join(RAIZ, 'src', 'services', 'sessoes'));
+    const dbMatriz = require(path.join(RAIZ, 'src', 'db'));
     const identidades = {
       anonimo: {},
       tokenEmpresa: { 'X-API-Key': dados.tokenEmpresa },
+      /* O perfil cliente não entra por /auth/login — é barrado ali de
+         propósito —, então a sessão dele nasce direto do serviço. E direto do
+         serviço quer dizer fora de requisição: sem amarrar o inquilino,
+         `sessoes.escritorio_id` viria NULL e a gravação morre. */
       cliente: { Cookie: 'nfse_sessao=' +
-        await sessoes.criar(dados.clienteId, { ip: '127.0.0.1', get: () => 'matriz' }) },
+        await dbMatriz.comInquilino(1, () =>
+          sessoes.criar(dados.clienteId, { ip: '127.0.0.1', get: () => 'matriz' })) },
       operador: { Cookie: await entrar('op@matriz.teste') },
       admin: { Cookie: await entrar('admin@matriz.teste') },
       maquina: { 'X-API-Key': process.env.GATEWAY_API_KEY }

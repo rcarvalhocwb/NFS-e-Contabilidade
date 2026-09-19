@@ -20,12 +20,9 @@ function fmtDataHoraLocal(d = new Date()) {
 }
 
 /* Descrição padrão por motivo, usada quando o chamador não informa uma.
-   xMotivo é obrigatório em qualquer motivo (não só no 9). */
-const MOTIVOS = {
-  1: 'Erro na emissao da NFS-e',
-  2: 'Servico nao prestado',
-  9: 'Outros'
-};
+   xMotivo é obrigatório em qualquer motivo (não só no 9), e a tabela mora em
+   regrasDps para não haver duas — a daqui foi a que errou. */
+const { TEXTO_PADRAO_CANCELAMENTO, LIMITE_MOTIVO } = require('./regrasDps');
 
 /**
  * Pedido de cancelamento (evento e101101).
@@ -47,7 +44,20 @@ const MOTIVOS = {
 function montarPedidoCancelamento(opts) {
   const cMotivo = Number(opts.codigoMotivo) || 1;
   const id = 'PRE' + opts.chaveAcesso + '101101';
-  const xMotivo = opts.motivo || MOTIVOS[cMotivo] || MOTIVOS[9];
+  const xMotivo = opts.motivo || TEXTO_PADRAO_CANCELAMENTO[cMotivo];
+
+  /* Última conferência antes de assinar.
+     O padrão do motivo 9 já foi 'Outros' — seis caracteres, e TSMotivo exige
+     quinze. O evento saía assinado e voltava "E1235 falha no esquema", com a
+     nota seguindo válida e ninguém sabendo por quê. A regra está em
+     conferirCancelamento, que a rota chama; esta linha existe para o caminho
+     que não passa pela rota. */
+  if (!xMotivo || String(xMotivo).length < LIMITE_MOTIVO.min) {
+    throw Object.assign(new Error(
+      `xMotivo precisa de ao menos ${LIMITE_MOTIVO.min} caracteres ` +
+      `(motivo ${cMotivo}${xMotivo ? `, recebido "${xMotivo}"` : ', nenhum informado'})`
+    ), { status: 400 });
+  }
 
   return `<?xml version="1.0" encoding="UTF-8"?>` +
 `<pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">` +

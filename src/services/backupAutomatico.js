@@ -34,16 +34,26 @@ function precisaDeBackup() {
   const arquivos = fs.readdirSync(pasta).filter(f => /^nfse-backup-.*\.json$/.test(f));
   if (!arquivos.length) return true;
 
-  const maisRecente = arquivos.sort().reverse()[0];
-  const idade = Date.now() - fs.statSync(path.join(pasta, maisRecente)).mtimeMs;
-  return idade > UM_DIA_MS;
+  /* Por data de modificação, não por nome. O nome passou a levar o escritório
+     ANTES do carimbo de tempo (nfse-backup-e5-2026-09-17), então ordenar por
+     nome põe o escritório 5 de ontem à frente do escritório 1 de hoje — e a
+     diária deixaria de rodar achando que já rodou. */
+  const maisRecente = arquivos
+    .map(f => fs.statSync(path.join(pasta, f)).mtimeMs)
+    .reduce((a, b) => Math.max(a, b), 0);
+  return (Date.now() - maisRecente) > UM_DIA_MS;
 }
 
 function executar() {
   if (!precisaDeBackup()) return;
 
   const script = path.join(__dirname, '..', '..', 'scripts', 'backup.js');
-  const filho = spawn(process.execPath, [script], {
+  /* `--todos`: um arquivo por escritório. Sem o argumento, backup.js recusa
+     rodar — e recusa de propósito. Sob RLS, uma conexão sem inquilino não
+     enxerga linha nenhuma, então a diária global gravava arquivo vazio
+     dizendo que tinha dado certo, copiava para o pendrive e mostrava verde
+     na tela. Um backup que mente é pior do que nenhum. */
+  const filho = spawn(process.execPath, [script, '--todos'], {
     cwd: path.join(__dirname, '..', '..'),
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -54,8 +64,13 @@ function executar() {
 
   filho.on('close', codigo => {
     if (codigo === 0) {
-      const ultima = saida.trim().split('\n').filter(l => l.includes('registros em')).pop();
-      console.log('[backup]', ultima || 'concluído');
+      /* Uma linha por escritório: a diária que copia três casas e some com
+         a quarta precisa aparecer no log como três, não como "concluído". */
+      const porCasa = saida.trim().split('\n')
+        .filter(l => /escritório \d+: /.test(l)).map(l => l.trim());
+      console.log('[backup]', porCasa.length
+        ? porCasa.join(' · ')
+        : (saida.trim().split('\n').filter(l => l.includes('registros em')).pop() || 'concluído'));
 
       /* Gerado o arquivo, ele precisa sair deste disco. Cópia que fica ao lado
          do banco não protege contra o disco morrer — que é justamente o que

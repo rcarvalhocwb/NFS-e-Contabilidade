@@ -62,6 +62,35 @@
     if (tipo !== 'erro') setTimeout(function () { a.className = 'aviso'; }, 5000);
   }
 
+  /* Erro de validação apontando para o campo que o causou.
+   *
+   * Antes a mensagem ia só para a faixa no topo. Quem enxerga a tela liga uma
+   * coisa à outra sozinho; quem usa leitor de tela ouve o campo, erra, e a
+   * mensagem nunca chega — ela não está associada a nada. `aria-describedby`
+   * faz a ligação, `aria-invalid` marca o campo como recusado, e o foco leva
+   * a pessoa até lá em vez de deixá-la procurar. */
+  function limparMarcas() {
+    var marcados = document.querySelectorAll('[aria-invalid="true"]');
+    for (var i = 0; i < marcados.length; i++) {
+      marcados[i].removeAttribute('aria-invalid');
+      marcados[i].removeAttribute('aria-describedby');
+    }
+  }
+
+  function avisoNoCampo(idCampo, texto) {
+    limparMarcas();
+    aviso(texto, 'erro');
+    var c = idCampo && el(idCampo);
+    if (!c) return;
+    c.setAttribute('aria-invalid', 'true');
+    c.setAttribute('aria-describedby', 'aviso');
+    /* O campo pode estar num bloco recolhido — abrir antes de focar, senão o
+       foco vai para um elemento invisível e a pessoa fica sem referência. */
+    var det = c.closest && c.closest('details');
+    if (det) det.open = true;
+    try { c.focus({ preventScroll: false }); } catch (e) { c.focus(); }
+  }
+
   function mensagemErro(dados, status) {
     if (!dados) return 'Erro HTTP ' + status;
     if (dados.erro || dados.detalhe) return dados.erro || dados.detalhe;
@@ -599,61 +628,62 @@
     };
     for (var id in rotulos) {
       if (isNaN(num(id))) {
-        return 'O campo "' + rotulos[id] + '" não é um valor válido. ' +
-               'Escreva como 1.234,56.';
+        return { campo: id, msg: 'O campo "' + rotulos[id] + '" não é um valor válido. ' +
+               'Escreva como 1.234,56.' };
       }
     }
 
-    if (!/^\d{6}$/.test(digitos(el('fCodTrib').value))) return 'O código de tributação tem 6 dígitos.';
-    if (!el('fDescricao').value.trim()) return 'Descreva o serviço prestado.';
-    if (!num('fValor') || num('fValor') <= 0) return 'Informe o valor do serviço.';
+    if (!/^\d{6}$/.test(digitos(el('fCodTrib').value))) return { campo: 'fCodTrib', msg: 'O código de tributação tem 6 dígitos.' };
+    if (!el('fDescricao').value.trim()) return { campo: 'fDescricao', msg: 'Descreva o serviço prestado.' };
+    if (!num('fValor') || num('fValor') <= 0) return { campo: 'fValor', msg: 'Informe o valor do serviço.' };
     var doc = docLimpo(el('fDoc').value);
-    if (doc && doc.length !== 11 && doc.length !== 14) return 'Documento do cliente inválido.';
-    if (doc && !el('fNome').value.trim()) return 'Informe o nome do cliente.';
+    if (doc && doc.length !== 11 && doc.length !== 14) return { campo: 'fDoc', msg: 'Documento do cliente inválido.' };
+    if (doc && !el('fNome').value.trim()) return { campo: 'fNome', msg: 'Informe o nome do cliente.' };
     var munTom = digitos(el('fMunTom').value);
-    if (munTom && munTom.length !== 7) return 'O código do município do cliente tem 7 dígitos (IBGE).';
+    if (munTom && munTom.length !== 7) return { campo: 'fMunTom', msg: 'O código do município do cliente tem 7 dígitos (IBGE).' };
     var munPrest = digitos(el('fMunPrest').value);
-    if (munPrest && munPrest.length !== 7) return 'O código do município da prestação tem 7 dígitos (IBGE).';
+    if (munPrest && munPrest.length !== 7) return { campo: 'fMunPrest', msg: 'O código do município da prestação tem 7 dígitos (IBGE).' };
     if (el('fNatureza').value === '3' && !el('fPais').value.trim()) {
-      return 'Exportação de serviço exige o país da prestação.';
+      return { campo: 'fPais', msg: 'Exportação de serviço exige o país da prestação.' };
     }
     if (el('fSuspensa').checked && !el('fNumProcesso').value.trim()) {
-      return 'Exigibilidade suspensa exige o número do processo.';
+      return { campo: 'fNumProcesso', msg: 'Exigibilidade suspensa exige o número do processo.' };
     }
     var docInterm = docLimpo(el('fDocInterm').value);
     if (docInterm && docInterm.length !== 11 && docInterm.length !== 14) {
-      return 'Documento do intermediário inválido: informe CNPJ (14) ou CPF (11).';
+      return { campo: 'fDocInterm', msg: 'Documento do intermediário inválido: informe CNPJ (14) ou CPF (11).' };
     }
     if (docInterm && !el('fNomeInterm').value.trim()) {
-      return 'Informe o nome do intermediário.';
+      return { campo: 'fNomeInterm', msg: 'Informe o nome do intermediário.' };
     }
     if (digitos(el('fBmNumero').value) && !el('fBmTipo').value) {
-      return 'Escolha o tipo do benefício municipal (alíquota diferenciada, redução da base ou isenção).';
+      return { campo: 'fBmTipo', msg: 'Escolha o tipo do benefício municipal (alíquota diferenciada, redução da base ou isenção).' };
     }
     /* Formato do NBS conferido aqui: a Sefin recusa com E1235 ("falha no
        esquema XML") depois de reservar número e assinar — um dígito a menos
        custa um número da sequência fiscal. */
     var nbs = digitos(el('fNbs').value);
     if (nbs && nbs.length !== 9) {
-      return 'O código NBS tem 9 dígitos (você informou ' + nbs.length + ').';
+      return { campo: 'fNbs', msg: 'O código NBS tem 9 dígitos (você informou ' + nbs.length + ').' };
     }
     if (el('fIbsAtivo').checked) {
-      if (!nbs) return 'Com IBS/CBS, informe o código NBS do serviço.';
-      if (!digitos(el('fIbsCst').value)) return 'Informe o CST do IBS/CBS.';
-      if (!digitos(el('fIbsClass').value)) return 'Informe a classificação tributária do IBS/CBS.';
-      if (!el('fIbsOperacao').value) return 'Escolha o indicador da operação (cIndOp).';
-      if (digitos(el('fIbsClass').value).length > 6) return 'A classificação tributária tem até 6 dígitos.';
+      if (!nbs) return { campo: 'fNbs', msg: 'Com IBS/CBS, informe o código NBS do serviço.' };
+      if (!digitos(el('fIbsCst').value)) return { campo: 'fIbsCst', msg: 'Informe o CST do IBS/CBS.' };
+      if (!digitos(el('fIbsClass').value)) return { campo: 'fIbsClass', msg: 'Informe a classificação tributária do IBS/CBS.' };
+      if (!el('fIbsOperacao').value) return { campo: 'fIbsOperacao', msg: 'Escolha o indicador da operação (cIndOp).' };
+      if (digitos(el('fIbsClass').value).length > 6) return { campo: 'fIbsClass', msg: 'A classificação tributária tem até 6 dígitos.' };
 
     }
     if (el('fObraCodigo').value.trim() && el('fObraCib').value.trim()) {
-      return 'Informe o código da obra OU o CIB, não os dois.';
+      return { campo: 'fObraCodigo', msg: 'Informe o código da obra OU o CIB, não os dois.' };
     }
     return null;
   }
 
   el('btnEmitir').onclick = function () {
     var problema = validar();
-    if (problema) return aviso(problema, 'erro');
+    if (problema) return avisoNoCampo(problema.campo, problema.msg);
+    limparMarcas();
 
     var e = empresaAtual();
     if (e.ambiente === 'producao') {

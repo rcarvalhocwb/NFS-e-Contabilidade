@@ -26,6 +26,19 @@ const config = {
      engano teria valor fiscal e geraria imposto.
      O padrão é permitir: a instalação normal é para emitir de verdade. */
   permitirProducao: process.env.PERMITIR_PRODUCAO !== 'false',
+
+  /* Um servidor atendendo vários escritórios de contabilidade, em vez de uma
+     instalação de mesa atendendo um.
+
+     Separa dois papéis que até aqui eram a mesma pessoa: o administrador do
+     escritório e o operador do servidor. Ligado, as telas que mexem no
+     servidor inteiro (endereço e certificado TLS, destinos de backup,
+     reiniciar) passam a exigir a credencial de máquina — mexer nelas afeta
+     todas as casas, não só a de quem clicou.
+
+     Desligado por padrão: a instalação de mesa é o produto que roda hoje, e
+     nela o administrador É o operador. */
+  multiEscritorio: process.env.MULTI_ESCRITORIO === 'true',
   databaseUrl: process.env.DATABASE_URL,
   apiKey: process.env.GATEWAY_API_KEY,
   masterKey: process.env.MASTER_KEY,

@@ -155,7 +155,7 @@
       <a href="#email" data-tela="email" data-admin hidden><span class="ico">✉</span> E-mail e avisos</a>
       <a href="#sistema" data-tela="sistema" data-admin hidden><span class="ico">⏻</span> O gateway no ar
         <span id="seloSistema" class="selo-status s-erro sem-ponto" hidden>!</span></a>
-      <a href="#rede" data-tela="rede" data-admin hidden><span class="ico">⇅</span> Rede e conexão</a>
+      <a href="#rede" data-tela="rede" data-admin data-operador hidden><span class="ico">⇅</span> Rede e conexão</a>
       <a href="#manutencao" data-tela="manutencao" data-admin hidden><span class="ico">▤</span> Backup e migração</a>
     </nav>
 
@@ -597,7 +597,7 @@
                 </div>
                 <div id="pf_wrapAliquota">
                   <label for="pf_aliquota">Alíquota do ISS (%)</label>
-                  <input id="pf_aliquota" type="number" step="0.0001" min="0" max="100">
+                  <input id="pf_aliquota" type="number" step="0.0001" min="0" max="100" inputmode="decimal">
                   <div class="ajuda" id="pf_ajudaAliquota"></div>
                 </div>
                 <div>
@@ -818,7 +818,7 @@
               <div id="waVazio" class="ajuda" hidden>Nenhum número autorizado.</div>
               <div class="grade c4" style="margin-top:14px;align-items:end">
                 <div><label for="waTelefone">Número</label>
-                  <input id="waTelefone" maxlength="24" placeholder="(41) 99999-8888"></div>
+                  <input id="waTelefone" maxlength="24" placeholder="(41) 99999-8888" inputmode="tel"></div>
                 <div><label for="waNome">Nome</label>
                   <input id="waNome" maxlength="120" placeholder="Maria"></div>
                 <div><label for="waCargo">Cargo</label>
@@ -1031,7 +1031,7 @@
                 <h3>O repassador</h3>
                 <div class="grade c3">
                   <div><label for="rpPorta">Porta interna</label>
-                    <input id="rpPorta" type="number" min="1024" max="65535" value="8080">
+                    <input id="rpPorta" type="number" min="1024" max="65535" value="8080" inputmode="numeric">
                     <div class="ajuda">Atende só em 127.0.0.1.</div></div>
                   <div><label for="rpAppSecret">App Secret da Meta</label>
                     <input id="rpAppSecret" type="password" autocomplete="new-password"
@@ -1168,7 +1168,7 @@
               </div>
               <div class="grade c3">
                 <div><label for="waNumero">Número que aparece ao cliente</label>
-                  <input id="waNumero" maxlength="24" placeholder="(41) 3000-0000"></div>
+                  <input id="waNumero" maxlength="24" placeholder="(41) 3000-0000" inputmode="numeric"></div>
                 <div><label for="waPhoneId">Phone number ID</label>
                   <input id="waPhoneId" maxlength="40" class="mono"
                          placeholder="1234567890"></div>
@@ -1483,7 +1483,7 @@
 
             <div class="grade c3" style="margin-top:16px">
               <div><label for="idSite">Site</label><input id="idSite" maxlength="120"></div>
-              <div><label for="idTelefone">Telefone</label><input id="idTelefone" maxlength="40"></div>
+              <div><label for="idTelefone">Telefone</label><input id="idTelefone" maxlength="40" inputmode="tel"></div>
               <div><label for="idEmail">E-mail</label><input id="idEmail" type="email" maxlength="120"></div>
             </div>
 
@@ -1525,7 +1525,7 @@
               <div><label for="emHost">Servidor</label>
                 <input id="emHost" maxlength="120" placeholder="smtp.gmail.com"></div>
               <div><label for="emPorta">Porta</label>
-                <input id="emPorta" type="number" min="1" max="65535" value="587">
+                <input id="emPorta" type="number" min="1" max="65535" value="587" inputmode="numeric">
                 <div class="ajuda">587 com STARTTLS · 465 com TLS.</div></div>
               <div><label for="emSeguro">Segurança</label>
                 <select id="emSeguro">
@@ -1609,9 +1609,9 @@
               <div><label for="neDe">De</label><input id="neDe" type="date"></div>
               <div><label for="neAte">Até</label><input id="neAte" type="date"></div>
               <div><label for="neValorMin">Valor de (R$)</label>
-                <input id="neValorMin" data-moeda placeholder="qualquer"></div>
+                <input id="neValorMin" data-moeda placeholder="qualquer" inputmode="decimal"></div>
               <div><label for="neValorMax">até (R$)</label>
-                <input id="neValorMax" data-moeda placeholder="qualquer"></div>
+                <input id="neValorMax" data-moeda placeholder="qualquer" inputmode="decimal"></div>
             </div>
 
             <div class="linha-botoes" style="margin-top:14px">
@@ -1908,7 +1908,7 @@
 
             <div class="linha-botoes" style="margin-top:18px">
               <button id="btnSisAtualizar">Conferir de novo</button>
-              <button class="primario" id="btnSisReiniciar">Reiniciar o gateway</button>
+              <button class="primario" data-operador id="btnSisReiniciar">Reiniciar o gateway</button>
             </div>
             <div id="sisResultado" class="ajuda" style="margin-top:12px"></div>
 
@@ -1998,7 +1998,7 @@
             </label>
             <div class="grade c2" style="margin-top:12px;max-width:340px">
               <div><label for="rdPorta">Porta do HTTPS</label>
-                <input id="rdPorta" type="number" min="1024" max="65535" value="3443">
+                <input id="rdPorta" type="number" min="1024" max="65535" value="3443" inputmode="numeric">
                 <div class="ajuda">O HTTP continua na 3000: desligá-lo tiraria do
                   ar o atalho e todo endereço já anotado.</div></div>
             </div>
@@ -2101,7 +2101,7 @@
       </section>
 
       <section data-tela-conteudo="manutencao" hidden>
-        <div class="cartao" style="margin:0 0 18px">
+        <div class="cartao" data-operador style="margin:0 0 18px">
           <div class="cartao-cab">
             <h2>Cópia fora da máquina</h2>
             <span id="cpSelo" class="selo-status s-neutro">—</span>
@@ -2190,7 +2190,7 @@
             </div>
           </div>
 
-          <div class="cartao" style="margin:0">
+          <div class="cartao" data-operador style="margin:0">
             <div class="cartao-cab"><h2>Mudar de computador</h2></div>
             <div class="cartao-corpo">
               <div class="ajuda" style="margin-bottom:14px">
@@ -2366,8 +2366,8 @@
       </div>
       <div class="grade c3" style="margin-top:14px">
         <div><label for="sb_codigo">Código de tributação *</label><input id="sb_codigo" inputmode="numeric" maxlength="6"></div>
-        <div><label for="sb_valor">Valor do serviço *</label><input id="sb_valor" type="number" step="0.01" min="0"></div>
-        <div><label for="sb_aliquota">Alíquota ISS (%)</label><input id="sb_aliquota" type="number" step="0.0001" min="0"></div>
+        <div><label for="sb_valor">Valor do serviço *</label><input id="sb_valor" type="number" step="0.01" min="0" inputmode="decimal"></div>
+        <div><label for="sb_aliquota">Alíquota ISS (%)</label><input id="sb_aliquota" type="number" step="0.0001" min="0" inputmode="decimal"></div>
       </div>
       <div style="margin-top:14px">
         <label for="sb_servico">Descrição do serviço *</label>
@@ -2443,11 +2443,11 @@
     <div class="grade c2" style="margin-top:14px">
       <div><label for="s_codigo">Código de tributação *</label><input id="s_codigo" inputmode="numeric" maxlength="6" placeholder="110201">
         <div class="ajuda">6 dígitos (cTribNac).</div></div>
-      <div><label for="s_valor">Valor padrão</label><input id="s_valor" type="number" step="0.01" min="0"></div>
+      <div><label for="s_valor">Valor padrão</label><input id="s_valor" type="number" step="0.01" min="0" inputmode="decimal"></div>
     </div>
     <div style="margin-top:14px"><label for="s_descricao">Descrição na nota *</label><input id="s_descricao" maxlength="300"></div>
     <div class="grade c2" style="margin-top:14px">
-      <div><label for="s_aliquota">Alíquota / % tributos</label><input id="s_aliquota" type="number" step="0.0001" min="0">
+      <div><label for="s_aliquota">Alíquota / % tributos</label><input id="s_aliquota" type="number" step="0.0001" min="0" inputmode="decimal">
         <div class="ajuda">No Simples, o percentual do PGDAS.</div></div>
       <div><label for="s_retido">ISS retido</label>
         <select id="s_retido"><option value="false">Não</option><option value="true">Sim</option></select></div>

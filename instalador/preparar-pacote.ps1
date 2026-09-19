@@ -1,4 +1,4 @@
-# ---------------------------------------------------------------------------
+﻿# ---------------------------------------------------------------------------
 # Monta a pasta que o instalador .exe vai empacotar.
 #
 # Junta tudo que o gateway precisa para rodar numa maquina limpa:
@@ -66,10 +66,18 @@ foreach ($item in $incluir) {
 # instalacao nova sai funcionando -- util para quem desenvolve, superficie sem
 # beneficio na maquina de uma contabilidade que guarda nota fiscal.
 #
+# scripts\papel-app.js e scripts\criar-escritorio.js saem pelo mesmo motivo do
+# licenca-emitir.js: sao ferramentas de QUEM OPERA O SERVIDOR, nao de quem usa
+# o gateway. O primeiro cria papel de banco e distribui GRANT; o segundo abre
+# escritorio novo. Numa instalacao de mesa existe um escritorio so, e ele nasce
+# das migracoes -- um segundo ali produziria um estado que o resto do produto
+# nao espera. Ficam no repositorio, para o servidor SaaS.
+#
 # A pasta dev/ nunca entra porque o pacote e montado por LISTA DE INCLUSAO e ela
 # nao esta na lista. test/pacote-limpo.test.js confere as duas coisas.
 foreach ($fora in @('relay\teste', 'relay\dados', 'monitor\sessao.txt',
                     'scripts\licenca-emitir.js', 'scripts\ensaio-instalacao.js',
+                    'scripts\papel-app.js', 'scripts\criar-escritorio.js',
                     'wa\node_modules', 'wa\sessao', 'wa\token.txt')) {
     $p = Join-Path $pacote $fora
     if (Test-Path $p) { Remove-Item $p -Recurse -Force }

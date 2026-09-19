@@ -154,12 +154,19 @@ async function processarRodada(limite = 10) {
   return n;
 }
 
+/* Uma rodada por escritório: sob RLS, uma conexão sem inquilino não enxerga
+   nenhuma entrega pendente, e a fila de e-mail pararia sem dizer nada.
+   Ver o mesmo raciocínio em services/filaEmissao.js. */
 async function tick() {
   if (rodando) return;
   rodando = true;
-  try { await processarRodada(); }
-  catch (e) { console.error('[email] erro na rodada:', e.message); }
-  finally { rodando = false; }
+  try {
+    await db.porInquilino(
+      () => processarRodada(),
+      (e, id) => console.error(`[email] erro na rodada do escritório ${id}:`, e.message));
+  } catch (e) {
+    console.error('[email] erro ao listar escritórios:', e.message);
+  } finally { rodando = false; }
 }
 
 function iniciar() {

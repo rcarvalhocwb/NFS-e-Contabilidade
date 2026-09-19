@@ -6,6 +6,7 @@ const http = require('http');
 const { URL } = require('url');
 const db = require('../db');
 const sefin = require('../nfse/sefinClient');
+const { ehIpPrivado, lookupSeguro } = require('../util/rede-segura');
 
 const INTERVALO_MS = Number(process.env.WEBHOOK_INTERVALO_MS || 4000);
 const MAX_TENTATIVAS = Number(process.env.WEBHOOK_MAX_TENTATIVAS || 6);
@@ -30,6 +31,18 @@ function validarUrl(valor) {
   if (u.protocol !== 'https:' && u.protocol !== 'http:') {
     throw Object.assign(new Error('url deve usar http ou https'), { status: 400 });
   }
+  /* Feedback imediato quando a URL já traz um IP interno literal
+     (127.0.0.1, 169.254.169.254, 10.x…). Nome que só resolve para interno na
+     hora da entrega é barrado lá, por lookupSeguro — esta é a cortesia de
+     recusar no cadastro o que dá para ver na hora. */
+  const host = u.hostname.replace(/^\[|\]$/g, '');   // tira colchetes de IPv6
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(':')) {
+    if (ehIpPrivado(host)) {
+      throw Object.assign(new Error(
+        'url aponta para endereço interno; o webhook precisa de um destino público'),
+        { status: 400 });
+    }
+  }
   return u;
 }
 
@@ -51,7 +64,12 @@ function postar(url, corpo, header, chave) {
       port: u.port || (u.protocol === 'https:' ? 443 : 80),
       path: u.pathname + u.search,
       headers,
-      timeout: TIMEOUT_MS
+      timeout: TIMEOUT_MS,
+      /* Recusa se o nome resolver para a rede interna do servidor. Vai aqui, no
+         caminho que o socket usa, e não só no cadastro: um nome que resolvia
+         para IP público no cadastro pode resolver para 127.0.0.1 na entrega
+         (DNS rebinding). Ver src/util/rede-segura.js. */
+      lookup: lookupSeguro
     }, res => {
       let body = '';
       res.on('data', c => (body += c));
@@ -207,12 +225,28 @@ async function processarRodada(limite = 10) {
   return n;
 }
 
+/* Uma rodada por escritório.
+ *
+ * Antes havia um banco por escritório e a varredura era uma só. Agora a fila
+ * de todos mora junta, e sob RLS uma conexão sem inquilino não enxerga
+ * NENHUMA linha — a fila pararia em silêncio, que é o pior modo de falhar
+ * que uma fila tem: nada quebra, nada sai, e ninguém repara até o cliente
+ * perguntar da nota.
+ *
+ * A alternativa seria dar BYPASSRLS ao papel da aplicação para varrer tudo de
+ * uma vez: desligar o isolamento do sistema inteiro pela conveniência de um
+ * laço. O laço é mais barato. O erro de um escritório não interrompe os
+ * outros — fila parada por causa do vizinho é a falha que multiplica. */
 async function tick() {
   if (rodando) return;
   rodando = true;
-  try { await processarRodada(); }
-  catch (e) { console.error('[webhook] erro na rodada:', e.message); }
-  finally { rodando = false; }
+  try {
+    await db.porInquilino(
+      () => processarRodada(),
+      (e, id) => console.error(`[webhook] erro na rodada do escritório ${id}:`, e.message));
+  } catch (e) {
+    console.error('[webhook] erro ao listar escritórios:', e.message);
+  } finally { rodando = false; }
 }
 
 function iniciar() {

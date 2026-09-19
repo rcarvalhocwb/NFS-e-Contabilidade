@@ -16,7 +16,13 @@
  *   node scripts/criar-usuario.js --nome "Maria" --email maria@empresa.com --senha "..."
  *   node scripts/criar-usuario.js --email maria@empresa.com --senha "..." --redefinir
  *
- * Sem --perfil, o primeiro usuário do sistema nasce admin e os demais operador.
+ * Sem --perfil, o primeiro usuário do escritório nasce admin e os demais
+ * operador.
+ *
+ * --escritorio escolhe a casa. Sem ele, 1 — que é o escritório da instalação
+ * que existia antes da conversão para vários. Num servidor com mais de um, o
+ * argumento deixa de ser opcional na prática: criar o admin da casa errada é
+ * dar a chave da carteira de clientes de outra pessoa.
  */
 require('dotenv').config();
 const db = require('../src/db');
@@ -30,6 +36,7 @@ const tem = nome => process.argv.includes('--' + nome);
 
 async function principal() {
   const email = argumento('email');
+  const escritorio = Number(argumento('escritorio') || 1);
   // NFSE_SENHA é o caminho preferido: argumento de linha de comando aparece na
   // lista de processos e no histórico do terminal.
   const senha = process.env.NFSE_SENHA || argumento('senha');
@@ -42,6 +49,17 @@ async function principal() {
     console.error('     Acrescente --redefinir para trocar a senha de quem já existe.');
     process.exit(2);
   }
+
+  /* Já estamos dentro do bloco do escritório, então a policy responde por si:
+     pedir outro id aqui devolveria vazio, que é a mesma resposta de "não
+     existe". Não é preciso — nem possível — atravessar a RLS para conferir. */
+  const casa = await db.query(
+    'SELECT nome FROM escritorios WHERE id = $1 AND ativo', [escritorio]);
+  if (!casa.rows.length) {
+    console.error(`Escritório ${escritorio} não existe ou está inativo.`);
+    process.exit(2);
+  }
+  console.log(`Escritório ${escritorio}: ${casa.rows[0].nome}`);
 
   const jaHavia = await usuarios.existeAlgum();
   const existente = await usuarios.porEmail(email);
@@ -80,7 +98,10 @@ async function principal() {
   if (!jaHavia) console.log('É o administrador do gateway e enxerga todas as empresas.');
 }
 
-principal()
+/* Tudo dentro do bloco do escritório: sem ele, `escritorio_id` nasce NULL
+   (o padrão da coluna é `inquilino_atual()`) e a gravação falha na hora — que
+   é o modo certo de falhar, mas não é motivo para deixar acontecer. */
+db.comInquilino(Number(argumento('escritorio') || 1), principal)
   .then(() => db.pool.end())
   .catch(async e => {
     console.error('Falhou:', e.message);

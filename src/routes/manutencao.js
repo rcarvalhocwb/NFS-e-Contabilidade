@@ -2,14 +2,22 @@ const express = require('express');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { somenteAdmin } = require('../middleware/escopo');
+const { somenteAdmin, somenteOperador } = require('../middleware/escopo');
 const registro = require('../services/registro');
 const copia = require('../services/copiaBackup');
 const auditoria = require('../services/auditoria');
 
 const router = express.Router();
 
-/* Tudo aqui é de administrador: backup carrega certificado e tokens. */
+/* Tudo aqui é de administrador: backup carrega certificado e tokens.
+
+   Algumas rotas exigem mais que isso. Endereço e certificado TLS do servidor,
+   destinos de backup em disco, reiniciar, pacote de migração: nada disso é de
+   um escritório, é da máquina em que todos estão. Num servidor com vários
+   inquilinos, deixá-las com o administrador de um é deixar um cliente mexer na
+   infraestrutura dos outros — elas levam `somenteOperador`, que numa
+   instalação de mesa continua aceitando o administrador, porque lá ele é o
+   operador. */
 router.use(somenteAdmin);
 
 const RAIZ = path.join(__dirname, '..', '..');
@@ -47,10 +55,26 @@ function listarArquivos(padrao) {
     .sort((a, b) => b.nome.localeCompare(a.nome));
 }
 
+/* Nome de arquivo de backup, com o escritório dentro: nfse-backup-e3-....json
+   O escritório entra no NOME porque é o que permite recusar o download do
+   arquivo alheio sem precisar abrir e inspecionar o conteúdo. */
+function meusBackups(escritorioId) {
+  return new RegExp(`^nfse-backup-e${Number(escritorioId)}-.*\\.json$`);
+}
+
+/* Um arquivo é meu quando o nome diz que é. Nome sem escritório é de antes da
+   separação, quando o banco era de uma casa só — some da lista de todo mundo
+   em vez de aparecer para qualquer um. */
+function arquivoDoEscritorio(nome, escritorioId) {
+  const m = String(nome).match(/^nfse-(?:backup|migracao|[\w.-]+)-e(\d+)-/);
+  return !!m && Number(m[1]) === Number(escritorioId);
+}
+
 /* Situação da manutenção: o que existe e quando foi a última cópia. */
-router.get('/', (_req, res) => {
-  const backups = listarArquivos(/^nfse-backup-.*\.json$/);
-  const pacotes = listarArquivos(/\.nfsepkg$/);
+router.get('/', (req, res) => {
+  const backups = listarArquivos(meusBackups(req.escritorioId));
+  const pacotes = listarArquivos(/\.nfsepkg$/)
+    .filter(a => arquivoDoEscritorio(a.nome, req.escritorioId));
   res.json({
     pasta: PASTA_BACKUPS,
     pastaLogs: registro.caminhoPasta(),
@@ -60,9 +84,20 @@ router.get('/', (_req, res) => {
   });
 });
 
-router.post('/backup', async (_req, res, next) => {
+/* O backup é DO ESCRITÓRIO de quem pediu.
+   Antes era do banco inteiro, o que dava no mesmo quando o banco era de uma
+   casa só. Agora seria a carteira de clientes de todo mundo num arquivo que
+   um administrador qualquer baixa — por um caminho que não passa por consulta
+   nenhuma, e que portanto a RLS não alcança. */
+router.post('/backup', async (req, res, next) => {
   try {
-    const saida = await rodarScript('backup.js', []);
+    const escritorio = req.escritorioId;
+    if (!escritorio) {
+      return res.status(400).json({
+        erro: 'Não sei de qual escritório é este backup. Entre pelo painel.'
+      });
+    }
+    const saida = await rodarScript('backup.js', ['--escritorio', String(escritorio)]);
     const linha = saida.split('\n').find(l => l.includes('registros em')) || '';
 
     /* Gerar e levar para fora são um gesto só. Separar deixaria o backup de pé
@@ -75,7 +110,7 @@ router.post('/backup', async (_req, res, next) => {
     }
 
     res.json({ ok: true, resumo: linha.trim(), externa,
-      backups: listarArquivos(/^nfse-backup-.*\.json$/).slice(0, 20) });
+      backups: listarArquivos(meusBackups(escritorio)).slice(0, 20) });
   } catch (e) { next(e); }
 });
 
@@ -92,7 +127,7 @@ router.get('/sistema', async (_req, res, next) => {
 /* Reiniciar o gateway por ele mesmo. É a operação que mais se repete, porque
    toda atualização pede uma. Só funciona quando ele foi aberto pela tarefa do
    Windows — do contrário não tem privilégio, e a resposta diz o que fazer. */
-router.post('/sistema/reiniciar', async (req, res, next) => {
+router.post('/sistema/reiniciar', somenteOperador, async (req, res, next) => {
   try {
     const r = await require('../services/saudeSistema').reiniciar();
     await auditoria.registrar(req, null, 'sistema.reiniciar',
@@ -105,7 +140,7 @@ router.post('/sistema/reiniciar', async (req, res, next) => {
 
 /* De onde o painel aceita conexão, e se é criptografada. Saiu do .env porque
    editar arquivo de configuração no bloco de notas é onde o operador trava. */
-router.get('/rede/config', async (_req, res, next) => {
+router.get('/rede/config', somenteOperador, async (_req, res, next) => {
   try {
     const s = require('../services/configRede');
     const c = await s.ler();
@@ -116,7 +151,7 @@ router.get('/rede/config', async (_req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.put('/rede/config', async (req, res, next) => {
+router.put('/rede/config', somenteOperador, async (req, res, next) => {
   try {
     const s = require('../services/configRede');
     const antes = await s.ler();
@@ -132,7 +167,7 @@ router.put('/rede/config', async (req, res, next) => {
   }
 });
 
-router.post('/rede/certificado', async (req, res, next) => {
+router.post('/rede/certificado', somenteOperador, async (req, res, next) => {
   try {
     const s = require('../services/configRede');
     const b = req.body || {};
@@ -156,11 +191,11 @@ router.get('/rede', async (_req, res, next) => {
 
 /* ------------------------------------------- cópia para fora da máquina */
 
-router.get('/copias', async (_req, res, next) => {
+router.get('/copias', somenteOperador, async (_req, res, next) => {
   try { res.json(await copia.situacao()); } catch (e) { next(e); }
 });
 
-router.post('/copias', async (req, res, next) => {
+router.post('/copias', somenteOperador, async (req, res, next) => {
   try {
     const d = await copia.acrescentar(req.body || {});
     await auditoria.registrar(req, null, 'backup.destino',
@@ -172,7 +207,7 @@ router.post('/copias', async (req, res, next) => {
   }
 });
 
-router.delete('/copias/:id', async (req, res, next) => {
+router.delete('/copias/:id', somenteOperador, async (req, res, next) => {
   try {
     await copia.remover(req.params.id);
     await auditoria.registrar(req, null, 'backup.destino',
@@ -183,7 +218,7 @@ router.delete('/copias/:id', async (req, res, next) => {
 
 /* Copia agora, sem esperar o backup do dia. É como se confere que o pen drive
    está conectado e que a pasta de rede responde. */
-router.post('/copias/copiar', async (req, res, next) => {
+router.post('/copias/copiar', somenteOperador, async (req, res, next) => {
   try {
     res.json(await copia.copiar({ apenas: req.body && req.body.id ? Number(req.body.id) : undefined }));
   } catch (e) {
@@ -195,7 +230,7 @@ router.post('/copias/copiar', async (req, res, next) => {
 /* Pacote de migração: leva dados E chaves para outra máquina. A senha vai por
    variável de ambiente, não por argumento — argumento aparece na lista de
    processos da máquina. */
-router.post('/migracao', async (req, res, next) => {
+router.post('/migracao', somenteOperador, async (req, res, next) => {
   try {
     const senha = (req.body || {}).senha;
     if (!senha || String(senha).length < 8) {
@@ -214,6 +249,14 @@ router.get('/arquivo/:nome', (req, res) => {
   if (!/^nfse-(backup-.*\.json|migracao-.*\.nfsepkg)$/.test(nome)) {
     return res.status(400).json({ erro: 'Arquivo inválido' });
   }
+  /* A conferência decisiva. O backup de um escritório carrega o certificado
+     A1 cifrado, os tokens e a carteira inteira de clientes dele; o nome do
+     arquivo é previsível (data e id). Sem esta linha, bastava pedir o do
+     vizinho para levar tudo — e nenhuma policy de RLS veria passar, porque
+     não há consulta no caminho, só um fluxo de disco. */
+  if (!arquivoDoEscritorio(nome, req.escritorioId)) {
+    return res.status(404).json({ erro: 'Arquivo não encontrado' });
+  }
   const caminho = path.join(PASTA_BACKUPS, nome);
   if (!fs.existsSync(caminho)) return res.status(404).json({ erro: 'Arquivo não encontrado' });
 
@@ -226,6 +269,10 @@ router.delete('/arquivo/:nome', (req, res) => {
   const nome = path.basename(String(req.params.nome));
   if (!/^nfse-(backup-.*\.json|migracao-.*\.nfsepkg)$/.test(nome)) {
     return res.status(400).json({ erro: 'Arquivo inválido' });
+  }
+  // Apagar o backup do vizinho é tão grave quanto baixá-lo.
+  if (!arquivoDoEscritorio(nome, req.escritorioId)) {
+    return res.status(404).json({ erro: 'Arquivo não encontrado' });
   }
   const caminho = path.join(PASTA_BACKUPS, nome);
   if (!fs.existsSync(caminho)) return res.status(404).json({ erro: 'Arquivo não encontrado' });

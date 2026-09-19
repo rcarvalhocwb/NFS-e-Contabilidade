@@ -13,6 +13,7 @@ substitui e entrega XML e DANFSe.
 ## Sumário
 
 - [Como rodar](#como-rodar)
+- [Vários escritórios no mesmo servidor](#vários-escritórios-no-mesmo-servidor)
 - [Autenticação](#autenticação)
 - [Painel](#painel)
 - [API para o sistema cliente](#api-para-o-sistema-cliente)
@@ -93,11 +94,15 @@ para emitir uma nota — e que podia sumir sem aviso.
 O gateway grava uma cópia por dia em `backups/`, sem ninguém precisar lembrar:
 
 ```bash
-node scripts/backup.js                 # cópia sob demanda
-node scripts/backup.js --sem-notas     # só cadastro, arquivo pequeno
-node scripts/restaurar-backup.js backups/nfse-backup-....json --conferir
-node scripts/restaurar-backup.js backups/nfse-backup-....json
+node scripts/backup.js --todos              # cópia sob demanda, todas as casas
+node scripts/backup.js --escritorio 3       # só uma
+node scripts/backup.js --todos --sem-notas  # só cadastro, arquivo pequeno
+node scripts/restaurar-backup.js backups/nfse-backup-e3-....json --conferir
+node scripts/restaurar-backup.js backups/nfse-backup-e3-....json
 ```
+
+O backup é por escritório e **recusa rodar sem saber de qual** — ver
+[Backup: um arquivo por escritório](#backup-um-arquivo-por-escritório).
 
 Desligue com `BACKUP_ATIVO=false`; mude a pasta com `BACKUP_PASTA`.
 
@@ -108,6 +113,134 @@ uma nem outra no repositório (`backups/` está no `.gitignore`).
 > Em 17/08/2026 o projeto Supabase que hospedava o banco desapareceu e não havia
 > cópia nenhuma: empresa, numeração fiscal, tokens e histórico se foram juntos.
 > Backup automático do provedor não protege contra o provedor sumir.
+
+## Vários escritórios no mesmo servidor
+
+Um servidor atende N escritórios de contabilidade, e cada escritório atende os
+CNPJs dos clientes dele. São duas fronteiras, e elas são garantidas por
+mecanismos diferentes de propósito.
+
+Entre as **empresas de um escritório**, quem garante é o código: a rota confere
+o escopo antes de tocar em dado ou certificado.
+
+Entre **escritórios**, quem garante é o banco. Toda tabela de inquilino tem
+`escritorio_id` e uma policy de Row Level Security ligada à variável
+`app.escritorio` da conexão. Um `WHERE` esquecido numa rota de relatório é um
+erro de digitação; entre escritórios, esse mesmo erro entrega o certificado A1
+de um cliente para outra empresa. Isso não pode depender de ninguém lembrar.
+
+Sem a variável definida, a policy não encontra inquilino e **nenhuma linha
+volta**. O modo de falhar é perder dado de vista, nunca mostrar dado alheio.
+
+### A aplicação NÃO conecta como dona do banco
+
+Policy de RLS não se aplica ao dono da tabela, e não se aplica de jeito nenhum
+a superusuário. Se a aplicação conectar com o papel que criou o banco — o que
+era certo quando havia um escritório só — todas as policies ficam no banco sem
+nunca serem consultadas.
+
+```bash
+# 1. migrar, com a URL de administrador
+ADMIN_DATABASE_URL=postgres://dono:...@host/nfse node scripts/migrate.js
+
+# 2. criar o papel restrito da aplicação (imprime a DATABASE_URL nova)
+ADMIN_DATABASE_URL=postgres://dono:...@host/nfse node scripts/papel-app.js
+
+# 3. pôr essa DATABASE_URL no .env da aplicação e guardar a de administrador
+#    fora dele — ela só é necessária para migrar e para abrir escritórios
+```
+
+Conferir a qualquer momento:
+
+```bash
+node scripts/papel-app.js --conferir
+```
+
+`super` e `bypassrls` precisam ser `false`. Se algum for `true`, o isolamento
+entre escritórios não existe, por mais policy que haja.
+
+### Abrir um escritório
+
+```bash
+ADMIN_DATABASE_URL=... node scripts/criar-escritorio.js \
+  --nome "Contabilidade Silva" --cnpj 12345678000190 --admin maria@silva.com.br
+```
+
+Cria a linha de inquilino, a identidade visual com o nome do escritório e o
+primeiro administrador, com senha sorteada e troca obrigatória no primeiro
+acesso. Mais usuários depois, pelo painel ou por:
+
+```bash
+node scripts/criar-usuario.js --escritorio 3 --email joao@silva.com.br --nome "João"
+```
+
+### Login quando a pessoa atende duas casas
+
+O e-mail passou a ser único **dentro** do escritório, não no servidor — o mesmo
+contador pode ter conta em dois. O login confere a senha em cada escritório em
+que o e-mail existe:
+
+- confere em um → entra, sem perguntar nada;
+- confere em mais de um → HTTP 409 com a lista de escritórios, e o cliente
+  repete o login com `"escritorio": <id>`;
+- não confere em nenhum → 401, a mesma resposta de e-mail inexistente.
+
+A pergunta vem **depois** da senha de propósito: perguntar antes revelaria, a
+quem só chutou um e-mail, em que casas aquela pessoa trabalha.
+
+### O operador do servidor não é o administrador do escritório
+
+Na instalação de mesa os dois são a mesma pessoa: a contabilidade roda o
+gateway na própria máquina, e quem troca o certificado TLS é quem emite as
+notas. Num servidor com várias casas eles se separam — e algumas telas afetam
+todo mundo:
+
+| tela | o que mexe |
+|---|---|
+| Rede / certificado | endereço e certificado TLS do **servidor** |
+| Destinos de backup | caminhos de disco da **máquina** |
+| Reiniciar | derruba o painel de **todas** as casas |
+| Pacote de migração | leva dados e chaves para fora |
+
+Com `MULTI_ESCRITORIO=true` no `.env`, essas passam a exigir a credencial de
+máquina (`X-API-Key: $GATEWAY_API_KEY`). Sem a variável, o administrador do
+escritório continua com acesso — é o comportamento da instalação de mesa, e
+mudá-lo quebraria o produto sem proteger ninguém.
+
+O modo é explícito e não deduzido da quantidade de escritórios: autorização
+que muda sozinha quando alguém cadastra uma linha é autorização que ninguém
+prevê. Para não ficar esquecido, o servidor avisa na inicialização se houver
+mais de um escritório com o modo desligado.
+
+### Backup: um arquivo por escritório
+
+`scripts/backup.js` **recusa rodar sem saber de quem é o backup**:
+
+```bash
+node scripts/backup.js --escritorio 3    # um escritório
+node scripts/backup.js --todos           # um arquivo por escritório
+```
+
+Não é preciosismo. Sob RLS, uma conexão sem inquilino não enxerga linha
+nenhuma: o backup global rodava, imprimia "5 registros", gravava o arquivo,
+copiava para o pendrive e mostrava verde na tela — com zero empresas, zero
+certificados e zero notas dentro. Um backup que mente é pior que nenhum.
+
+O escritório entra no **nome** do arquivo (`nfse-backup-e3-....json`), e é o
+que permite ao painel recusar o download do arquivo alheio. Esse caminho não
+passa por consulta nenhuma, então a RLS não o alcança — a conferência é da
+rota.
+
+### O que é compartilhado
+
+`municipios`, `regra_im_dps` e `atualizacao` não têm dono: o código IBGE de
+Curitiba e o layout que a Sefin exige lá são os mesmos para todo escritório.
+`config_rede` e `backup_destinos` são do operador do servidor — o banco deixa a
+aplicação escrever neles porque é o próprio processo dela que mantém o listener
+HTTPS e a cópia diária; quem limita o acesso a essas telas é a autorização de
+rota, não o `GRANT`.
+
+---
 
 ## Autenticação
 

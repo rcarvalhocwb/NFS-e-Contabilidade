@@ -1,6 +1,6 @@
 {
   "name": "nfse-gateway",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Gateway de comunicação entre sistema emissor e o Portal Nacional NFS-e (Sefin Nacional)",
   "main": "src/server.js",
   "scripts": {

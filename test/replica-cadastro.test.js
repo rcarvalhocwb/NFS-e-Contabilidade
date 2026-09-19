@@ -131,11 +131,14 @@ test('uma pessoa do cliente precisa de empresa vinculada', () => {
 
 test('o perfil de cliente não entra no painel do gateway', () => {
   const auth = fonte('routes', 'auth.js');
-  assert.match(auth, /usuario\.perfil !== 'cliente'/,
+  /* Sem amarrar ao nome da variável: o login passou a percorrer os escritórios
+     em que o e-mail tem conta, e o nome de quem carrega o usuário na volta do
+     laço não é o que este teste protege. O que ele protege é a condição. */
+  assert.match(auth, /\w+\.perfil !== 'cliente'/,
     'o login do painel precisa barrar o perfil de cliente');
   // e a resposta é a mesma das outras falhas, para não revelar quem tem conta
-  const i = auth.indexOf("usuario.perfil !== 'cliente'");
-  const trecho = auth.slice(i, i + 400);
+  const i = auth.search(/\w+\.perfil !== 'cliente'/);
+  const trecho = auth.slice(i, i + 900);
   assert.match(trecho, /E-mail ou senha incorretos/);
 });
 

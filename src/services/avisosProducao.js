@@ -108,16 +108,29 @@ async function padroesFiscais() {
   }
 }
 
+/* Duas metades, e a divisão não é arbitrária.
+ *
+ * `rede` e `backup` olham o servidor: em que endereço ele escuta, se a cópia
+ * diária sai do disco. Isso é um só, e avisar uma vez por escritório seria
+ * repetir o mesmo aviso N vezes por dia até ninguém mais lê-lo.
+ *
+ * `certificados` e `padroesFiscais` olham a carteira de clientes, que é de
+ * cada escritório. Sem rodar por inquilino, sob RLS eles não veriam empresa
+ * nenhuma e o silêncio pareceria "está tudo certo" — quando o certificado A1
+ * de alguém está para vencer. */
 async function conferir() {
   try {
     rede();
-    await certificados();
     await backup();
-    await padroesFiscais();
   } catch (e) {
     // Conferência não pode derrubar o gateway nem atrapalhar a emissão.
-    console.warn('[aviso] não consegui conferir:', e.message);
+    console.warn('[aviso] não consegui conferir o servidor:', e.message);
   }
+
+  await db.porInquilino(
+    async () => { await certificados(); await padroesFiscais(); },
+    (e, id) => console.warn(`[aviso] escritório ${id}:`, e.message)
+  ).catch(e => console.warn('[aviso] não consegui listar escritórios:', e.message));
 }
 
 let timer = null;

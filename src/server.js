@@ -8,6 +8,7 @@ config.validarOuSair();
 require('./services/registro').iniciar();
 const db = require('./db');
 const auth = require('./middleware/auth');
+const inquilino = require('./middleware/inquilino');
 const { somenteAdmin, fixarEscopoEmpresa } = require('./middleware/escopo');
 const { conferirOrigem, cabecalhosSeguranca } = require('./middleware/protecao');
 const empresasRouter = require('./routes/empresas');
@@ -63,6 +64,14 @@ app.use((_req, res, next) => {
 app.use(express.json({ limit: '2mb' }));
 app.use(conferirOrigem);
 
+/* De quem é esta requisição — antes de tudo que lê dado.
+   Precisa vir antes de `auth`, não depois: `auth` consulta `sessoes` e
+   `empresa_tokens`, que estão sob policy de RLS e não respondem a conexão sem
+   inquilino. Credencial não reconhecida passa adiante sem escritório, e sem
+   escritório as tabelas de cliente devolvem zero linha — quem decide o 401 é
+   o `auth`, que sabe dar a mensagem certa. */
+app.use(inquilino);
+
 // Arquivos da interface (CSS). Ficam antes da autenticacao: sao estaticos,
 // sem dados nem segredos — as rotas de dados seguem protegidas.
 /* Sem cache por tempo: os arquivos não são versionados, então um `maxAge` longo
@@ -101,9 +110,36 @@ app.use('/auth', authRouter);
 
 /* A marca do escritório é pública: a tela de acesso a mostra antes de existir
    sessão. São nome, cor e logo — nada que já não esteja no papel timbrado. */
-app.get('/marca', async (_req, res) => {
+/* De quem é a marca, antes de existir sessão.
+ *
+ * Com sessão, o middleware de inquilino já amarrou e não há o que decidir.
+ * Sem sessão, há duas situações e elas não se parecem:
+ *
+ *   uma casa só  — é a instalação de mesa. A marca na tela de acesso é dela,
+ *                  e tirá-la deixaria o painel com cara de meio instalado.
+ *
+ *   várias casas — não dá para saber de quem é a tela. Qualquer escolha é um
+ *                  chute, e o chute mostra o nome e a cor de um cliente a
+ *                  quem nem fez login. Melhor tela sem marca que tela com a
+ *                  marca do vizinho.
+ *
+ * Antes isto nem era uma decisão: a consulta sem inquilino pegava a conexão
+ * que o pool tivesse à mão e lia com o `app.escritorio` de quem a usou antes.
+ * A tela de acesso mostrava a marca de um escritório sorteado pelo pool.
+ */
+async function marcaPublica(req, fn) {
+  if (req.escritorioId) return fn();               // tem sessão: já amarrado
+  if (config.multiEscritorio) return null;         // várias casas: não chuta
+
+  const r = await db.comServidor(() => db.query(
+    'SELECT * FROM escritorios_ativos() AS id'));
+  if (r.rows.length !== 1) return null;            // zero ou várias: idem
+  return db.comInquilino(r.rows[0].id, fn);
+}
+
+app.get('/marca', async (req, res) => {
   try {
-    const i = await identidadeServico.ler();
+    const i = (await marcaPublica(req, () => identidadeServico.ler())) || {};
     res.json({ nome: i.nome || null, descricao: i.descricao || null,
                corAcento: i.cor_acento || null, temLogo: !!i.tem_logo });
   } catch (e) {
@@ -112,9 +148,9 @@ app.get('/marca', async (_req, res) => {
   }
 });
 
-app.get('/marca/logo', async (_req, res) => {
+app.get('/marca/logo', async (req, res) => {
   try {
-    const logo = await identidadeServico.lerLogo();
+    const logo = await marcaPublica(req, () => identidadeServico.lerLogo());
     if (!logo) return res.status(404).end();
     res.setHeader('Content-Type', logo.tipo);
     // Curto de propósito: trocar a logo e ver a antiga por uma hora seria pior
@@ -280,8 +316,32 @@ async function subir() {
   }
 }
 
+/* MULTI_ESCRITORIO é explícito de propósito — autorização que muda sozinha
+   quando alguém cadastra uma linha é autorização que ninguém prevê. O preço
+   de ser explícito é poder ficar esquecido, e esquecido aqui significa que o
+   administrador de qualquer escritório continua podendo trocar o certificado
+   TLS do servidor, mexer nos destinos de backup em disco e reiniciar o painel
+   de todas as casas. Então o servidor confere e avisa alto, uma vez. */
+async function conferirModoDeOperacao() {
+  if (config.multiEscritorio) return;
+  try {
+    const r = await db.comServidor(() => db.query(
+      'SELECT count(*)::int AS n FROM escritorios_ativos()'));
+    if (r.rows[0].n > 1) {
+      console.warn(`[aviso] ${r.rows[0].n} escritórios ativos e ` +
+        'MULTI_ESCRITORIO não está ligado. O administrador de qualquer um ' +
+        'deles pode trocar o certificado TLS do servidor, mexer nos destinos ' +
+        'de backup e reiniciar o painel de todos. Ponha MULTI_ESCRITORIO=true ' +
+        'no .env para que essas telas passem a exigir a credencial de máquina.');
+    }
+  } catch (e) {
+    // Banco fora do ar na subida já é avisado em outro lugar; não repetir.
+  }
+}
+
 function aoSubir() {
   console.log(`nfse-gateway ouvindo na porta ${config.port}`);
+  conferirModoDeOperacao();
   // O worker roda no mesmo processo. Como o estado da fila vive no banco e a
   // reivindicação usa FOR UPDATE SKIP LOCKED, subir várias instâncias do
   // gateway é seguro: cada worker pega notas diferentes.
@@ -303,9 +363,19 @@ function aoSubir() {
      coisas que só se descobrem no pior momento se ninguém as disser. */
   require('./services/avisosProducao').iniciar();
 
-  require('./services/obrigacoes').gerar({ meses: 3 })
-    .then(r => { if (r.criadas) console.log(`[obrigacoes] ${r.criadas} ocorrência(s) criada(s)`); })
-    .catch(e => console.warn('[obrigacoes] geração falhou:', e.message));
+  /* Uma vez por escritório, e não uma vez só. `gerar` lê `empresa_obrigacoes`,
+     que está sob policy: chamada sem inquilino, ela enxerga zero vínculo e não
+     cria nada — e num servidor de vários escritórios isso é toda a geração
+     silenciosamente parada. Numa instalação de mesa `porInquilino` roda para o
+     único escritório e dá no mesmo de antes. */
+  const obrigacoes = require('./services/obrigacoes');
+  db.porInquilino(
+    async (id) => {
+      const r = await obrigacoes.gerar({ meses: 3 });
+      if (r.criadas) console.log(`[obrigacoes] escritório ${id}: ${r.criadas} ocorrência(s) criada(s)`);
+    },
+    (e, id) => console.warn(`[obrigacoes] escritório ${id} falhou:`, e.message)
+  ).catch(e => console.warn('[obrigacoes] geração falhou:', e.message));
 }
 
 subir().catch(e => {
