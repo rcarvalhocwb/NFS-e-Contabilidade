@@ -2854,7 +2854,7 @@
       raiz.style.setProperty('--marca', escurecer(cor, 0.26));
       raiz.style.setProperty('--marca-2', escurecer(cor, 0.4));
       raiz.style.setProperty('--acento-suave', clarear(cor, 0.9));
-      raiz.style.setProperty('--acento-fg', contrasteClaro(cor) ? '#ffffff' : '#10161f');
+      raiz.style.setProperty('--acento-fg', textoSobre(cor));
     }
 
     var nome = m.nome;
@@ -2903,10 +2903,43 @@
     return paraHex(c[0] + (255 - c[0]) * quanto, c[1] + (255 - c[1]) * quanto,
                    c[2] + (255 - c[2]) * quanto);
   }
-  /* Texto branco só quando o fundo é escuro o bastante para sustentá-lo. */
+  /* Qual texto sobrevive sobre a cor da casa: o branco ou o escuro.
+   *
+   * Isto era um corte de brilho YIQ em 150 — a heurística de sempre, e ela
+   * erra. Medido contra a razão de contraste da WCAG, quatro de doze cores
+   * testadas ficavam abaixo de 4,5:1, e não eram cores exóticas: cinza médio,
+   * verde e ciano de marca. Com #00CED1 o painel escolhia branco e entregava
+   * 1,95:1 — barra lateral ilegível para quem escolheu a cor da própria
+   * empresa.
+   *
+   * A conta certa é a da própria norma: luminância relativa dos dois
+   * candidatos, e ganha quem tiver a maior razão. */
+  function luminancia(rgb) {
+    var s = rgb.map(function (v) {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * s[0] + 0.7152 * s[1] + 0.0722 * s[2];
+  }
+
+  function razaoContraste(hexA, hexB) {
+    var a = luminancia(corParaRgb(hexA));
+    var b = luminancia(corParaRgb(hexB));
+    var claro = Math.max(a, b), escuro = Math.min(a, b);
+    return (claro + 0.05) / (escuro + 0.05);
+  }
+
+  /* Devolve a cor de texto que melhor se sustenta sobre `fundo`. Devolve a
+     melhor das duas mesmo quando nenhuma chega a 4,5:1 — é o máximo possível
+     sobre aquela cor, e recusar a cor da pessoa seria pior. */
+  function textoSobre(fundo) {
+    var CLARO = '#ffffff', ESCURO = '#10161f';
+    return razaoContraste(fundo, CLARO) >= razaoContraste(fundo, ESCURO) ? CLARO : ESCURO;
+  }
+
+  /* Mantida para quem já chamava: agora responde pela razão real. */
   function contrasteClaro(hex) {
-    var c = corParaRgb(hex);
-    return (c[0] * 299 + c[1] * 587 + c[2] * 114) / 1000 < 150;
+    return textoSobre(hex) === '#ffffff';
   }
 
   function carregarMarca() {
