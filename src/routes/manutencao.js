@@ -21,7 +21,7 @@ const router = express.Router();
 router.use(somenteAdmin);
 
 const RAIZ = path.join(__dirname, '..', '..');
-const PASTA_BACKUPS = process.env.BACKUP_PASTA || path.join(RAIZ, 'backups');
+const PASTA_BACKUPS = require('../util/dados').pastaBackups();
 
 /* Roda um script da pasta scripts/ em processo separado.
    Separado, e não em linha, porque um backup grande não pode segurar o event

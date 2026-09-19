@@ -22,7 +22,7 @@ const UM_DIA_MS = 24 * 3600 * 1000;
 let timer = null;
 
 function pastaBackups() {
-  return process.env.BACKUP_PASTA || path.join(__dirname, '..', '..', 'backups');
+  return require('../util/dados').pastaBackups();
 }
 
 /* Só faz sentido se o último for de mais de um dia atrás. Sem essa checagem,

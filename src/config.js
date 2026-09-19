@@ -61,7 +61,7 @@ const config = {
     ativo: process.env.ATUALIZACAO_VERIFICAR !== 'false',
     intervaloHoras: Number(process.env.ATUALIZACAO_INTERVALO_HORAS || 6),
     timeoutMs: Number(process.env.ATUALIZACAO_TIMEOUT_MS || 8000),
-    pasta: process.env.ATUALIZACAO_PASTA || require('path').join(process.cwd(), 'atualizacoes')
+    pasta: require('./util/dados').pastaAtualizacoes()
   }
 };
 

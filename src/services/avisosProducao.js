@@ -57,7 +57,7 @@ async function backup() {
 
   /* Backup velho é o sintoma de que o gateway não estava aberto — que é a
      mesma causa de o WhatsApp ficar mudo. Vale dizer as duas coisas juntas. */
-  const pasta = path.join(__dirname, '..', '..', 'backups');
+  const pasta = require('../util/dados').pastaBackups();
   try {
     const arquivos = fs.readdirSync(pasta)
       .filter(f => /^nfse-backup-.*\.json$/.test(f))

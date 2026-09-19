@@ -7,6 +7,16 @@
 # Uso: clique direito neste arquivo > "Executar com o PowerShell"
 
 $ErrorActionPreference = 'Stop'
+
+# Chave hexadecimal de $bytes bytes, de gerador CRIPTOGRAFICO (nao Get-Random,
+# que e previsivel). Mesma funcao do configurar.ps1.
+function New-ChaveHex([int]$bytes) {
+    $buf = New-Object 'System.Byte[]' $bytes
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($buf) } finally { $rng.Dispose() }
+    -join ($buf | ForEach-Object { '{0:x2}' -f $_ })
+}
+
 $raiz = Split-Path -Parent $PSScriptRoot
 
 function Titulo($texto) {
@@ -100,7 +110,7 @@ if (Test-Path $envPath) {
             exit 1
         }
 
-        $senhaBanco = -join ((1..32) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
+        $senhaBanco = New-ChaveHex 16
         if (-not (Initialize-PostgresLocal $PSScriptRoot $senhaBanco)) {
             Read-Host "  Pressione Enter para sair"
             exit 1
@@ -133,8 +143,8 @@ if (Test-Path $envPath) {
     }
 
     # Chaves geradas localmente: nunca reutilizar valores de exemplo.
-    $chaveApi   = -join ((1..48)  | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
-    $chaveMestra= -join ((1..64)  | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
+    $chaveApi   = New-ChaveHex 24
+    $chaveMestra= New-ChaveHex 32
 
     @"
 PORT=3000

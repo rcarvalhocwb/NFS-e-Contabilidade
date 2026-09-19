@@ -116,7 +116,7 @@ async function certificados() {
 async function backup() {
   const destinos = await db.query(
     'SELECT count(*)::int n FROM backup_destinos WHERE ativo');
-  const pasta = path.join(RAIZ, 'backups');
+  const pasta = require('../util/dados').pastaBackups();
   let ultimo = null;
   try {
     const arquivos = fs.readdirSync(pasta)
