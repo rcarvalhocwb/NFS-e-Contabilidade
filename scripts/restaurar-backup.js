@@ -157,6 +157,20 @@ async function gravar(backup, escritorio) {
            confirma que o destino é mesmo o inquilino da conexão. */
         if ('escritorio_id' in linha) linha.escritorio_id = escritorio;
         const colunas = Object.keys(linha);
+        /* Nome de coluna é identificador, e identificador vira SQL — não vira
+           parâmetro. A tabela vem da allowlist ORDEM, mas a coluna vem do
+           ARQUIVO: um backup adulterado (e os backups moram em mídia
+           compartilhada) com uma coluna `x") VALUES(...) --` escaparia das
+           aspas e injetaria. Aqui só passa identificador de banco de verdade;
+           qualquer outra coisa aborta a restauração inteira, que é o certo
+           diante de um arquivo em que não se pode confiar. */
+        for (const c of colunas) {
+          if (!/^[a-z_][a-z0-9_]*$/i.test(c)) {
+            throw new Error(
+              `coluna com nome inválido no backup (${tabela}): ${JSON.stringify(c)} ` +
+              '— arquivo possivelmente adulterado, restauração abortada');
+          }
+        }
         const marcadores = colunas.map((_, i) => '$' + (i + 1));
         await cliente.query(
           `INSERT INTO ${tabela} (${colunas.map(c => `"${c}"`).join(',')})

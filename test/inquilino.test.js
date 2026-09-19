@@ -602,3 +602,19 @@ test('nenhum serviço pega conexão crua do pool — só o src/db.js', () => {
     'estes arquivos tocam no pool sem passar por db.js (amarração de inquilino):\n  ' +
     infratores.join('\n  '));
 });
+
+test('a geração de obrigações na subida roda por inquilino, não solta', () => {
+  /* gerar() lê empresa_obrigacoes, que está sob policy. Chamada sem inquilino,
+     num servidor de vários escritórios, ela vê zero vínculo e não cria nada —
+     e a geração inteira para calada. A subida precisa varrer por escritório.
+     Provado em laboratório: solta cria 0; por inquilino, cria para cada casa.
+     Esta trava vigia o server.js para o bare `.gerar(` não voltar na subida. */
+  const server = fs.readFileSync(path.join(RAIZ, 'src', 'server.js'), 'utf8');
+  const trecho = server.slice(server.indexOf('aoSubir'));
+  /* Onde a subida menciona obrigacoes, tem de haver porInquilino por perto e
+     NÃO pode haver um `.gerar(` chamado direto, sem o laço. */
+  assert.match(trecho, /obrigacoes[\s\S]{0,200}porInquilino|porInquilino[\s\S]{0,200}gerar/,
+    'a geração de obrigações na subida precisa passar por db.porInquilino');
+  assert.ok(!/\brequire\([^)]*obrigacoes[^)]*\)\.gerar\(/.test(server),
+    'obrigacoes.gerar não pode ser chamado solto (sem inquilino) na subida');
+});

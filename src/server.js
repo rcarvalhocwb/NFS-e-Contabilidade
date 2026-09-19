@@ -363,9 +363,19 @@ function aoSubir() {
      coisas que só se descobrem no pior momento se ninguém as disser. */
   require('./services/avisosProducao').iniciar();
 
-  require('./services/obrigacoes').gerar({ meses: 3 })
-    .then(r => { if (r.criadas) console.log(`[obrigacoes] ${r.criadas} ocorrência(s) criada(s)`); })
-    .catch(e => console.warn('[obrigacoes] geração falhou:', e.message));
+  /* Uma vez por escritório, e não uma vez só. `gerar` lê `empresa_obrigacoes`,
+     que está sob policy: chamada sem inquilino, ela enxerga zero vínculo e não
+     cria nada — e num servidor de vários escritórios isso é toda a geração
+     silenciosamente parada. Numa instalação de mesa `porInquilino` roda para o
+     único escritório e dá no mesmo de antes. */
+  const obrigacoes = require('./services/obrigacoes');
+  db.porInquilino(
+    async (id) => {
+      const r = await obrigacoes.gerar({ meses: 3 });
+      if (r.criadas) console.log(`[obrigacoes] escritório ${id}: ${r.criadas} ocorrência(s) criada(s)`);
+    },
+    (e, id) => console.warn(`[obrigacoes] escritório ${id} falhou:`, e.message)
+  ).catch(e => console.warn('[obrigacoes] geração falhou:', e.message));
 }
 
 subir().catch(e => {
