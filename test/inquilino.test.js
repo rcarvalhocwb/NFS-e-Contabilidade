@@ -562,3 +562,43 @@ test('conexão devolvida ao pool não entrega o inquilino anterior', { skip: !UR
     await admin.end();
   }
 });
+
+test('nenhum serviço pega conexão crua do pool — só o src/db.js', () => {
+  /* A fronteira de fora é o banco, e o banco só sabe de quem é a conexão
+     porque src/db.js amarra `app.escritorio` na retirada do pool. Um serviço
+     que chama `pool.connect()` direto pula essa amarração: a conexão vem com o
+     inquilino de quem a usou antes, e a RLS responde por ele. Foi assim que
+     services/usuarios.js editava a conta de um usuário de outro escritório —
+     confirmado em laboratório, corrigido trocando por db.transacao.
+
+     A defesa não é lembrar de amarrar: é não haver segundo jeito de obter
+     conexão. Só src/db.js toca no pool; todo o resto passa por query,
+     transacao ou getClient, que já amarram. Esta trava falha se a linha
+     voltar — e ela volta sem barulho, uma linha só. */
+  function jsDe(dir, achados = []) {
+    for (const nome of fs.readdirSync(dir)) {
+      const p = path.join(dir, nome);
+      if (fs.statSync(p).isDirectory()) jsDe(p, achados);
+      else if (nome.endsWith('.js')) achados.push(p);
+    }
+    return achados;
+  }
+
+  const infratores = [];
+  for (const arq of jsDe(path.join(RAIZ, 'src'))) {
+    if (arq.endsWith(path.join('src', 'db.js'))) continue;   // o único autorizado
+    const txt = fs.readFileSync(arq, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    /* `pool.connect(` (conexão crua, sem amarração) e `pool.query(` (consulta
+       sem contexto de inquilino) — os dois caminhos que furam o isolamento.
+       `pool.end()` fica de fora de propósito: fechar o pool no encerramento é
+       ciclo de vida, e o server.js faz isso legitimamente no shutdown. */
+    if (/\bpool\.(connect|query)\s*\(/.test(txt)) {
+      infratores.push(path.relative(RAIZ, arq));
+    }
+  }
+  assert.deepEqual(infratores, [],
+    'estes arquivos tocam no pool sem passar por db.js (amarração de inquilino):\n  ' +
+    infratores.join('\n  '));
+});
