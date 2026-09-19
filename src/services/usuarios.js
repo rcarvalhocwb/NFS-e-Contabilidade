@@ -29,6 +29,22 @@ async function conferirSenha(senha, hashGuardado) {
   return derivada.length === alvo.length && crypto.timingSafeEqual(derivada, alvo);
 }
 
+/* Hash fictício, nos mesmos parâmetros de um real, para gastar o tempo de um
+   scrypt quando NÃO há conta a conferir. Sem isto, o login respondia na hora
+   para e-mail inexistente e em ~65 ms para e-mail cadastrado: a diferença de
+   tempo dizia, a quem só chutou um e-mail, se aquela conta existe. A senha
+   deste hash não é conhecida por ninguém — ele nunca confere, só custa o
+   mesmo que conferir. */
+const HASH_FICTICIO =
+  'scrypt$16384$8$1$wlXRmTjO7RhX3Tk9Yixj1w==$SQmvn0k/Xf3zoS0Oew1RLYThB4ztKnWjJ1jU57gtdE6UXOQRoD9O6/LwbI1PwwIbL/WRN/0JGI3GLHWsT4yDhA==';
+
+/* Roda um scrypt e descarta o resultado. O login chama isto quando nenhum
+   candidato real foi conferido, para o tempo de resposta não denunciar a
+   existência da conta. */
+async function gastarTempoDeSenha(senha) {
+  await conferirSenha(String(senha || ''), HASH_FICTICIO);
+}
+
 /* Regras mínimas de senha. Curtas demais não protegem nada; exigir símbolo e
    caixa alta faz a contabilidade anotar a senha em post-it, o que é pior. */
 function validarSenha(senha) {
@@ -246,7 +262,7 @@ async function contarAdminsAtivos(exceto) {
 }
 
 module.exports = {
-  gerarHash, conferirSenha, validarSenha, normalizarEmail,
+  gerarHash, conferirSenha, gastarTempoDeSenha, validarSenha, normalizarEmail,
   existeAlgum, criar, listar, porEmail, empresasDoUsuario,
   atualizar, trocarPropriaSenha, remover, contarAdminsAtivos
 };

@@ -5,6 +5,7 @@ const usuarios = require('../services/usuarios');
 const sessoes = require('../services/sessoes');
 const licencaService = require('../services/licencaService');
 const { limitarLogin, registrarFalhaLogin, limparFalhasLogin } = require('../middleware/protecao');
+const { mesmaChave } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -77,7 +78,7 @@ router.post('/primeiro-acesso', limitarLogin, async (req, res, next) => {
       });
     }
     const b = req.body || {};
-    if (!config.apiKey || b.chaveInstalacao !== config.apiKey) {
+    if (!config.apiKey || !mesmaChave(b.chaveInstalacao, config.apiKey)) {
       registrarFalhaLogin(req);
       return res.status(401).json({
         erro: 'Chave de instalação incorreta. É o valor de GATEWAY_API_KEY no arquivo .env do gateway.'
@@ -134,6 +135,12 @@ router.post('/login', limitarLogin, async (req, res, next) => {
       'SELECT * FROM escritorios_do_email($1) AS id', [b.email]))).rows.map(r => r.id);
 
     const conferidos = [];
+    /* Quantos scrypt de verdade rodaram. Se nenhum — e-mail inexistente, conta
+       desativada, perfil de cliente — o login gasta um scrypt fictício antes de
+       responder. Sem isso, o tempo de resposta separava e-mail cadastrado (que
+       roda scrypt, ~65 ms) de e-mail desconhecido (que respondia na hora): um
+       oráculo de enumeração de contas medido em 76x de diferença. */
+    let conferiuAlguma = false;
     for (const escritorioId of candidatos) {
       let u = null;
       try {
@@ -146,13 +153,17 @@ router.post('/login', limitarLogin, async (req, res, next) => {
          e perfil de cliente: distinguir permitiria descobrir quem tem conta no
          sistema. O perfil 'cliente' existe para ser replicado ao portal — a
          pessoa da empresa cliente acessa lá, nunca o painel do escritório. */
-      if (u && u.ativo && u.perfil !== 'cliente' &&
-          await usuarios.conferirSenha(b.senha, u.senha_hash)) {
-        conferidos.push({ escritorioId, usuario: u });
+      if (u && u.ativo && u.perfil !== 'cliente') {
+        conferiuAlguma = true;
+        if (await usuarios.conferirSenha(b.senha, u.senha_hash)) {
+          conferidos.push({ escritorioId, usuario: u });
+        }
       }
     }
 
     if (!conferidos.length) {
+      // Iguala o tempo quando nenhuma conta real foi conferida.
+      if (!conferiuAlguma) await usuarios.gastarTempoDeSenha(b.senha);
       registrarFalhaLogin(req);
       return res.status(401).json({ erro: 'E-mail ou senha incorretos' });
     }
