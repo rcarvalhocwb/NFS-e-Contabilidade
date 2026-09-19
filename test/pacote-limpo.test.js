@@ -41,6 +41,22 @@ test('o emissor de licenças não vai no pacote', () => {
   assert.match(fora[1], /licenca-emitir\.js/);
 });
 
+test('as ferramentas do operador do servidor não vão no pacote', () => {
+  /* `papel-app.js` cria papel de banco e distribui GRANT; `criar-escritorio.js`
+     abre escritório novo. Nenhuma das duas serve a quem USA o gateway: numa
+     instalação de mesa existe um escritório só, e ele nasce das migrações. Um
+     segundo ali produziria um estado que o resto do produto não espera.
+
+     Mesmo raciocínio do emissor de licenças, e a mesma razão para um teste:
+     a exclusão é uma linha numa lista, e linha em lista some sem barulho. */
+  const fora = PREPARAR.match(/foreach\s*\(\$fora in @\(([\s\S]*?)\)\)/);
+  assert.ok(fora, 'o bloco de remoção sumiu');
+  for (const ferramenta of ['papel-app.js', 'criar-escritorio.js']) {
+    assert.ok(fora[1].includes(ferramenta),
+      `${ferramenta} precisa sair do pacote: é ferramenta de quem opera o servidor`);
+  }
+});
+
 test('a pasta dev/ existe e é só do desenvolvedor', () => {
   /* Se um dia ela sumir, este teste some junto e a proteção evapora sem
      ninguém notar. Melhor falhar dizendo o que aconteceu. */
