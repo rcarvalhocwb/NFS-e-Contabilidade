@@ -1,9 +1,8 @@
 # Gerar o instalador — versão 1.9.0
 
-O `.exe` só se compila no Windows: o empacotador é PowerShell, o Node embutido
-é `win-x64`, e o compilador é o **Inno Setup 6** (`ISCC.exe`), que não existe
-fora do Windows. Este arquivo é a receita para rodar na máquina onde o projeto
-vive (`C:\DEV`).
+Há dois caminhos: o do Windows, na máquina onde o projeto vive (`C:\DEV`), e
+o do Linux, com Wine. Os dois produzem o mesmo `.exe` — o do Linux foi usado
+para gerar a 1.9.0.
 
 ## Antes de começar
 
@@ -13,7 +12,7 @@ Uma vez só, se ainda não tiver:
 - **Node.js** na máquina (o pacote embute o dele, mas o empacotador precisa de
   um para rodar `npm ci`)
 
-## A receita
+## No Windows
 
 ```powershell
 cd C:\DEV\nfse-gateway          # ou onde estiver o clone
@@ -33,6 +32,58 @@ O resultado sai em `instalador\saida\nfse-gateway-setup-1.9.0.exe`.
 `preparar-pacote.ps1` baixa o Node portátil (~30 MB) e o PostgreSQL portátil
 (~130 MB) na primeira vez. Com `-SemBanco` ele monta sem o Postgres e o
 instalador baixa na máquina do cliente.
+
+## No Linux, com Wine
+
+O Inno Setup roda bem sob Wine; o que não roda é o empacotador PowerShell.
+`preparar-pacote.sh` é o espelho dele em bash, e `test/pacote-limpo.test.js`
+compara as duas listas e falha se divergirem.
+
+Uma vez só:
+
+```bash
+sudo dpkg --add-architecture i386 && sudo apt-get update
+sudo apt-get install -y wine wine32 xvfb unzip
+export WINEPREFIX=$HOME/.wine32 WINEARCH=win32
+# Inno Setup 6.3.3 (o 7 recusa instalar sob Wine); extraído com innoextract
+# >= 1.10 para dentro de "$WINEPREFIX/drive_c/InnoSetup6".
+```
+
+**O ajuste que não é opcional:**
+
+```bash
+WINEPREFIX=$HOME/.wine32 wine reg add 'HKCU\Software\Wine' \
+  /v ShowDotFiles /t REG_SZ /d Y /f
+```
+
+Sem ele o Wine marca todo arquivo começado em ponto como oculto, e
+`Source: "pacote\*"` do Inno pula arquivo oculto. O primeiro `.exe` gerado
+aqui saiu **sem 87 arquivos** — entre eles o `.env.example` — e compilou com
+sucesso, sem um aviso sequer. Só apareceu na conferência abaixo.
+
+A cada build:
+
+```bash
+./instalador/preparar-pacote.sh
+WINEPREFIX=$HOME/.wine32 xvfb-run -a wine 'C:\InnoSetup6\ISCC.exe' \
+  "$(winepath -w instalador/nfse-gateway.iss)"
+```
+
+### Conferir o que entrou no .exe
+
+Compilar sem erro não prova que o conteúdo está lá. Compare o que saiu com o
+que devia sair:
+
+```bash
+innoextract -s -d /tmp/verif instalador/saida/nfse-gateway-setup-*.exe
+cd instalador/pacote && find . -type f | sort | xargs sha256sum > /tmp/a.txt
+cd /tmp/verif/app && find . -type f | sort | xargs sha256sum > /tmp/b.txt
+diff /tmp/a.txt /tmp/b.txt
+```
+
+Esperado: as únicas diferenças são os cinco arquivos que o `.iss` acrescenta
+por fora do pacote (`Iniciar Gateway.bat`, `configurar.ps1`, `firewall.ps1`,
+`whatsapp.ps1`, `terminal.ps1`). Qualquer outra linha é arquivo faltando.
 
 ## O que conferir antes de instalar num cliente
 
