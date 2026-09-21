@@ -8,8 +8,11 @@ name: Instalador Windows
 # mais um instalador quebrado sair sem aviso.
 
 on:
+  # push só nos branches "de verdade": num branch com PR aberto, o evento
+  # pull_request já cobre, e listar os dois faria o runner Windows rodar em
+  # dobro a cada push.
   push:
-    branches: [main, claude/multi-escritorio, claude/sistema-desktop-pendente-gpu199]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
