@@ -1,0 +1,195 @@
+name: Instalador Windows
+
+# Por que existe: o gateway roda no Windows da contabilidade, mas o
+# desenvolvimento e o outro CI rodam em Linux. Coisas que só aparecem no
+# Windows — EPERM ao escrever em Arquivos de Programas, o parse dos .ps1, o
+# assistente do Inno, o caminho de rede/letra de unidade — passavam batido.
+# Este fluxo roda tudo num runner windows-latest, a cada mudança, para nunca
+# mais um instalador quebrado sair sem aviso.
+
+on:
+  push:
+    branches: [main, claude/multi-escritorio, claude/sistema-desktop-pendente-gpu199]
+  pull_request:
+  workflow_dispatch:
+
+# Cancela execuções antigas do mesmo branch quando chega uma nova.
+concurrency:
+  group: instalador-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------- 1. testes
+  # A suíte inteira no Windows de verdade. Duas provas de caminho (mesma letra
+  # de unidade, caminho de rede) só passam em Windows e são justamente as que
+  # falham no Linux — aqui elas rodam onde valem.
+  testes:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: npm test
+        run: npm test
+
+  # -------------------------------------------------- 2. ensaio + matriz (DB)
+  # Instalação limpa ponta a ponta (migrações, escritório, admin, primeira
+  # empresa, conversa do WhatsApp) e a matriz de acesso, contra um PostgreSQL
+  # real. É o que prova que uma instalação nova sai funcionando.
+  ensaio:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Subir o PostgreSQL do runner
+        shell: pwsh
+        run: |
+          # O windows-latest já traz PostgreSQL instalado como serviço, parado.
+          $svc = Get-Service -Name 'postgresql*' | Select-Object -First 1
+          if (-not $svc) { throw 'PostgreSQL não encontrado no runner.' }
+          Set-Service -Name $svc.Name -StartupType Manual
+          Start-Service $svc.Name
+          # A senha do superusuário postgres no runner é 'root' por convenção
+          # do runner; se mudar, este passo falha claro em vez de travar.
+          $env:PGPASSWORD = 'root'
+          $pgbin = (Get-ChildItem 'C:\Program Files\PostgreSQL\*\bin\psql.exe' | Select-Object -First 1).DirectoryName
+          "$pgbin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          & "$pgbin\psql" -U postgres -h localhost -c "SELECT version();"
+
+      - name: Ensaio de instalação (32/32)
+        shell: pwsh
+        env:
+          DATABASE_URL: postgresql://postgres:root@localhost:5432/postgres
+          GATEWAY_API_KEY: chave-de-maquina-para-o-ci-000000
+          MASTER_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+          PERMITIR_PRODUCAO: 'false'
+        run: node scripts/ensaio-instalacao.js
+
+      - name: Matriz de acesso (rotas x credenciais)
+        shell: pwsh
+        env:
+          DATABASE_URL: postgresql://postgres:root@localhost:5432/postgres
+          ADMIN_DATABASE_URL: postgresql://postgres:root@localhost:5432/postgres
+          GATEWAY_API_KEY: chave-de-maquina-para-o-ci-000000
+          MASTER_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+          PERMITIR_PRODUCAO: 'false'
+        run: node scripts/matriz-acesso.js
+
+  # -------------------------------------------------- 3. o instalador de fato
+  # Monta o pacote, compila o .exe com o Inno Setup, e — o que não dá para
+  # fazer em Linux — RODA o configurar.ps1 de verdade: prova que o admin nasce
+  # na instalação (a tela da chave não aparece) e que log/backup/WhatsApp
+  # escrevem em ProgramData, não em Arquivos de Programas (o EPERM que a
+  # contabilidade encontrou).
+  instalador:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Instalar o Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Subir o PostgreSQL do runner
+        shell: pwsh
+        run: |
+          $svc = Get-Service -Name 'postgresql*' | Select-Object -First 1
+          if (-not $svc) { throw 'PostgreSQL não encontrado no runner.' }
+          Set-Service -Name $svc.Name -StartupType Manual
+          Start-Service $svc.Name
+
+      - name: Montar o pacote
+        shell: pwsh
+        run: .\instalador\preparar-pacote.ps1 -SemBanco
+
+      - name: Compilar o instalador (.exe)
+        shell: pwsh
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { throw "ISCC não encontrado em $iscc" }
+          & $iscc .\instalador\nfse-gateway.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falhou ($LASTEXITCODE)" }
+          Get-ChildItem instalador\saida\*.exe | Format-List Name, Length
+
+      - name: Publicar o .exe como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfse-gateway-setup
+          path: instalador/saida/*.exe
+          if-no-files-found: error
+
+      # --- o teste que o Linux não alcança: rodar configurar.ps1 de verdade ---
+      - name: Provar o configurar.ps1 (admin criado, sem EPERM)
+        shell: pwsh
+        env:
+          PGPASSWORD: root
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $raiz = (Get-Location).Path
+
+          # 1) banco limpo para esta prova
+          $pgbin = (Get-ChildItem 'C:\Program Files\PostgreSQL\*\bin\psql.exe' | Select-Object -First 1).DirectoryName
+          & "$pgbin\psql" -U postgres -h localhost -c "DROP DATABASE IF EXISTS nfse_ci;"
+          & "$pgbin\psql" -U postgres -h localhost -c "CREATE DATABASE nfse_ci;"
+          $banco = 'postgresql://postgres:root@localhost:5432/nfse_ci'
+
+          # 2) as respostas que o assistente coletaria (arquivo, como no .exe)
+          $respostas = @{
+            Modo         = 'nova'
+            BancoUrl     = $banco
+            NomeUsuario  = 'Administrador CI'
+            EmailUsuario = 'ci@teste.local'
+            SenhaUsuario = 'senha-de-teste-1234'
+            Porta        = 3000
+            LiberarFirewall = $false
+            Comissionar  = $false
+          } | ConvertTo-Json
+          $arqResp = Join-Path $env:RUNNER_TEMP 'respostas.json'
+          Set-Content -Path $arqResp -Value $respostas -Encoding utf8
+
+          # 3) roda o MESMO script que o instalador chama
+          & .\instalador\configurar.ps1 -Raiz $raiz -Respostas $arqResp -Modo nova
+          if ($LASTEXITCODE -ne 0) { throw "configurar.ps1 falhou ($LASTEXITCODE)" }
+
+          # 4) o .env saiu com chaves de tamanho certo (prova o New-ChaveHex)
+          $envTxt = Get-Content (Join-Path $raiz '.env') -Raw
+          if ($envTxt -notmatch '(?m)^MASTER_KEY=([0-9a-f]{64})\s*$') {
+            throw 'MASTER_KEY não tem 64 hex — o gerador criptográfico falhou.'
+          }
+          if ($envTxt -notmatch '(?m)^GATEWAY_API_KEY=[0-9a-f]{48}\s*$') {
+            throw 'GATEWAY_API_KEY fora do formato esperado.'
+          }
+          Write-Host 'OK: .env com chaves criptográficas no formato certo.'
+
+          # 5) o administrador foi criado -> a tela da chave NÃO aparece
+          $temDono = & node -e "require('dotenv').config();require('./src/services/usuarios').existeAlgum().then(t=>{process.stdout.write(t?'sim':'nao');process.exit(0)}).catch(e=>{console.error(e);process.exit(2)})"
+          if ($temDono -ne 'sim') { throw "Admin NÃO foi criado na instalação (existeAlgum=$temDono) — a tela de primeiro acesso apareceria." }
+          Write-Host 'OK: administrador criado na instalação; sem tela de chave.'
+
+      - name: Provar que não há EPERM em Arquivos de Programas
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # No Windows, a pasta de dados graváveis tem de resolver para
+          # ProgramData, nunca para a pasta de instalação (só-leitura sem admin).
+          $saida = & node -e "const d=require('./src/util/dados'); console.log(JSON.stringify({logs:d.pastaLogs(),bk:d.pastaBackups(),wa:d.pastaWhatsapp()}))"
+          Write-Host $saida
+          $j = $saida | ConvertFrom-Json
+          foreach ($p in @($j.logs, $j.bk, $j.wa)) {
+            if ($p -notmatch 'ProgramData') { throw "Pasta gravável fora de ProgramData: $p" }
+            if ($p -match 'Program Files') { throw "Pasta gravável dentro de Arquivos de Programas: $p (EPERM na certa)" }
+          }
+          Write-Host 'OK: logs, backups e WhatsApp resolvem para ProgramData.'
