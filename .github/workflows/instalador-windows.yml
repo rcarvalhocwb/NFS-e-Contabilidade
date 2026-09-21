@@ -1,33 +1,34 @@
 name: Instalador Windows
 
 # Por que existe: o gateway roda no Windows da contabilidade, mas o
-# desenvolvimento e o outro CI rodam em Linux. Coisas que só aparecem no
-# Windows — EPERM ao escrever em Arquivos de Programas, o parse dos .ps1, o
-# assistente do Inno, o caminho de rede/letra de unidade — passavam batido.
-# Este fluxo roda tudo num runner windows-latest, a cada mudança, para nunca
-# mais um instalador quebrado sair sem aviso.
+# desenvolvimento roda em Linux. Coisas que só aparecem no Windows — EPERM ao
+# escrever em Arquivos de Programas, o parse dos .ps1, o assistente do Inno,
+# a semântica de letra de unidade — passavam batido. Foi assim que um
+# instalador quebrado chegou à contabilidade sem ninguém ver.
+#
+# A divisão de trabalho é de propósito: a suíte inteira roda no LINUX (onde ela
+# foi escrita e é o gate verde); o WINDOWS roda o que só faz sentido lá — a
+# semântica de caminho, a instalação limpa contra um banco real, e a compilação
+# e execução do próprio instalador.
 
 on:
   # push só nos branches "de verdade": num branch com PR aberto, o evento
-  # pull_request já cobre, e listar os dois faria o runner Windows rodar em
-  # dobro a cada push.
+  # pull_request já cobre, e listar os dois faria o runner rodar em dobro.
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
 
-# Cancela execuções antigas do mesmo branch quando chega uma nova.
 concurrency:
   group: instalador-windows-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ---------------------------------------------------------------- 1. testes
-  # A suíte inteira no Windows de verdade. Duas provas de caminho (mesma letra
-  # de unidade, caminho de rede) só passam em Windows e são justamente as que
-  # falham no Linux — aqui elas rodam onde valem.
+  # ------------------------------------------------------ 1. suíte (Linux)
+  # O gate. Roda tudo; as duas provas de caminho do Windows se pulam aqui, e as
+  # de banco se pulam sem TEST_DATABASE_URL.
   testes:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,13 +36,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: npm test
-        run: npm test
+      - run: npm test
 
-  # -------------------------------------------------- 2. ensaio + matriz (DB)
+  # ------------------------------------------- 2. ensaio + caminho (Windows)
   # Instalação limpa ponta a ponta (migrações, escritório, admin, primeira
-  # empresa, conversa do WhatsApp) e a matriz de acesso, contra um PostgreSQL
-  # real. É o que prova que uma instalação nova sai funcionando.
+  # empresa, conversa do WhatsApp), a matriz de acesso e a semântica de caminho
+  # do Windows (letra de disco / UNC), contra um PostgreSQL real.
   ensaio:
     runs-on: windows-latest
     steps:
@@ -52,20 +52,17 @@ jobs:
           cache: npm
       - run: npm ci
 
+      - name: Semântica de caminho no Windows
+        shell: pwsh
+        run: node --test test/copia-backup.test.js
+
       - name: Subir o PostgreSQL do runner
         shell: pwsh
         run: |
-          # O windows-latest já traz PostgreSQL instalado como serviço, parado.
           $svc = Get-Service -Name 'postgresql*' | Select-Object -First 1
           if (-not $svc) { throw 'PostgreSQL não encontrado no runner.' }
           Set-Service -Name $svc.Name -StartupType Manual
           Start-Service $svc.Name
-          # A senha do superusuário postgres no runner é 'root' por convenção
-          # do runner; se mudar, este passo falha claro em vez de travar.
-          $env:PGPASSWORD = 'root'
-          $pgbin = (Get-ChildItem 'C:\Program Files\PostgreSQL\*\bin\psql.exe' | Select-Object -First 1).DirectoryName
-          "$pgbin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-          & "$pgbin\psql" -U postgres -h localhost -c "SELECT version();"
 
       - name: Ensaio de instalação (32/32)
         shell: pwsh
@@ -87,11 +84,11 @@ jobs:
         run: node scripts/matriz-acesso.js
 
   # -------------------------------------------------- 3. o instalador de fato
-  # Monta o pacote, compila o .exe com o Inno Setup, e — o que não dá para
-  # fazer em Linux — RODA o configurar.ps1 de verdade: prova que o admin nasce
-  # na instalação (a tela da chave não aparece) e que log/backup/WhatsApp
-  # escrevem em ProgramData, não em Arquivos de Programas (o EPERM que a
-  # contabilidade encontrou).
+  # Monta o pacote, compila o .exe com o Inno Setup, publica como artefato e —
+  # o que o Linux não alcança — RODA o configurar.ps1 de verdade: prova que o
+  # administrador nasce na instalação (a tela da chave não aparece), que as
+  # chaves saem no formato do gerador criptográfico, e que log, backup e
+  # WhatsApp resolvem para ProgramData, nunca para Arquivos de Programas.
   instalador:
     runs-on: windows-latest
     steps:
