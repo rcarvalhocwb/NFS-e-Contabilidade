@@ -29,6 +29,22 @@ async function conferirSenha(senha, hashGuardado) {
   return derivada.length === alvo.length && crypto.timingSafeEqual(derivada, alvo);
 }
 
+/* Hash fictício, nos mesmos parâmetros de um real, para gastar o tempo de um
+   scrypt quando NÃO há conta a conferir. Sem isto, o login respondia na hora
+   para e-mail inexistente e em ~65 ms para e-mail cadastrado: a diferença de
+   tempo dizia, a quem só chutou um e-mail, se aquela conta existe. A senha
+   deste hash não é conhecida por ninguém — ele nunca confere, só custa o
+   mesmo que conferir. */
+const HASH_FICTICIO =
+  'scrypt$16384$8$1$wlXRmTjO7RhX3Tk9Yixj1w==$SQmvn0k/Xf3zoS0Oew1RLYThB4ztKnWjJ1jU57gtdE6UXOQRoD9O6/LwbI1PwwIbL/WRN/0JGI3GLHWsT4yDhA==';
+
+/* Roda um scrypt e descarta o resultado. O login chama isto quando nenhum
+   candidato real foi conferido, para o tempo de resposta não denunciar a
+   existência da conta. */
+async function gastarTempoDeSenha(senha) {
+  await conferirSenha(String(senha || ''), HASH_FICTICIO);
+}
+
 /* Regras mínimas de senha. Curtas demais não protegem nada; exigir símbolo e
    caixa alta faz a contabilidade anotar a senha em post-it, o que é pior. */
 function validarSenha(senha) {
@@ -99,27 +115,28 @@ async function criar({ nome, email, senha, perfil, empresasIds, trocarSenha, cli
     validarSenha(senha);
   }
 
-  const cliente = await db.pool.connect();
+  /* Via db.transacao, não db.pool.connect direto: a transação amarra o
+     inquilino na conexão antes da primeira consulta. Pegar a conexão crua do
+     pool a herdava suja — com o `app.escritorio` de quem a usou antes — e a
+     RLS respondia por aquele escritório, não por este: o INSERT gravava no
+     inquilino errado. Ver o cabeçalho de src/db.js. */
   try {
-    await cliente.query('BEGIN');
-    const r = await cliente.query(
-      `INSERT INTO usuarios (nome, email, senha_hash, perfil, trocar_senha, cliente_cargo)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING ${CAMPOS}`,
-      [String(nome).trim(), emailNorm, await gerarHash(senha), perfilNorm,
-       perfilNorm === 'cliente' ? false : !!trocarSenha,
-       perfilNorm === 'cliente' ? (clienteCargo || null) : null]);
+    return await db.transacao(async (cliente) => {
+      const r = await cliente.query(
+        `INSERT INTO usuarios (nome, email, senha_hash, perfil, trocar_senha, cliente_cargo)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING ${CAMPOS}`,
+        [String(nome).trim(), emailNorm, await gerarHash(senha), perfilNorm,
+         perfilNorm === 'cliente' ? false : !!trocarSenha,
+         perfilNorm === 'cliente' ? (clienteCargo || null) : null]);
 
-    await vincularEmpresas(cliente, r.rows[0].id, empresasIds);
-    await cliente.query('COMMIT');
-    return r.rows[0];
+      await vincularEmpresas(cliente, r.rows[0].id, empresasIds);
+      return r.rows[0];
+    });
   } catch (e) {
-    await cliente.query('ROLLBACK');
     if (e.code === '23505') {
       throw Object.assign(new Error('Já existe um usuário com esse e-mail'), { status: 409 });
     }
     throw e;
-  } finally {
-    cliente.release();
   }
 }
 
@@ -159,64 +176,62 @@ async function empresasDoUsuario(usuarioId) {
 }
 
 async function atualizar(id, { nome, email, perfil, ativo, empresasIds, senha, trocarSenha, clienteCargo }) {
-  const cliente = await db.pool.connect();
+  /* Via db.transacao pela mesma razão de `criar`: a conexão crua do pool traz
+     o inquilino de quem a usou antes, e um UPDATE assim editava a conta de um
+     usuário de OUTRO escritório. Ver o cabeçalho de src/db.js. */
   try {
-    await cliente.query('BEGIN');
+    return await db.transacao(async (cliente) => {
+      const campos = [];
+      const valores = [];
+      const põe = (sql, v) => { valores.push(v); campos.push(`${sql} = $${valores.length}`); };
 
-    const campos = [];
-    const valores = [];
-    const põe = (sql, v) => { valores.push(v); campos.push(`${sql} = $${valores.length}`); };
+      if (nome !== undefined) põe('nome', String(nome).trim());
+      if (email !== undefined) põe('email', normalizarEmail(email));
+      if (clienteCargo !== undefined) põe('cliente_cargo', clienteCargo || null);
+      if (perfil !== undefined) {
+        const p = normalizarPerfil(perfil);
+        /* Virar cliente sem vínculo abriria todas as empresas para alguém que
+           acessa pela internet — a mesma regra do cadastro vale na edição. */
+        conferirVinculoDeCliente(p, empresasIds !== undefined ? empresasIds : await empresasDoUsuario(id));
+        põe('perfil', p);
+      }
+      if (ativo !== undefined) põe('ativo', !!ativo);
+      if (trocarSenha !== undefined) põe('trocar_senha', !!trocarSenha);
+      if (senha !== undefined && senha !== '') {
+        validarSenha(senha);
+        põe('senha_hash', await gerarHash(senha));
+        // Senha trocada pelo administrador vem como provisória
+        if (trocarSenha === undefined) põe('trocar_senha', true);
+      }
 
-    if (nome !== undefined) põe('nome', String(nome).trim());
-    if (email !== undefined) põe('email', normalizarEmail(email));
-    if (clienteCargo !== undefined) põe('cliente_cargo', clienteCargo || null);
-    if (perfil !== undefined) {
-      const p = normalizarPerfil(perfil);
-      /* Virar cliente sem vínculo abriria todas as empresas para alguém que
-         acessa pela internet — a mesma regra do cadastro vale na edição. */
-      conferirVinculoDeCliente(p, empresasIds !== undefined ? empresasIds : await empresasDoUsuario(id));
-      põe('perfil', p);
-    }
-    if (ativo !== undefined) põe('ativo', !!ativo);
-    if (trocarSenha !== undefined) põe('trocar_senha', !!trocarSenha);
-    if (senha !== undefined && senha !== '') {
-      validarSenha(senha);
-      põe('senha_hash', await gerarHash(senha));
-      // Senha trocada pelo administrador vem como provisória
-      if (trocarSenha === undefined) põe('trocar_senha', true);
-    }
+      let usuario;
+      if (campos.length) {
+        valores.push(id);
+        const r = await cliente.query(
+          `UPDATE usuarios SET ${campos.join(', ')} WHERE id = $${valores.length}
+           RETURNING ${CAMPOS}`, valores);
+        if (!r.rows.length) throw Object.assign(new Error('Usuário não encontrado'), { status: 404 });
+        usuario = r.rows[0];
+      } else {
+        const r = await cliente.query(`SELECT ${CAMPOS} FROM usuarios WHERE id = $1`, [id]);
+        if (!r.rows.length) throw Object.assign(new Error('Usuário não encontrado'), { status: 404 });
+        usuario = r.rows[0];
+      }
 
-    let usuario;
-    if (campos.length) {
-      valores.push(id);
-      const r = await cliente.query(
-        `UPDATE usuarios SET ${campos.join(', ')} WHERE id = $${valores.length}
-         RETURNING ${CAMPOS}`, valores);
-      if (!r.rows.length) throw Object.assign(new Error('Usuário não encontrado'), { status: 404 });
-      usuario = r.rows[0];
-    } else {
-      const r = await cliente.query(`SELECT ${CAMPOS} FROM usuarios WHERE id = $1`, [id]);
-      if (!r.rows.length) throw Object.assign(new Error('Usuário não encontrado'), { status: 404 });
-      usuario = r.rows[0];
-    }
+      if (empresasIds !== undefined) await vincularEmpresas(cliente, id, empresasIds);
 
-    if (empresasIds !== undefined) await vincularEmpresas(cliente, id, empresasIds);
+      // Senha nova ou acesso revogado: as sessões abertas param de valer
+      if (senha || ativo === false) {
+        await cliente.query('DELETE FROM sessoes WHERE usuario_id = $1', [id]);
+      }
 
-    // Senha nova ou acesso revogado: as sessões abertas param de valer
-    if (senha || ativo === false) {
-      await cliente.query('DELETE FROM sessoes WHERE usuario_id = $1', [id]);
-    }
-
-    await cliente.query('COMMIT');
-    return usuario;
+      return usuario;
+    });
   } catch (e) {
-    await cliente.query('ROLLBACK');
     if (e.code === '23505') {
       throw Object.assign(new Error('Já existe um usuário com esse e-mail'), { status: 409 });
     }
     throw e;
-  } finally {
-    cliente.release();
   }
 }
 
@@ -247,7 +262,7 @@ async function contarAdminsAtivos(exceto) {
 }
 
 module.exports = {
-  gerarHash, conferirSenha, validarSenha, normalizarEmail,
+  gerarHash, conferirSenha, gastarTempoDeSenha, validarSenha, normalizarEmail,
   existeAlgum, criar, listar, porEmail, empresasDoUsuario,
   atualizar, trocarPropriaSenha, remover, contarAdminsAtivos
 };

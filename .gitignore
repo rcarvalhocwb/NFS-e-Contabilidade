@@ -62,3 +62,6 @@ monitor/sessao.txt
 wa/sessao/
 wa/token.txt
 wa/node_modules/
+
+# Cache do Node portatil baixado pelo preparar-pacote.sh
+instalador/.baixados/

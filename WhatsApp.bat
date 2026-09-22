@@ -19,36 +19,55 @@ cd /d "%~dp0"
 set "NODE=node.exe"
 if exist "%~dp0node\node.exe" set "NODE=%~dp0node\node.exe"
 
+rem ------------------------------------------------- pasta de dados gravavel
+rem
+rem  A pasta de instalacao (Arquivos de Programas) e so-leitura para quem nao e
+rem  administrador. Escrever ali -- node_modules, token, sessao -- estourava com
+rem  EPERM. Os dados que mudam vao para LocalAppData, sempre gravavel pelo
+rem  usuario, e o codigo continua sendo lido da pasta de instalacao.
+rem  ProgramData (nao LocalAppData): a pasta e a MESMA para o modulo e para o
+rem  gateway, que le o token dali. LocalAppData e por usuario e os dois
+rem  processos poderiam divergir. src/util/dados.js resolve igual do lado do node.
+if "%NFSE_WA_DADOS%"=="" set "NFSE_WA_DADOS=%PROGRAMDATA%\NFSe Gateway\wa"
+if not exist "%NFSE_WA_DADOS%" mkdir "%NFSE_WA_DADOS%" >nul 2>&1
+
 rem ------------------------------------------------- as dependencias do modulo
 rem
-rem  Elas NAO vao no instalador: sao 113 MB, e so quem escolhe usar o WhatsApp
-rem  por sessao propria precisa delas. Quem usa a API oficial da Meta, ou nao
-rem  usa WhatsApp, nao carrega esse peso.
+rem  Sao 113 MB que so quem usa sessao propria precisa. Se o instalador ja as
+rem  deixou na pasta de instalacao (passo elevado), usamos de la -- ler basta
+rem  para o require(), e nao se escreve nada ali. Se nao, baixamos para a pasta
+rem  de dados (gravavel sem administrador). NODE_PATH diz ao node onde procurar.
+set "NODE_PATH=%~dp0wa\node_modules"
 if not exist "%~dp0wa\node_modules" (
-    echo.
-    echo   Primeira vez: preciso baixar as bibliotecas do WhatsApp.
-    echo.
-    echo   Sao cerca de 113 MB e leva alguns minutos. Isso acontece uma vez so.
-    echo   E preciso internet agora.
-    echo.
-    pushd "%~dp0wa"
-    call npm install --omit=dev --no-audit --no-fund
-    if errorlevel 1 (
+    set "NODE_PATH=%NFSE_WA_DADOS%\node_modules"
+    if not exist "%NFSE_WA_DADOS%\node_modules" (
+        echo.
+        echo   Primeira vez: preciso baixar as bibliotecas do WhatsApp.
+        echo.
+        echo   Sao cerca de 113 MB e leva alguns minutos. Isso acontece uma vez so.
+        echo   E preciso internet agora.
+        echo.
+        copy /y "%~dp0wa\package.json" "%NFSE_WA_DADOS%\" >nul 2>&1
+        if exist "%~dp0wa\package-lock.json" copy /y "%~dp0wa\package-lock.json" "%NFSE_WA_DADOS%\" >nul 2>&1
+        pushd "%NFSE_WA_DADOS%"
+        call npm install --omit=dev --no-audit --no-fund
+        if errorlevel 1 (
+            popd
+            echo.
+            echo   NAO CONSEGUI BAIXAR. Verifique a internet e tente de novo.
+            echo.
+            echo   Se esta maquina nao tem npm, o modulo do WhatsApp por sessao
+            echo   propria nao vai funcionar aqui -- mas a API oficial da Meta e a
+            echo   emissao de notas continuam normais.
+            echo.
+            pause
+            exit /b 1
+        )
         popd
         echo.
-        echo   NAO CONSEGUI BAIXAR. Verifique a internet e tente de novo.
+        echo   Pronto.
         echo.
-        echo   Se esta maquina nao tem npm, o modulo do WhatsApp por sessao
-        echo   propria nao vai funcionar aqui -- mas a API oficial da Meta e a
-        echo   emissao de notas continuam normais.
-        echo.
-        pause
-        exit /b 1
     )
-    popd
-    echo.
-    echo   Pronto.
-    echo.
 )
 
 rem  Porta do modulo. Se voce mudou na tela do painel, mude aqui tambem.
@@ -63,15 +82,16 @@ echo   banido pelo WhatsApp, e nao ha a quem recorrer. A emissao de notas
 echo   fiscais NAO depende deste modulo.
 echo.
 
-rem  O modulo escreve o token num arquivo ao subir. Esperamos ele aparecer para
-rem  abrir o navegador ja autenticado -- ninguem digita token.
-if exist "%~dp0wa\token.txt" del "%~dp0wa\token.txt" >nul 2>&1
+rem  O modulo escreve o token num arquivo (na pasta de dados) ao subir.
+rem  Esperamos ele aparecer para abrir o navegador ja autenticado.
+set "ARQ_TOKEN=%NFSE_WA_DADOS%\token.txt"
+if exist "%ARQ_TOKEN%" del "%ARQ_TOKEN%" >nul 2>&1
 
 start "" /b "%NODE%" "%~dp0wa\servidor.js"
 
 set "TENTATIVAS=0"
 :esperar
-if exist "%~dp0wa\token.txt" goto abrir
+if exist "%ARQ_TOKEN%" goto abrir
 set /a TENTATIVAS+=1
 if %TENTATIVAS% gtr 60 (
     echo.
@@ -84,7 +104,7 @@ timeout /t 1 >nul
 goto esperar
 
 :abrir
-set /p TOKEN=<"%~dp0wa\token.txt"
+set /p TOKEN=<"%ARQ_TOKEN%"
 
 rem  explorer.exe abre o navegador com a conta normal do usuario: nao se navega
 rem  como administrador por causa de um painel local.

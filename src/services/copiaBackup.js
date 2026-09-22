@@ -19,7 +19,7 @@ const db = require('../db');
 const RE_BACKUP = /^nfse-backup-.*\.json$/;
 
 function pastaBackups() {
-  return process.env.BACKUP_PASTA || path.join(__dirname, '..', '..', 'backups');
+  return require('../util/dados').pastaBackups();
 }
 
 /* Dois caminhos no mesmo volume não são "fora da máquina".

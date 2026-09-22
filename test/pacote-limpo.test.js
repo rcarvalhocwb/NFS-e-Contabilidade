@@ -41,6 +41,22 @@ test('o emissor de licenças não vai no pacote', () => {
   assert.match(fora[1], /licenca-emitir\.js/);
 });
 
+test('as ferramentas do operador do servidor não vão no pacote', () => {
+  /* `papel-app.js` cria papel de banco e distribui GRANT; `criar-escritorio.js`
+     abre escritório novo. Nenhuma das duas serve a quem USA o gateway: numa
+     instalação de mesa existe um escritório só, e ele nasce das migrações. Um
+     segundo ali produziria um estado que o resto do produto não espera.
+
+     Mesmo raciocínio do emissor de licenças, e a mesma razão para um teste:
+     a exclusão é uma linha numa lista, e linha em lista some sem barulho. */
+  const fora = PREPARAR.match(/foreach\s*\(\$fora in @\(([\s\S]*?)\)\)/);
+  assert.ok(fora, 'o bloco de remoção sumiu');
+  for (const ferramenta of ['papel-app.js', 'criar-escritorio.js']) {
+    assert.ok(fora[1].includes(ferramenta),
+      `${ferramenta} precisa sair do pacote: é ferramenta de quem opera o servidor`);
+  }
+});
+
 test('a pasta dev/ existe e é só do desenvolvedor', () => {
   /* Se um dia ela sumir, este teste some junto e a proteção evapora sem
      ninguém notar. Melhor falhar dizendo o que aconteceu. */
@@ -155,4 +171,67 @@ test('a chave pública do produto é uma chave de verdade', () => {
   const r = verificar(forasteira, CHAVE_PUBLICA);
   assert.equal(r.valida, false,
     'licença assinada por OUTRA chave não pode passar');
+});
+
+/* ------------------------------------------------------------------------
+ * O pacote passou a ser montado por dois caminhos: preparar-pacote.ps1 no
+ * Windows e preparar-pacote.sh fora dele. Duas listas escritas a mao para a
+ * mesma coisa divergem -- e a divergencia que importa e silenciosa: uma
+ * exclusao acrescentada so de um lado deixa a ferramenta viajar dentro do
+ * .exe compilado pelo outro, sem erro nenhum no caminho.
+ * ------------------------------------------------------------------------ */
+
+const MONTAR_SH = fs.readFileSync(
+  path.join(RAIZ, 'instalador', 'preparar-pacote.sh'), 'utf8');
+
+/* Ambos os montadores listam caminhos; o .ps1 com barra invertida e aspas
+   simples, o .sh sem aspas. Comparar exige falar a mesma lingua. */
+function normalizar(lista) {
+  return (lista.match(/[\w.@-]+(?:[\\/][\w.@-]+)*/g) || [])
+    .map((s) => s.replace(/\\/g, '/'))
+    .filter((s) => s !== 'in' && s !== 'do' && s !== 'fora' && s !== 'item')
+    .sort();
+}
+
+function inclusaoPs1() {
+  const m = PREPARAR.match(/\$incluir\s*=\s*@\(([\s\S]*?)\)/);
+  assert.ok(m, 'a lista $incluir sumiu do preparar-pacote.ps1');
+  return normalizar(m[1]);
+}
+function exclusaoPs1() {
+  const m = PREPARAR.match(/foreach\s*\(\$fora in @\(([\s\S]*?)\)\)/);
+  assert.ok(m, 'o bloco de remocao sumiu do preparar-pacote.ps1');
+  return normalizar(m[1]);
+}
+function inclusaoSh() {
+  const m = MONTAR_SH.match(/for item in ([\s\S]*?); do/);
+  assert.ok(m, 'a lista de inclusao sumiu do preparar-pacote.sh');
+  return normalizar(m[1].replace(/\\\n/g, ' '));
+}
+function exclusaoSh() {
+  const m = MONTAR_SH.match(/for fora in ([\s\S]*?); do/);
+  assert.ok(m, 'a lista de exclusao sumiu do preparar-pacote.sh');
+  return normalizar(m[1].replace(/\\\n/g, ' '));
+}
+
+test('os dois montadores incluem exatamente os mesmos itens', () => {
+  assert.deepEqual(inclusaoSh(), inclusaoPs1(),
+    'preparar-pacote.sh e preparar-pacote.ps1 divergem no que ENTRA no pacote');
+});
+
+test('os dois montadores removem exatamente os mesmos itens', () => {
+  /* Esta e a que tem dente: papel-app.js, criar-escritorio.js,
+     licenca-emitir.js e ensaio-instalacao.js saem por esta lista. */
+  assert.deepEqual(exclusaoSh(), exclusaoPs1(),
+    'preparar-pacote.sh e preparar-pacote.ps1 divergem no que SAI do pacote');
+});
+
+test('os dois montadores embutem a mesma versao do Node', () => {
+  /* Versoes diferentes produzem instaladores que se comportam diferente a
+     partir da mesma tag -- e o cliente nao tem como saber em qual caiu. */
+  const ps1 = PREPARAR.match(/\$NODE_VERSAO\s*=\s*'([\d.]+)'/);
+  const sh = MONTAR_SH.match(/NODE_VERSAO=([\d.]+)/);
+  assert.ok(ps1 && sh, 'a versao do Node sumiu de um dos montadores');
+  assert.equal(sh[1], ps1[1],
+    'preparar-pacote.sh e preparar-pacote.ps1 embutem Nodes diferentes');
 });

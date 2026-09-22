@@ -57,6 +57,19 @@ param(
 $ErrorActionPreference = 'Stop'
 $log = Join-Path $Raiz 'configuracao.log'
 
+# Chave hexadecimal de $bytes bytes, de gerador CRIPTOGRAFICO.
+#
+# Antes saia de Get-Random, que e um PRNG previsivel semeado pelo relogio: dava
+# para reconstruir a sequencia e, com ela, a MASTER_KEY que cifra o certificado
+# A1 de TODAS as empresas desta instalacao. RandomNumberGenerator existe no
+# PowerShell 5.1 e no 7, e nao tem esse defeito.
+function New-ChaveHex([int]$bytes) {
+    $buf = New-Object 'System.Byte[]' $bytes
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($buf) } finally { $rng.Dispose() }
+    -join ($buf | ForEach-Object { '{0:x2}' -f $_ })
+}
+
 function Registrar($texto) {
     $linha = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $texto"
     Add-Content -Path $log -Value $linha -Encoding utf8
@@ -188,7 +201,7 @@ if ($instalarLocal) {
         if (-not (Install-PostgresLocal $Raiz)) { Falhar "nao consegui obter o PostgreSQL" }
     }
 
-    $senhaBanco = -join ((1..32) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
+    $senhaBanco = New-ChaveHex 16
     if (-not (Initialize-PostgresLocal $Raiz $senhaBanco)) { Falhar "falha ao preparar o banco" }
     if (-not (Start-PostgresLocal $Raiz)) { Falhar "o banco nao quis iniciar (veja postgres\postgres.log)" }
     if (-not (New-BancoNfse $Raiz $senhaBanco)) { Falhar "falha ao criar o banco 'nfse'" }
@@ -233,8 +246,8 @@ if (Test-Path $envPath) {
 } else {
     # Chaves geradas nesta maquina. A MASTER_KEY cifra o certificado A1: se ela
     # se perder, o certificado guardado nao abre mais.
-    $chaveApi = -join ((1..48) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
-    $chaveMestra = -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
+    $chaveApi = New-ChaveHex 24
+    $chaveMestra = New-ChaveHex 32
 
     # VER_APLIC NAO e escrito aqui, e e de proposito.
     #

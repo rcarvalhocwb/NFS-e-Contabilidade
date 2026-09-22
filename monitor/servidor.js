@@ -28,7 +28,12 @@ const PORTA = Number(process.env.MONITOR_PORT || 3100);
 const GATEWAY = process.env.MONITOR_GATEWAY || 'http://127.0.0.1:3000';
 const NOME_TAREFA = 'NFS-e Gateway';
 const NOME_SERVICO_BANCO = 'nfse-postgres';
-const ARQUIVO_SESSAO = path.join(__dirname, 'sessao.txt');
+/* Onde o monitor ESCREVE o token de sessão. Fora da pasta de instalação, que
+   no Windows é só-leitura sem administrador (EPERM). O atalho do monitor aponta
+   NFSE_MONITOR_DADOS para uma pasta gravável; à mão, cai em __dirname. */
+const DADOS = process.env.NFSE_MONITOR_DADOS || __dirname;
+try { fs.mkdirSync(DADOS, { recursive: true }); } catch (_) { /* já existe */ }
+const ARQUIVO_SESSAO = path.join(DADOS, 'sessao.txt');
 const PASTA_LOG = process.env.LOG_PASTA || path.join(RAIZ, 'logs');
 
 /* O token vem do Monitor.bat quando ele o sorteou; senão, sorteia aqui. Os dois

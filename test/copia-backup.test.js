@@ -15,14 +15,16 @@ const path = require('path');
 
 const copia = require('../src/services/copiaBackup');
 
-test('reconhece destino no mesmo volume', () => {
+test('reconhece destino no mesmo volume',
+  { skip: process.platform !== 'win32' && 'semântica de caminho do Windows (letra de disco / UNC)' }, () => {
   /* No Windows a comparação é pela letra do disco. Sem isso, cadastrar
      C:\\backup passaria por "cópia externa" sem proteger de nada. */
   assert.ok(copia.mesmoVolume('C:\\dev\\nfse\\backups', 'C:\\backup-nfse'));
   assert.ok(!copia.mesmoVolume('C:\\dev\\nfse\\backups', 'E:\\backup-nfse'));
 });
 
-test('caminho de rede conta como fora da máquina', () => {
+test('caminho de rede conta como fora da máquina',
+  { skip: process.platform !== 'win32' && 'semântica de caminho do Windows (letra de disco / UNC)' }, () => {
   /* É o destino mais comum num escritório: pasta do servidor da casa. */
   assert.ok(!copia.mesmoVolume('C:\\dev\\nfse\\backups',
     '\\\\servidor\\contabil\\backup'));

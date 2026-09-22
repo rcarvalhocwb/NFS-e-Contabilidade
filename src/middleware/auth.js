@@ -99,3 +99,8 @@ module.exports = async function auth(req, res, next) {
     return next(e);
   }
 };
+
+/* Exposta para quem mais compara segredo de tamanho fixo (a chave de
+   instalação, em routes/auth.js). Um só lugar decide como se compara chave —
+   dois lugares divergem, e o que fica para trás volta ao `===`. */
+module.exports.mesmaChave = mesmaChave;

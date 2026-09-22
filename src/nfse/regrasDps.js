@@ -91,9 +91,23 @@ function conferirEmissao(dados = {}) {
     campo: 'servico.codigoMunicipioPrestacao', regex: /^[0-9]{7}$/,
     comoDeveSer: 'deve ser o código IBGE de 7 dígitos'
   });
+  /* NBS tem 9 dígitos. A Sefin recusa com E1235 ("falha no esquema") — depois
+     de a numeração ter sido consumida e a DPS assinada. Um dígito a menos
+     custa um número da sequência fiscal. */
+  padrao(s.codigoNbs, {
+    campo: 'servico.codigoNbs', regex: /^[0-9]{9}$/,
+    comoDeveSer: 'deve ter exatamente 9 dígitos'
+  });
 
   // --- tomador
   texto(t.razaoSocial, { campo: 'tomador.razaoSocial', max: 300 });
+  /* Documento sem nome: o leiaute exige xNome dentro do bloco do tomador, e o
+     bloco só existe porque veio um documento. Recusar aqui é recusar antes de
+     reservar número. */
+  if ((t.cnpj || t.cpf || t.nif) && !String(t.razaoSocial || '').trim()) {
+    throw erro('tomador.razaoSocial é obrigatório quando o tomador é identificado ' +
+               'por documento');
+  }
   texto(t.email, { campo: 'tomador.email', max: 80 });
   if (t.telefone) {
     padrao(soDigitos(t.telefone), {
@@ -129,7 +143,61 @@ function conferirEmissao(dados = {}) {
   }
   const vs = Number(v.valorServico);
   if (!Number.isFinite(vs) || vs < 0) throw erro('valores.valorServico deve ser um número positivo');
+  /* Zero era aceito aqui e recusado na tela. Nota de serviço sem valor não é
+     documento fiscal: é engano de digitação ou campo que não chegou. Quem
+     precisar registrar cortesia informa o valor e usa desconto. Barrar aqui
+     iguala as duas portas — a do painel e a da integração. */
+  if (vs === 0) {
+    throw erro('valores.valorServico deve ser maior que zero: uma nota sem valor ' +
+               'não gera documento fiscal válido');
+  }
   if (vs > 999999999999999.99) throw erro('valores.valorServico excede o máximo do leiaute');
+
+  /* Exigibilidade suspensa: o leiaute pede o número do processo junto do
+     tipo. Sem ele a Sefin recusa no esquema, depois de assinar. */
+  if (v.exigibilidadeSuspensa) {
+    const es = v.exigibilidadeSuspensa;
+    if (es.tipo === undefined || es.tipo === null || es.tipo === '') {
+      throw erro('valores.exigibilidadeSuspensa.tipo é obrigatório');
+    }
+    if (!String(es.numeroProcesso || '').trim()) {
+      throw erro('valores.exigibilidadeSuspensa.numeroProcesso é obrigatório: ' +
+                 'exigibilidade suspensa depende de processo administrativo ou judicial');
+    }
+    texto(es.numeroProcesso, { campo: 'valores.exigibilidadeSuspensa.numeroProcesso', max: 30 });
+  }
+
+  /* Benefício municipal: número sem tipo não monta o bloco. tpBM diz se é
+     alíquota diferenciada (1), redução da base (2) ou isenção (3) — sem ele o
+     município não sabe o que conceder. */
+  if (v.beneficioMunicipal) {
+    const bm = v.beneficioMunicipal;
+    if (bm.numero && !bm.tipo) {
+      throw erro('valores.beneficioMunicipal.tipo é obrigatório quando há número ' +
+                 'do benefício (1 = alíquota diferenciada, 2 = redução da base, 3 = isenção)');
+    }
+    texto(bm.numero, { campo: 'valores.beneficioMunicipal.numero', max: 14 });
+  }
+
+  /* Exportação de serviço (tribISSQN = 3) exige o país da prestação. */
+  if (Number(v.tributacaoIssqn) === 3 && !String(s.codigoPaisPrestacao || '').trim()) {
+    throw erro('servico.codigoPaisPrestacao é obrigatório na exportação de serviço ' +
+               '(valores.tributacaoIssqn = 3)');
+  }
+
+  /* Intermediário: mesmo par documento+nome do tomador. */
+  if (dados.intermediario) {
+    const i = dados.intermediario;
+    if (i.cnpj) padrao(soDigitos(i.cnpj), { campo: 'intermediario.cnpj', regex: /^[0-9]{14}$/,
+      comoDeveSer: 'deve ter 14 dígitos' });
+    if (i.cpf) padrao(soDigitos(i.cpf), { campo: 'intermediario.cpf', regex: /^[0-9]{11}$/,
+      comoDeveSer: 'deve ter 11 dígitos' });
+    if ((i.cnpj || i.cpf) && !String(i.razaoSocial || '').trim()) {
+      throw erro('intermediario.razaoSocial é obrigatório quando o intermediário ' +
+                 'é identificado por documento');
+    }
+    texto(i.razaoSocial, { campo: 'intermediario.razaoSocial', max: 300 });
+  }
 
   percentual(v.aliquotaIss, { campo: 'valores.aliquotaIss', digitosInteiros: 1 });
   percentual(v.percentualTotalTributosSN, { campo: 'valores.percentualTotalTributosSN', digitosInteiros: 2 });
@@ -156,6 +224,22 @@ function conferirEmissao(dados = {}) {
   }
 }
 
+/* Texto de xMotivo quando o pedido não traz um.
+ *
+ * Os dois primeiros cabem num padrão porque o código já diz tudo: cancelar
+ * por erro de emissão é cancelar por erro de emissão. O 9 não tem padrão de
+ * propósito — "Outros" é a ausência de motivo conhecido, e inventar uma frase
+ * genérica para caber no mínimo do leiaute seria pôr no documento fiscal uma
+ * justificativa que ninguém deu. Quem escolhe 9 diz por quê.
+ *
+ * TSMotivo exige de 15 a 255 caracteres, então os textos abaixo não são
+ * enfeite: um mais curto derruba o evento no schema da Sefin — depois de
+ * assinado, o que é tarde. */
+const TEXTO_PADRAO_CANCELAMENTO = {
+  1: 'Erro na emissao da NFS-e',
+  2: 'Servico nao prestado'
+};
+
 /* Confere o pedido de cancelamento antes de assinar e transmitir o evento. */
 function conferirCancelamento({ codigoMotivo, motivo: texto_ } = {}) {
   const cod = String(codigoMotivo == null ? '1' : codigoMotivo);
@@ -163,13 +247,21 @@ function conferirCancelamento({ codigoMotivo, motivo: texto_ } = {}) {
     throw erro(`codigoMotivo deve ser 1 (erro na emissão), 2 (serviço não prestado) ` +
                `ou 9 (outros) — recebido "${cod}"`);
   }
-  // O xMotivo é enviado sempre, com texto padrão quando não vem informado;
-  // conferir aqui pega o texto próprio curto demais.
-  if (texto_) motivo(texto_, 'motivo');
+  if (texto_) {
+    // Texto próprio: conferir aqui pega o curto demais antes de assinar.
+    motivo(texto_, 'motivo');
+    return;
+  }
+  if (!TEXTO_PADRAO_CANCELAMENTO[cod]) {
+    throw erro('motivo é obrigatório quando codigoMotivo é 9 (outros): ' +
+               'descreva por que a nota está sendo cancelada, em pelo menos ' +
+               '15 caracteres');
+  }
 }
 
 module.exports = {
   conferirEmissao, conferirCancelamento,
   MOTIVOS_SUBSTITUICAO, MOTIVOS_CANCELAMENTO,
+  TEXTO_PADRAO_CANCELAMENTO,
   LIMITE_MOTIVO: { min: 15, max: 255 }
 };

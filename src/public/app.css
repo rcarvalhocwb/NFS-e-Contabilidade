@@ -36,6 +36,8 @@
   --acento:    #2563eb;
   --acento-fg: #ffffff;
   --acento-suave:#eff6ff;
+  /* Indicador de foco: independe da cor da marca, por isso é legível sempre. */
+  --foco:#0b1220;
   /* O acento quando ele CARREGA texto branco — botão primário, item de menu
      ativo, o quadrado da logo. Existe separado porque no modo escuro o acento
      precisa clarear para servir de texto e borda, e clarear o fundo de um botão
@@ -67,6 +69,7 @@
     --texto-3:#94a3b8;
     --marca:#141922; --marca-2:#0f131a;
     --acento:#3b82f6; --acento-solido:#2563eb; --acento-suave:#17233a;
+    --foco:#e8eef7;
     --ok:#4ade80; --ok-bg:#14321f;
     --alerta:#fbbf24; --alerta-bg:#3a2c0c;
     --erro:#f87171; --erro-bg:#3a1717;
@@ -245,8 +248,25 @@ input, select, textarea {
   border-radius: var(--raio-sm); border: 1px solid var(--linha-forte);
   background: var(--superficie); color: var(--texto);
 }
+/* Foco visível de verdade.
+ *
+ * Era `outline: none` mais a borda na cor do acento e um anel de 3px em
+ * `--acento-suave`. Bonito, e invisível: medido contra a razão de contraste
+ * da WCAG, o anel fica em 1,07–1,15:1 sobre o branco — decorativo. O sinal
+ * ficava todo na borda, que só passa de 3:1 quando o escritório escolhe uma
+ * cor escura. Com ciano ou laranja de marca, o campo focado é
+ * indistinguível do campo ao lado.
+ *
+ * `--foco` não sai da cor da casa: sai de um tom fixo que contrasta com a
+ * superfície em tema claro e escuro. A borda e o anel continuam ali pela
+ * estética; a garantia é o outline. */
+input:focus, select:focus, textarea:focus,
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--foco);
+  outline-offset: 2px;
+}
 input:focus, select:focus, textarea:focus {
-  outline: none; border-color: var(--acento); box-shadow: 0 0 0 3px var(--acento-suave);
+  border-color: var(--acento); box-shadow: 0 0 0 3px var(--acento-suave);
 }
 input:disabled { background: var(--superficie-2); color: var(--texto-2); }
 

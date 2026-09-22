@@ -14,10 +14,24 @@
  * O certificado A1 sai cifrado, exatamente como está no banco. Sem a MASTER_KEY
  * do .env ele não serve para nada — guarde as duas coisas separadas.
  *
+ * DE QUEM É O BACKUP
+ *
+ * Com vários escritórios no mesmo banco, "backup" deixou de ser uma coisa só.
+ * Cada arquivo é de um escritório, e o nome diz qual — é o que permite à rota
+ * de download recusar o arquivo do vizinho.
+ *
+ * Rodar sem dizer de quem é passou a ser ERRO, e não o padrão de antes.
+ * Motivo: sob RLS, uma conexão sem inquilino não enxerga linha nenhuma. O
+ * backup global rodava, imprimia "5 registros", gravava o arquivo, copiava
+ * para o pendrive e mostrava verde na tela — com zero empresas, zero
+ * certificados e zero notas dentro. Um backup que mente é pior que nenhum:
+ * nenhum a gente sabe que não tem.
+ *
  * Uso:
- *   node scripts/backup.js                    # grava em backups/
- *   node scripts/backup.js --saida C:\bkp     # escolhe a pasta
- *   node scripts/backup.js --sem-notas        # só cadastro, arquivo bem menor
+ *   node scripts/backup.js --escritorio 3     # um escritório
+ *   node scripts/backup.js --todos            # um arquivo por escritório
+ *   node scripts/backup.js --todos --saida C:\bkp
+ *   node scripts/backup.js --todos --sem-notas   # só cadastro, bem menor
  */
 require('dotenv').config();
 const fs = require('fs');
@@ -33,7 +47,7 @@ function argumento(nome) {
    duas listas, e divergiram — o que só se descobre no dia da restauração. */
 const { TABELAS, PESADAS } = require('./tabelas-backup');
 
-async function principal() {
+async function umEscritorio(escritorioId) {
   const semNotas = process.argv.includes('--sem-notas');
   const pasta = argumento('saida') || path.join(__dirname, '..', 'backups');
   fs.mkdirSync(pasta, { recursive: true });
@@ -44,11 +58,18 @@ async function principal() {
      no meio das diárias, e "restaure a de antes da atualização" vira garimpo
      por data — justamente quando alguém está com pressa. */
   const rotulo = argumento('rotulo');
+  /* O escritório entra no NOME, não só no conteúdo. A rota de download confere
+     o nome antes de abrir o arquivo: sem isso, bastaria pedir o arquivo do
+     vizinho pelo nome para levar a carteira inteira dele — por um caminho que
+     não passa por consulta nenhuma, e que portanto a RLS não alcança. */
   const arquivo = path.join(pasta,
-    rotulo ? `nfse-${String(rotulo).replace(/[^\w.-]/g, '')}-${carimbo}.json`
-           : `nfse-backup-${carimbo}.json`);
+    `nfse-${rotulo ? String(rotulo).replace(/[^\w.-]/g, '') : 'backup'}` +
+    `-e${escritorioId}-${carimbo}.json`);
 
-  const dados = { gerado_em: agora.toISOString(), versao: 1, tabelas: {} };
+  const dados = {
+    gerado_em: agora.toISOString(), versao: 2,
+    escritorio_id: escritorioId, tabelas: {}
+  };
   let total = 0;
 
   for (const tabela of TABELAS) {
@@ -90,10 +111,12 @@ async function principal() {
   const mb = (fs.statSync(arquivo).size / 1048576).toFixed(2);
   console.log(`\n${total} registros em ${arquivo} (${mb} MB)`);
 
-  // Rotação: guarda os 30 mais recentes. Sem isso a pasta cresce para sempre
-  // numa máquina que ninguém acompanha.
+  /* Rotação por escritório: guarda os 30 mais recentes DE CADA UM. Uma
+     rotação global apagaria o backup de um escritório pequeno para caber o do
+     grande, e quem perde o histórico é sempre quem emite menos. */
+  const meus = new RegExp(`^nfse-backup-e${escritorioId}-.*\\.json$`);
   const antigos = fs.readdirSync(pasta)
-    .filter(f => /^nfse-backup-.*\.json$/.test(f))
+    .filter(f => meus.test(f))
     .sort()
     .reverse()
     .slice(30);
@@ -107,6 +130,42 @@ async function principal() {
     console.log('\nO certificado saiu cifrado. Guarde a MASTER_KEY do .env em');
     console.log('lugar separado deste arquivo — uma sem a outra não abre nada.');
   }
+
+  return { escritorioId, arquivo, total };
+}
+
+async function principal() {
+  const pedido = argumento('escritorio');
+  const todos = process.argv.includes('--todos');
+
+  if (!pedido && !todos) {
+    /* Não assumir. Antes o padrão era "o banco inteiro", o que fazia sentido
+       quando o banco era de um escritório só. Agora esse padrão produziria
+       silenciosamente um arquivo vazio — ver o cabeçalho. */
+    const ids = await db.comServidor(async () => {
+      const r = await db.query('SELECT * FROM escritorios_ativos() AS id');
+      return r.rows.map(l => l.id);
+    });
+    console.error('Diga de quem é o backup: --escritorio N ou --todos.');
+    console.error(`Escritórios ativos: ${ids.join(', ') || '(nenhum)'}`);
+    console.error('');
+    console.error('Sem isso a conexão não tem inquilino, e sob RLS ela não');
+    console.error('enxerga linha nenhuma: o arquivo sairia vazio dizendo que');
+    console.error('deu certo.');
+    process.exit(2);
+  }
+
+  if (pedido) {
+    const r = await db.comInquilino(Number(pedido), () => umEscritorio(Number(pedido)));
+    return [r];
+  }
+
+  const feitos = [];
+  await db.porInquilino(async (id) => { feitos.push(await umEscritorio(id)); });
+  console.log('');
+  feitos.forEach(f => console.log(`  escritório ${f.escritorioId}: ${f.total} registro(s)`));
+  if (!feitos.length) console.log('  nenhum escritório ativo — nada a copiar.');
+  return feitos;
 }
 
 principal()

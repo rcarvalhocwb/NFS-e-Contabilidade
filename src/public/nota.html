@@ -67,7 +67,7 @@
 </div>
 
 <main>
-  <div id="aviso" class="aviso"></div>
+  <div id="aviso" class="aviso" role="alert" aria-live="assertive"></div>
 
   <!-- 1. Empresa emissora -->
   <div class="bloco">
@@ -109,7 +109,7 @@
       <div class="grade c3" style="margin-top:14px">
         <div><label for="fMunTom">Código do município (IBGE)</label><input id="fMunTom" inputmode="numeric" maxlength="7"></div>
         <div><label for="fEmailTom">E-mail</label><input id="fEmailTom" type="email"></div>
-        <div><label for="fFoneTom">Telefone</label><input id="fFoneTom"></div>
+        <div><label for="fFoneTom">Telefone</label><input id="fFoneTom" inputmode="tel"></div>
       </div>
 
       <details style="margin-top:16px">
@@ -120,7 +120,7 @@
         </div>
         <div class="grade c3">
           <div><label for="fDocInterm">CNPJ ou CPF</label>
-            <input id="fDocInterm" maxlength="18" placeholder="somente números"></div>
+            <input id="fDocInterm" maxlength="18" placeholder="somente números" inputmode="numeric"></div>
           <div><label for="fNomeInterm">Nome / razão social</label>
             <input id="fNomeInterm" maxlength="150"></div>
           <div><label for="fImInterm">Inscrição municipal</label>
@@ -141,7 +141,7 @@
           <input id="fCodTrib" inputmode="numeric" maxlength="6" placeholder="110201">
           <div class="ajuda">6 dígitos (cTribNac).</div>
         </div>
-        <div><label for="fCodMun">Código municipal</label><input id="fCodMun" maxlength="20">
+        <div><label for="fCodMun">Código municipal</label><input id="fCodMun" maxlength="20" inputmode="numeric">
           <div class="ajuda">Opcional.</div></div>
         <div><label for="fMunPrest">Município da prestação</label><input id="fMunPrest" inputmode="numeric" maxlength="7">
           <div class="ajuda">Vazio = o da empresa.</div></div>
@@ -185,7 +185,7 @@
         </div>
         <div id="wrapAliquota">
           <label for="fAliquota">Alíquota ISS (%)</label>
-          <input id="fAliquota" type="number" step="0.0001" min="0">
+          <input id="fAliquota" type="number" step="0.0001" min="0" inputmode="decimal">
           <div class="ajuda" id="ajudaAliquota"></div>
         </div>
       </div>
@@ -212,7 +212,7 @@
           </select></div>
         <div><label for="fBmNumero">Nº do benefício municipal</label><input id="fBmNumero" inputmode="numeric" maxlength="14">
           <div class="ajuda">Concedido por lei do município.</div></div>
-        <div><label for="fBmReducao">Redução do benefício (%)</label><input id="fBmReducao" type="number" step="0.01" min="0" max="100"></div>
+        <div><label for="fBmReducao">Redução do benefício (%)</label><input id="fBmReducao" type="number" step="0.01" min="0" max="100" inputmode="decimal"></div>
       </div>
 
       <!-- Campos que dependem da natureza escolhida -->
@@ -350,7 +350,7 @@
           <div style="grid-column:span 2"><label for="fObraLogradouro">Logradouro</label><input id="fObraLogradouro" maxlength="255"></div>
         </div>
         <div class="grade c3" style="margin-top:14px">
-          <div><label for="fObraNumero">Número</label><input id="fObraNumero" maxlength="60"></div>
+          <div><label for="fObraNumero">Número</label><input id="fObraNumero" maxlength="60" inputmode="numeric"></div>
           <div><label for="fObraComplemento">Complemento</label><input id="fObraComplemento" maxlength="156"></div>
           <div><label for="fObraBairro">Bairro</label><input id="fObraBairro" maxlength="60"></div>
         </div>
@@ -365,7 +365,7 @@
             <div class="ajuda">Vazio = hoje.</div></div>
           <div><label for="fReferencia">Sua referência</label><input id="fReferencia" maxlength="100" placeholder="PEDIDO-123">
             <div class="ajuda">Evita nota duplicada.</div></div>
-          <div><label for="fTotTrib">% total de tributos</label><input id="fTotTrib" type="number" step="0.0001" min="0">
+          <div><label for="fTotTrib">% total de tributos</label><input id="fTotTrib" type="number" step="0.0001" min="0" inputmode="decimal">
             <div class="ajuda">Lei 12.741 (transparência).</div></div>
         </div>
       </div>

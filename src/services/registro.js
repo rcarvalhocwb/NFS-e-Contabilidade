@@ -12,7 +12,7 @@ const path = require('path');
  * com 30 dias de retenção resolve. Nada aqui justifica winston ou pino.
  */
 
-const PASTA = process.env.LOG_PASTA || path.join(__dirname, '..', '..', 'logs');
+const PASTA = require('../util/dados').pastaLogs();
 const DIAS_RETENCAO = 30;
 
 let fluxo = null;

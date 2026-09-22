@@ -644,15 +644,18 @@ function iniciar() {
     console.warn('[ponte] ATENÇÃO: PONTE_PERMITE_HTTP=true — o portal pode ser ' +
                  'http e apontar para a rede interna. Só para desenvolvimento.');
   }
-  const rodar = async () => {
-    try {
+  /* Uma rodada por escritório: `config_nuvem` deixou de ser linha única do
+     servidor, e cada casa tem o seu portal, a sua chave e o seu intervalo.
+     Sem o laço, sob RLS `ler()` não acharia configuração de ninguém e a ponte
+     ficaria parada com cara de desligada. */
+  const rodar = () => db.porInquilino(
+    async () => {
       const c = await ler();
       if (!c.ativo) return;
       await sincronizar();
-    } catch (e) {
-      console.warn('[ponte] rodada falhou:', e.message);
-    }
-  };
+    },
+    (e, id) => console.warn(`[ponte] rodada do escritório ${id} falhou:`, e.message)
+  ).catch(e => console.warn('[ponte] não consegui listar escritórios:', e.message));
   // O intervalo configurado governa a frequência; o timer roda no menor deles
   timer = setInterval(rodar, 15000);
   timer.unref();

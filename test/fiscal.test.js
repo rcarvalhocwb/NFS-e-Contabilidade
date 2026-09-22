@@ -162,6 +162,48 @@ test('motivo informado prevalece sobre o texto padrão', () => {
   assert.match(xml, /<xMotivo>Motivo especifico<\/xMotivo>/);
 });
 
+/* TSMotivo exige de 15 a 255 caracteres. O padrão do motivo 9 era 'Outros',
+   com seis — o evento saía assinado e a Sefin devolvia "E1235 falha no
+   esquema", com a nota seguindo válida e ninguém sabendo por quê.
+   Reproduzido contra schemas/1.01/pedRegEvento_v1.01.xsd antes da correção. */
+test('motivo 9 sem texto é recusado antes de assinar, não pela Sefin', () => {
+  const { conferirCancelamento } = require('../src/nfse/regrasDps');
+  assert.throws(() => conferirCancelamento({ codigoMotivo: 9 }),
+    /motivo é obrigatório quando codigoMotivo é 9/,
+    'quem escolhe "outros" precisa dizer qual');
+
+  /* A regra vive em conferirCancelamento, que a rota chama. O construtor
+     confere de novo porque nem todo caminho passa pela rota — e um xMotivo
+     curto só se descobre depois de assinado. */
+  assert.throws(() => montarPedidoCancelamento({
+    tpAmb: '1', verAplic: 'v', chaveAcesso: '4'.repeat(50),
+    cnpjAutor: '21583854000118', codigoMotivo: 9
+  }), /ao menos 15 caracteres/);
+});
+
+test('os textos padrão de cancelamento cabem no mínimo do leiaute', () => {
+  const { TEXTO_PADRAO_CANCELAMENTO, LIMITE_MOTIVO } = require('../src/nfse/regrasDps');
+  for (const [codigo, texto] of Object.entries(TEXTO_PADRAO_CANCELAMENTO)) {
+    assert.ok(texto.length >= LIMITE_MOTIVO.min,
+      `o padrão do motivo ${codigo} tem ${texto.length} caracteres; TSMotivo exige ${LIMITE_MOTIVO.min}`);
+    assert.ok(texto.length <= LIMITE_MOTIVO.max);
+  }
+  assert.ok(!('9' in TEXTO_PADRAO_CANCELAMENTO),
+    'o motivo 9 não pode ter padrão: inventar justificativa é pôr no documento fiscal uma razão que ninguém deu');
+});
+
+test('a tabela de motivos existe num lugar só', () => {
+  /* Havia duas: a de eventoBuilder, que errou, e a validação em regrasDps,
+     que não conhecia a outra. Duas tabelas divergem — foi o que aconteceu. */
+  const fs = require('fs');
+  const path = require('path');
+  const builder = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'nfse', 'eventoBuilder.js'), 'utf8');
+  assert.match(builder, /require\('\.\/regrasDps'\)/);
+  assert.ok(!/const MOTIVOS = \{/.test(builder),
+    'o construtor não pode ter tabela própria de motivos');
+});
+
 // ---------------------------------------------------------------------- zip
 
 test('CRC32 bate com o valor canônico', () => {

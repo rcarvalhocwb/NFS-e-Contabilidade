@@ -159,7 +159,10 @@ async function enviar({ para, texto, documento }) {
 async function tokenDoModulo() {
   const fs = require('fs');
   const path = require('path');
-  const arquivo = path.join(__dirname, '..', '..', 'wa', 'token.txt');
+  /* O mesmo caminho em que o módulo (wa/servidor.js) grava o token. Vem do
+     helper para os dois processos não divergirem — no Windows a pasta de
+     instalação é só-leitura, então token e sessão vivem em ProgramData. */
+  const arquivo = path.join(require('../util/dados').pastaWhatsapp(), 'token.txt');
   try {
     return fs.readFileSync(arquivo, 'utf8').trim();
   } catch (_) {

@@ -14,6 +14,15 @@ const LIMITE = 8;
 const JANELA_MS = 15 * 60 * 1000;
 const BLOQUEIO_MS = 15 * 60 * 1000;
 
+/* Segundo contador, só por IP. O de cima é por IP+e-mail e não pega
+   pulverização: uma senha comum tentada contra muitos e-mails deixa cada balde
+   (IP,e-mail) com uma tentativa só, e nenhum chega ao limite. O de IP conta o
+   total de falhas daquele endereço, qualquer que seja o e-mail, e trava mais
+   alto — 50 falhas em 15 min é muito acima de quem erra a própria senha e
+   bem abaixo de quem varre uma lista. */
+const tentativasIp = new Map();
+const LIMITE_IP = 50;
+
 function chaveTentativa(req) {
   const email = String((req.body && req.body.email) || '').toLowerCase().slice(0, 120);
   return `${req.ip}|${email}`;
@@ -25,6 +34,15 @@ function limparAntigas(agora) {
       tentativas.delete(chave);
     }
   }
+  for (const [ip, reg] of tentativasIp) {
+    if (agora - reg.primeira > JANELA_MS && (!reg.bloqueadoAte || agora > reg.bloqueadoAte)) {
+      tentativasIp.delete(ip);
+    }
+  }
+}
+
+function bloqueado(reg, agora) {
+  return reg && reg.bloqueadoAte && agora < reg.bloqueadoAte ? reg.bloqueadoAte : 0;
 }
 
 /* Barra o login quando há tentativas demais. Aplicado antes de conferir a
@@ -32,13 +50,15 @@ function limparAntigas(agora) {
    custa um scrypt (que é lento de propósito) do lado do servidor. */
 function limitarLogin(req, res, next) {
   const agora = Date.now();
-  if (tentativas.size > 500) limparAntigas(agora);
+  if (tentativas.size > 500 || tentativasIp.size > 500) limparAntigas(agora);
 
-  const chave = chaveTentativa(req);
-  const reg = tentativas.get(chave);
+  // Barrado pelo balde do e-mail OU pelo teto do IP — o que estiver ativo.
+  const ate = Math.max(
+    bloqueado(tentativas.get(chaveTentativa(req)), agora),
+    bloqueado(tentativasIp.get(req.ip), agora));
 
-  if (reg && reg.bloqueadoAte && agora < reg.bloqueadoAte) {
-    const minutos = Math.ceil((reg.bloqueadoAte - agora) / 60000);
+  if (ate) {
+    const minutos = Math.ceil((ate - agora) / 60000);
     return res.status(429).json({
       erro: `Muitas tentativas. Tente de novo em ${minutos} minuto(s).`
     });
@@ -46,19 +66,25 @@ function limitarLogin(req, res, next) {
   next();
 }
 
-function registrarFalhaLogin(req) {
-  const agora = Date.now();
-  const chave = chaveTentativa(req);
-  const reg = tentativas.get(chave);
-
+function contar(mapa, chave, agora, limite) {
+  const reg = mapa.get(chave);
   if (!reg || agora - reg.primeira > JANELA_MS) {
-    tentativas.set(chave, { contagem: 1, primeira: agora, bloqueadoAte: null });
+    mapa.set(chave, { contagem: 1, primeira: agora, bloqueadoAte: null });
     return;
   }
   reg.contagem += 1;
-  if (reg.contagem >= LIMITE) reg.bloqueadoAte = agora + BLOQUEIO_MS;
+  if (reg.contagem >= limite) reg.bloqueadoAte = agora + BLOQUEIO_MS;
 }
 
+function registrarFalhaLogin(req) {
+  const agora = Date.now();
+  contar(tentativas, chaveTentativa(req), agora, LIMITE);
+  contar(tentativasIp, req.ip, agora, LIMITE_IP);
+}
+
+/* Sucesso limpa o balde do e-mail (a pessoa acertou a própria senha), mas NÃO
+   o do IP: uma rede compartilhada com um login legítimo no meio não é onde se
+   perdoa um varredor. O contador de IP expira sozinho na janela. */
 function limparFalhasLogin(req) {
   tentativas.delete(chaveTentativa(req));
 }

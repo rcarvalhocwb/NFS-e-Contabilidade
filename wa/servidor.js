@@ -33,9 +33,23 @@ const PORTA = Number(process.env.WA_PORTA || 3200);
    implementacao da conversa, que divergiria da primeira no primeiro ajuste. */
 const RELAY = process.env.WA_RELAY || 'http://127.0.0.1:8080';
 const CHAVE_RELAY = process.env.CHAVE_GATEWAY || '';
-const PASTA = __dirname;
-const SESSAO = path.join(PASTA, 'sessao');
-const ARQ_TOKEN = path.join(PASTA, 'token.txt');
+const PASTA = __dirname;   // arquivos que vieram no pacote (só leitura)
+/* Onde este módulo ESCREVE: sessão e token. Não pode ser a pasta de instalação
+   — no Windows ela vive em Arquivos de Programas, que é só-leitura para quem
+   não é administrador, e a gravação estourava com EPERM. O WhatsApp.bat aponta
+   NFSE_WA_DADOS para uma pasta gravável (LocalAppData). Fora do Windows, ou
+   rodando à mão, cai em __dirname, como antes. */
+let DADOS;
+try {
+  /* Mesma resolução que o gateway usa para LER o token (src/util/dados):
+     os dois processos precisam do mesmo caminho. */
+  DADOS = require('../src/util/dados').pastaWhatsapp();
+} catch (_) {
+  DADOS = process.env.NFSE_WA_DADOS || __dirname;
+}
+try { fs.mkdirSync(DADOS, { recursive: true }); } catch (_) { /* já existe */ }
+const SESSAO = path.join(DADOS, 'sessao');
+const ARQ_TOKEN = path.join(DADOS, 'token.txt');
 
 /* Token de abertura, como no monitor. Gravado num arquivo que o .bat lê e
    apagado quando o processo sai — token que sobrevive ao processo é token que

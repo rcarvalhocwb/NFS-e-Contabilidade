@@ -152,6 +152,8 @@
     el('app').hidden = true;
     el('telaAcesso').hidden = false;
     fetch('/auth/estado').then(function (r) { return r.json(); }).then(function (d) {
+      // Guardado antes de qualquer tela abrir: decide o que o painel oferece.
+      estado.multiEscritorio = !!d.multiEscritorio;
       if (d.bancoIndisponivel) {
         el('formAcesso').hidden = true;
         el('formPrimeiro').hidden = true;
@@ -173,12 +175,33 @@
     estado.usuario = usuario;
     var ehAdmin = souAdmin();
 
+    /* A marca é rebuscada agora, não só na abertura da página.
+       Antes do login não há sessão, e num servidor de vários escritórios o
+       servidor não tem como saber de quem é a tela — responde sem marca, de
+       propósito. Depois do login ele sabe, e o painel precisa perguntar de
+       novo, senão fica com a identidade genérica a sessão inteira. */
+    carregarMarca();
+
     el('btnMinhaConta').textContent = usuario.nome;
     el('btnMinhaConta').title = usuario.email + ' · trocar minha senha';
 
     // Telas de configuração só existem para administrador. Escondê-las evita
     // que o operador esbarre em um 403 sem entender o motivo.
     $$('[data-admin]').forEach(function (n) { n.hidden = !ehAdmin; });
+
+    /* Telas do operador do servidor, não do escritório: endereço e
+       certificado TLS da máquina, destinos de backup em disco, pacote de
+       migração, reiniciar. Num servidor de vários escritórios elas exigem a
+       credencial de máquina, que ninguém tem pelo navegador — então some com
+       elas, em vez de deixar a pessoa esbarrar num 403 sem entender.
+       Na instalação de mesa o administrador É o operador, e tudo aparece.
+
+       Depois do laço de `data-admin`: "Rede e conexão" carrega os dois
+       atributos, e quem corre por último é quem decide. */
+    $$('[data-operador]').forEach(function (n) {
+      n.hidden = ehAdmin ? !!estado.multiEscritorio : true;
+    });
+
 
     el('telaAcesso').hidden = true;
     el('app').hidden = false;
@@ -2831,7 +2854,7 @@
       raiz.style.setProperty('--marca', escurecer(cor, 0.26));
       raiz.style.setProperty('--marca-2', escurecer(cor, 0.4));
       raiz.style.setProperty('--acento-suave', clarear(cor, 0.9));
-      raiz.style.setProperty('--acento-fg', contrasteClaro(cor) ? '#ffffff' : '#10161f');
+      raiz.style.setProperty('--acento-fg', textoSobre(cor));
     }
 
     var nome = m.nome;
@@ -2880,10 +2903,43 @@
     return paraHex(c[0] + (255 - c[0]) * quanto, c[1] + (255 - c[1]) * quanto,
                    c[2] + (255 - c[2]) * quanto);
   }
-  /* Texto branco só quando o fundo é escuro o bastante para sustentá-lo. */
+  /* Qual texto sobrevive sobre a cor da casa: o branco ou o escuro.
+   *
+   * Isto era um corte de brilho YIQ em 150 — a heurística de sempre, e ela
+   * erra. Medido contra a razão de contraste da WCAG, quatro de doze cores
+   * testadas ficavam abaixo de 4,5:1, e não eram cores exóticas: cinza médio,
+   * verde e ciano de marca. Com #00CED1 o painel escolhia branco e entregava
+   * 1,95:1 — barra lateral ilegível para quem escolheu a cor da própria
+   * empresa.
+   *
+   * A conta certa é a da própria norma: luminância relativa dos dois
+   * candidatos, e ganha quem tiver a maior razão. */
+  function luminancia(rgb) {
+    var s = rgb.map(function (v) {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * s[0] + 0.7152 * s[1] + 0.0722 * s[2];
+  }
+
+  function razaoContraste(hexA, hexB) {
+    var a = luminancia(corParaRgb(hexA));
+    var b = luminancia(corParaRgb(hexB));
+    var claro = Math.max(a, b), escuro = Math.min(a, b);
+    return (claro + 0.05) / (escuro + 0.05);
+  }
+
+  /* Devolve a cor de texto que melhor se sustenta sobre `fundo`. Devolve a
+     melhor das duas mesmo quando nenhuma chega a 4,5:1 — é o máximo possível
+     sobre aquela cor, e recusar a cor da pessoa seria pior. */
+  function textoSobre(fundo) {
+    var CLARO = '#ffffff', ESCURO = '#10161f';
+    return razaoContraste(fundo, CLARO) >= razaoContraste(fundo, ESCURO) ? CLARO : ESCURO;
+  }
+
+  /* Mantida para quem já chamava: agora responde pela razão real. */
   function contrasteClaro(hex) {
-    var c = corParaRgb(hex);
-    return (c[0] * 299 + c[1] * 587 + c[2] * 114) / 1000 < 150;
+    return textoSobre(hex) === '#ffffff';
   }
 
   function carregarMarca() {

@@ -261,7 +261,37 @@ async function principal() {
   process.exit(0);
 }
 
-principal().catch(e => {
-  console.error(e.message);
-  process.exit(1);
-});
+/* Em qual escritório a primeira empresa nasce.
+ *
+ * Toda tabela de inquilino tem `escritorio_id NOT NULL` com padrão
+ * `inquilino_atual()`. Sem amarrar, o padrão devolve NULL e a gravação morre
+ * com "null value in column escritorio_id" — foi assim que o ensaio de
+ * instalação pegou isto, antes de o instalador chegar a uma máquina real.
+ *
+ * Numa instalação de mesa há um escritório só, e é nele. Num servidor com
+ * vários, cadastrar a "primeira empresa" pela linha de comando é ambíguo:
+ * exige --escritorio, porque escolher por conta própria seria pôr a empresa
+ * na carteira de outra casa. */
+async function escritorioAlvo() {
+  const pedido = process.argv.indexOf('--escritorio');
+  if (pedido >= 0 && process.argv[pedido + 1]) return Number(process.argv[pedido + 1]);
+
+  const ids = (await db.comServidor(() => db.query(
+    'SELECT * FROM escritorios_ativos() AS id'))).rows.map(r => r.id);
+
+  if (!ids.length) {
+    throw new Error('Nenhum escritório no banco. Rode as migrações antes.');
+  }
+  if (ids.length > 1) {
+    throw new Error('Há ' + ids.length + ' escritórios neste servidor (' + ids.join(', ') +
+                    '). Informe em qual cadastrar: --escritorio N');
+  }
+  return ids[0];
+}
+
+escritorioAlvo()
+  .then(id => db.comInquilino(id, principal))
+  .catch(e => {
+    console.error(e.message);
+    process.exit(1);
+  });

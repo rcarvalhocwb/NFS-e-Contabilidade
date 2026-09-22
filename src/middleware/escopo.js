@@ -1,3 +1,5 @@
+const config = require('../config');
+
 /* Aplicação do escopo nas rotas.
    O middleware de auth identifica quem chamou; aqui decidimos o que pode. */
 
@@ -18,6 +20,39 @@ function somenteAdmin(req, res, next) {
   }
   return res.status(403).json({
     erro: 'Esta rota exige credencial administrativa. O token da empresa dá acesso apenas às rotas de NFS-e.'
+  });
+}
+
+/* Rotas do SERVIDOR, não do escritório.
+ *
+ * Enquanto uma instalação atendia um escritório, administrador do escritório e
+ * operador do servidor eram a mesma pessoa: a contabilidade rodava o gateway na
+ * própria máquina, e quem trocava o certificado TLS era quem emitia as notas.
+ * `somenteAdmin` cobria os dois papéis porque eram um.
+ *
+ * Num servidor com vários escritórios eles se separam, e a diferença passa a
+ * importar muito: `config_rede` é o endereço e o certificado TLS do servidor
+ * inteiro, `backup_destinos` são caminhos de disco da máquina, e reiniciar
+ * derruba o painel de TODAS as casas. Deixar isso com o administrador de um
+ * escritório é deixar um cliente mexer na infraestrutura dos outros.
+ *
+ * O modo é explícito (MULTI_ESCRITORIO), e não deduzido da quantidade de
+ * escritórios no banco: autorização que muda sozinha quando alguém cadastra
+ * uma linha é autorização que ninguém consegue prever. Para não ficar
+ * esquecido, o servidor avisa alto na inicialização se houver mais de um
+ * escritório com o modo desligado — ver src/server.js.
+ */
+function somenteOperador(req, res, next) {
+  // Credencial de máquina: quem tem a GATEWAY_API_KEY está no servidor.
+  if (req.auth && req.auth.tipo === 'maquina') return next();
+
+  /* Instalação de um escritório só: o administrador É o operador, e tirar
+     dele essas telas quebraria o produto de mesa sem proteger ninguém. */
+  if (!config.multiEscritorio) return somenteAdmin(req, res, next);
+
+  return res.status(403).json({
+    erro: 'Esta ação é do operador do servidor, não do escritório. ' +
+          'Ela afeta todos os escritórios desta instalação.'
   });
 }
 
@@ -93,6 +128,6 @@ function notaNoEscopo(req, nota) {
 }
 
 module.exports = {
-  somenteAdmin, exigirUsuario, fixarEscopoEmpresa, notaNoEscopo,
+  somenteAdmin, somenteOperador, exigirUsuario, fixarEscopoEmpresa, notaNoEscopo,
   empresasVisiveis, empresaVisivel, filtroSqlEmpresas
 };
