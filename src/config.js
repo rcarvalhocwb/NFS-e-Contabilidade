@@ -51,11 +51,13 @@ const config = {
   xmlSigAlg: (process.env.XML_SIG_ALG || 'sha1').toLowerCase(),
   ambientes: AMBIENTES,
 
-  /* Atualizações. O repositório de releases é PÚBLICO e separado do código,
-     que é privado: assim o gateway baixa sem token, e nenhuma credencial de
-     acesso ao fonte precisa viajar dentro do instalador. */
+  /* Atualizações. O verificador consulta as releases deste repositório pela API
+     pública do GitHub, SEM token — então o repositório precisa ser PÚBLICO, e
+     rcarvalhocwb/NFS-e-Contabilidade é. As releases levam só o instalador .exe
+     e o SHA-256 no corpo; o código-fonte já está aqui mesmo. ATUALIZACAO_REPO
+     sobrescreve, para quem espelhar as releases em outro lugar. */
   atualizacao: {
-    repositorio: process.env.ATUALIZACAO_REPO || 'rcarvalhocwb/nfse-gateway-releases',
+    repositorio: process.env.ATUALIZACAO_REPO || 'rcarvalhocwb/NFS-e-Contabilidade',
     // Sobrescreve o endereço inteiro, para quem publicar fora do GitHub
     url: process.env.ATUALIZACAO_URL || null,
     ativo: process.env.ATUALIZACAO_VERIFICAR !== 'false',
