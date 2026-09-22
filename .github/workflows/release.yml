@@ -1,55 +1,55 @@
 name: Publicar release
 
-# Fecha o ciclo da atualização automática. Ao marcar uma versão (uma tag como
-# v1.9.2), este fluxo compila o instalador no Windows e publica uma GitHub
-# Release com o .exe anexado e o SHA-256 no corpo — exatamente o que o
+# Fecha o ciclo da atualização automática. Compila o instalador no Windows e
+# publica uma GitHub Release com o .exe anexado e o SHA-256 no corpo — o que o
 # verificador do painel (src/services/atualizacao.js) procura em
 # /releases/latest. Como o repositório é público, o gateway do cliente baixa
-# sem token, avisa "nova versão" e um clique atualiza em-place (sem perder
-# dados: o instalador entra em modo atualização).
+# sem token, avisa "nova versão" e um clique atualiza em-place (o instalador
+# entra em modo atualização: backup do banco, migrações, e o .env intacto).
 #
-# A correção do produto sai testada pelo CI do branch ANTES da tag; aqui só se
-# compila e publica o que já passou.
+# Dois gatilhos:
+#  - push de tag vX.Y.Z, quando dá para empurrar a tag pelo git;
+#  - workflow_dispatch, que NÃO depende de empurrar tag: o próprio job cria a
+#    tag e a release com o GITHUB_TOKEN (server-side), a partir do ref
+#    escolhido. A versão vem sempre do package.json — uma verdade só.
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag a publicar (ex: v1.9.2). Precisa existir.'
-        required: true
 
 permissions:
-  contents: write   # criar a release e anexar o .exe neste mesmo repositório
+  contents: write   # criar a tag, a release e anexar o .exe neste repositório
 
 jobs:
   publicar:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: A tag bate com a versão do package.json?
+      - name: Definir a tag a partir do package.json (e conferir)
+        id: versao
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = '${{ github.event.inputs.tag }}'
-          if (-not $tag) { $tag = '${{ github.ref_name }}' }
-          $tagVersao = $tag -replace '^v', ''
           $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          Write-Host "tag=$tag  package.json=$pkg"
-          if ($tagVersao -ne $pkg) {
-            throw "A tag ($tagVersao) não bate com a versão do package.json ($pkg). " +
-                  "O verificador compara a tag com a versão embutida — publicar assim " +
-                  "faria o cliente baixar um .exe que se diz outra versão."
+          $tag = "v$pkg"
+          # Num push de tag, a tag manda e precisa bater com o package.json,
+          # senão o cliente baixaria um .exe que se diz outra versão.
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $tagRef = '${{ github.ref_name }}'
+            if ($tagRef -ne $tag) {
+              throw "A tag ($tagRef) não bate com a versão do package.json ($pkg)."
+            }
           }
+          Write-Host "versão=$pkg  tag=$tag"
+          "tag=$tag"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "versao=$pkg"  | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - run: npm ci
 
@@ -75,21 +75,19 @@ jobs:
           $exe = Get-ChildItem instalador\saida\*.exe | Select-Object -First 1
           if (-not $exe) { throw 'Nenhum .exe em instalador\saida' }
           $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
-          Write-Host "arquivo: $($exe.Name)"
-          Write-Host "sha256:  $hash"
-          "sha=$hash"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "arquivo: $($exe.Name)  sha256: $hash"
+          "sha=$hash"            | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "exe=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "nome=$($exe.Name)"  | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "nome=$($exe.Name)"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - name: Publicar a release
+      - name: Publicar a release (cria a tag se preciso)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = '${{ github.event.inputs.tag }}'
-          if (-not $tag) { $tag = '${{ github.ref_name }}' }
-          # O corpo LEVA o SHA-256 num formato que o verificador do painel casa
+          $tag = '${{ steps.versao.outputs.tag }}'
+          # O corpo LEVA o SHA-256 no formato que o verificador do painel casa
           # (regex SHA-256: <64 hex> em src/services/atualizacao.js).
           $notas = @"
           Instalador do NFS-e Gateway.
@@ -103,5 +101,13 @@ jobs:
           SHA-256: ${{ steps.sha.outputs.sha }}
           "@
           $notas | Out-File notas-release.md -Encoding utf8
-          gh release create $tag "${{ steps.sha.outputs.exe }}" `
-            --title $tag --notes-file notas-release.md
+
+          # Idempotente: se a release já existir (re-run), só atualiza o anexo.
+          $existe = (gh release view $tag 2>$null)
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag "${{ steps.sha.outputs.exe }}" --clobber
+            gh release edit   $tag --notes-file notas-release.md
+          } else {
+            gh release create $tag "${{ steps.sha.outputs.exe }}" `
+              --target $env:GITHUB_SHA --title $tag --notes-file notas-release.md
+          }
