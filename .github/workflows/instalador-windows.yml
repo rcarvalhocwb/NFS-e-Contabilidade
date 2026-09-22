@@ -10,6 +10,15 @@ name: Instalador Windows
 # foi escrita e é o gate verde); o WINDOWS roda o que só faz sentido lá — a
 # semântica de caminho, a instalação limpa contra um banco real, e a compilação
 # e execução do próprio instalador.
+#
+# Fecha também o ciclo da atualização automática: em workflow_dispatch, o job
+# "publicar" pega o .exe recém-compilado e cria uma GitHub Release com ele
+# anexado e o SHA-256 no corpo — o que o verificador do painel
+# (src/services/atualizacao.js) procura em /releases/latest. Como o repositório
+# é público, o gateway do cliente baixa sem token, avisa "nova versão", e um
+# clique atualiza em-place. Fica aqui, e não num workflow à parte, porque o
+# proxy de egresso bloqueia empurrar tags (HTTP 403) e um workflow_dispatch só
+# existe para a API se o arquivo estiver no branch padrão — este já está.
 
 on:
   # push só nos branches "de verdade": num branch com PR aberto, o evento
@@ -193,3 +202,79 @@ jobs:
             if ($p -match 'Program Files') { throw "Pasta gravável dentro de Arquivos de Programas: $p (EPERM na certa)" }
           }
           Write-Host 'OK: logs, backups e WhatsApp resolvem para ProgramData.'
+
+  # ------------------------------------------------ 4. publicar a release
+  # Só quando pedido de propósito (workflow_dispatch): pega o .exe que o job
+  # "instalador" compilou e provou, e publica a GitHub Release que o painel do
+  # cliente enxerga. A versão vem do package.json — uma verdade só — e o corpo
+  # leva o SHA-256 no formato exato que o verificador casa
+  # (regex "SHA-256: <64 hex>" em src/services/atualizacao.js). Idempotente:
+  # re-rodar sobre uma release existente só re-anexa o .exe e reescreve as notas.
+  publicar:
+    needs: instalador
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    permissions:
+      contents: write   # criar a tag, a release e anexar o .exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Baixar o .exe compilado
+        uses: actions/download-artifact@v4
+        with:
+          name: nfse-gateway-setup
+          path: dist
+
+      - name: Definir a tag (a partir do package.json)
+        id: versao
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "v$pkg"
+          Write-Host "versão=$pkg  tag=$tag"
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Calcular o SHA-256
+        id: sha
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem dist\*.exe | Select-Object -First 1
+          if (-not $exe) { throw 'Nenhum .exe no artefato baixado.' }
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          Write-Host "arquivo: $($exe.Name)  sha256: $hash"
+          "sha=$hash"            | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "exe=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "nome=$($exe.Name)"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Publicar a release (cria a tag se preciso)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = '${{ steps.versao.outputs.tag }}'
+          $notas = @"
+          Instalador do NFS-e Gateway.
+
+          Para atualizar uma instalação existente, rode este .exe por cima: ele
+          entra em modo atualização — faz backup do banco, troca os arquivos,
+          roda as migrações e sobe de volta, sem tocar nas suas empresas,
+          certificados, notas nem no .env.
+
+          Arquivo: ${{ steps.sha.outputs.nome }}
+          SHA-256: ${{ steps.sha.outputs.sha }}
+          "@
+          $notas | Out-File notas-release.md -Encoding utf8
+
+          # Idempotente: se a release já existir (re-run), só atualiza o anexo.
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag "${{ steps.sha.outputs.exe }}" --clobber
+            gh release edit   $tag --notes-file notas-release.md
+          } else {
+            gh release create $tag "${{ steps.sha.outputs.exe }}" `
+              --target $env:GITHUB_SHA --title $tag --notes-file notas-release.md
+          }
+          Write-Host "Release $tag publicada."
